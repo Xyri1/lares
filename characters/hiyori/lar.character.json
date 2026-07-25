@@ -1,0 +1,15 @@
+{
+  "format": "lares/1",
+  "identity": {
+    "name": "Hiyori",
+    "author": "Live2D Inc. (sample data); Lares package by Cyril Tsui",
+    "license": "This content uses sample data owned and copyrighted by Live2D Inc. The sample data are utilized in accordance with terms and conditions set by Live2D Inc. This content itself is created at the author's sole discretion."
+  },
+  "expressions": {},
+  "renderers": {
+    "live2d": {
+      "model": "runtime/Hiyori.model3.json",
+      "cues": {}
+    }
+  }
+}
