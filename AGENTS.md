@@ -12,7 +12,9 @@ not yet built): Electron + TypeScript; Live2D via pixi-live2d-display.
 sdd/        SDD artifacts — SPEC.md is the source of truth
 
 ## Commands
-None yet — commands land with the first code (M1a).
+- `pnpm dev` — run the app
+- `pnpm test` — run tests (vitest)
+- `pnpm fetch-assets` — download Live2D assets (not yet run automatically)
 
 ## Constitution
 Stock — applies in any repo:

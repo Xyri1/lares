@@ -1,1 +1,11 @@
+node_modules
+dist
+out
+.DS_Store
+.eslintcache
+*.log*
+
 AGENTS.local.md
+
+vendor/
+characters/*/runtime/
