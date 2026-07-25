@@ -23,6 +23,18 @@ the clearance record.
 
 --------------------------------------------------------------------------
 
+Live2D Cubism Framework
+
+This application uses the Live2D Cubism Framework, copyright (C) Live2D
+Inc., licensed under the Live2D Open Software License Agreement:
+https://www.live2d.com/eula/live2d-open-software-license-agreement_en.html
+
+The Framework reaches this application as part of its Live2D runtime
+dependency. Regardless of that package's own license, the Framework code
+within it remains under Live2D's terms and is not relicensed here.
+
+--------------------------------------------------------------------------
+
 Hiyori (Live2D Original Character)
 
 This application uses the "Hiyori" character sample, owned and copyrighted
