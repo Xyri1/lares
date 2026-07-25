@@ -11,6 +11,7 @@
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
+    "fetch-assets": "node scripts/fetch-assets.mjs",
     "build": "pnpm run typecheck && electron-vite build",
     "test": "vitest run"
   },
