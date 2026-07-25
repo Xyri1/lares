@@ -1,10 +1,49 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { join } from 'path'
+import { app, shell, BrowserWindow, ipcMain, protocol, net } from 'electron'
+import { join, relative, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { loadCharacter } from './characters/manifest'
+
+// Character assets reach the renderer over lares:// so the load path is
+// identical in dev (http origin) and packaged (file origin) builds.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'lares',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true }
+  }
+])
+
+const charactersRoot = (): string => join(app.getAppPath(), 'characters')
+
+function registerAssetProtocol(): void {
+  protocol.handle('lares', (request) => {
+    const url = new URL(request.url)
+    if (url.host !== 'characters') return new Response('not found', { status: 404 })
+    const root = charactersRoot()
+    const target = join(root, decodeURIComponent(url.pathname))
+    if (!target.startsWith(root + sep)) return new Response('forbidden', { status: 403 }) // P7: no traversal
+    return net.fetch(pathToFileURL(target).toString())
+  })
+}
+
+function registerCharacterIpc(): void {
+  ipcMain.handle('character:get', () => {
+    // ponytail: hiyori hardcoded — character selection is out of slice scope
+    const root = charactersRoot()
+    const result = loadCharacter(join(root, 'hiyori', 'lar.character.json'))
+    if (!result.ok) return result
+    const rel = relative(root, result.live2d.model).split(sep).join('/')
+    return { ...result, live2d: { ...result.live2d, model: `lares://characters/${rel}` } }
+  })
+
+  ipcMain.on('body:inventory', (_event, params: unknown[]) => {
+    // Root SPEC §8 body→brain message; brain-side consumers arrive in M2/M3.
+    console.log(`[lares] body:inventory — ${Array.isArray(params) ? params.length : 0} parameters`)
+  })
+}
 
 function createWindow(): void {
-  // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 480,
     height: 720,
@@ -21,13 +60,19 @@ function createWindow(): void {
     mainWindow.show()
   })
 
+  if (is.dev) {
+    // Pipe renderer console to the terminal so `pnpm dev` failures are visible
+    // without opening devtools.
+    mainWindow.webContents.on('console-message', (event) => {
+      console.log(`[renderer:${event.level}] ${event.message}`)
+    })
+  }
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
-  // HMR for renderer base on electron-vite cli.
-  // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -35,40 +80,24 @@ function createWindow(): void {
   }
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
-  // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('io.lares')
 
-  // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
-
+  registerAssetProtocol()
+  registerCharacterIpc()
   createWindow()
 
   app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.

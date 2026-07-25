@@ -2,41 +2,77 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Electron</title>
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <title>Lares</title>
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: lares:; connect-src 'self' lares:"
     />
-
-    <link href="./assets/main.css" type="text/css" rel="stylesheet" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #f4f1ea;
+      }
+      #stage {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .boot-error {
+        position: absolute;
+        top: 40%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        max-width: 80%;
+        padding: 16px 20px;
+        background: #fff3f3;
+        border: 1px solid #d66;
+        border-radius: 8px;
+        color: #922;
+        font: 14px/1.5 system-ui, sans-serif;
+        white-space: pre-wrap;
+      }
+      #dev-panel {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 260px;
+        overflow-y: auto;
+        background: rgba(20, 20, 24, 0.85);
+        color: #ddd;
+        font: 11px/1.6 monospace;
+        padding: 8px;
+      }
+      #dev-panel label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #dev-panel label span {
+        flex: 0 0 110px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #dev-panel input[type='range'] {
+        flex: 1;
+        min-width: 0;
+      }
+      #dev-panel button,
+      #dev-panel select {
+        margin: 2px 4px 6px 0;
+        font: inherit;
+      }
+    </style>
   </head>
 
   <body>
-    <div id="app">
-      <img alt="logo" class="logo" src="./assets/electron.svg" />
-      <div class="creator">Powered by electron-vite</div>
-      <div class="text">
-        Build an Electron app with
-        <span class="ts">TypeScript</span>
-      </div>
-      <p class="tip">Please try pressing <code>F12</code> to open the devTool</p>
-      <div class="actions">
-        <div class="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">Documentation</a>
-        </div>
-        <div class="action">
-          <a id="ipcHandler" target="_blank" rel="noreferrer">Send IPC</a>
-        </div>
-      </div>
-
-      <ul class="versions">
-        <li class="electron-version"></li>
-        <li class="chrome-version"></li>
-        <li class="node-version"></li>
-      </ul>
-    </div>
-
-    <script type="module" src="./src/renderer.ts"></script>
+    <canvas id="stage"></canvas>
+    <script src="./live2dcubismcore.min.js"></script>
+    <script type="module" src="./src/stage/index.ts"></script>
   </body>
 </html>

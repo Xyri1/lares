@@ -5,16 +5,23 @@ Lares is an open-source desktop companion that gives AI agents a face: a
 Live2D character (a Lar) expresses the emotional arc of the agent sessions
 it watches through continuously driven animation parameters — first-person
 emotes over MCP/local HTTP, deterministic hooks as the baseline heartbeat.
-State: pre-code — next milestone is M0 (license clearances). Stack (decided,
-not yet built): Electron + TypeScript; Live2D via pixi-live2d-display.
+State: M1a (Canvas) in progress — see sdd/slices/001-canvas/. Stack:
+Electron + TypeScript (electron-vite, pnpm); Live2D via pixi-live2d-display.
 
 ## Repo minimap
-sdd/        SDD artifacts — SPEC.md is the source of truth
+sdd/         SDD artifacts — SPEC.md is the source of truth
+src/main     brain: manifest load, lares:// asset protocol, IPC
+src/renderer body: stage/ (bootstrap, dev panel) + runtime/ (IRuntime over
+             pixi-live2d-display — nothing else imports the Live2D packages)
+scripts/     fetch-assets.mjs — downloads Core + Hiyori into gitignored paths
+characters/  committed manifests; runtime/ asset dirs are gitignored
+vendor/      gitignored — Cubism Core, fetched, never committed (D20 §6.8)
 
 ## Commands
-- `pnpm dev` — run the app
-- `pnpm test` — run tests (vitest)
-- `pnpm fetch-assets` — download Live2D assets (not yet run automatically)
+- `pnpm dev` — run the app (dev server on 127.0.0.1:5300)
+- `pnpm test` — vitest, main-side pure logic only
+- `pnpm fetch-assets` — download Live2D Core + Hiyori (run once after clone)
+- `pnpm build` — typecheck + production build
 
 ## Constitution
 Stock — applies in any repo:
