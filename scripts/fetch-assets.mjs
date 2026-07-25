@@ -18,14 +18,15 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FORCE = process.argv.includes('--force');
 
-// Live2D's official Web SDK CDN. Verified 2026-07-25: serves
-// live2dcubismcore.min.js (real JS, Live2D copyright header) with 200 OK.
-// NOTE: the "…/sdk-web/cubismcore/…" path is labeled "Cubism 5.2 (Legacy
-// URL)" in Live2D's own download.js — it serves an older Core (207155
-// bytes) than the one bundled in the current SDK release 5-r.5 (Core 5.3,
-// 228042 bytes). This versioned path is byte-identical to that 5.3 Core
-// and to the "Latest" pointer as of the pin date, so it's used instead.
-const CORE_URL = 'https://cubism.live2d.com/sdk-web/core/06/live2dcubismcore.min.js';
+// Live2D's official Web SDK CDN, versioned path. PINNED TO CORE 5.2
+// (core/05, 207155 bytes) DELIBERATELY — do not bump: Core 5.3+ (core/06)
+// has a clip-mask regression against the Cubism 4 framework port inside
+// pixi-live2d-display and all its forks; masked models (Hiyori) crash in
+// CubismRenderer_WebGL. Known upstream: guansss/pixi-live2d-display#118.
+// Verified 2026-07-26: core/05 is byte-identical to the "Cubism 5.2
+// (Legacy URL)" pointer and renders Hiyori cleanly (001-D2 spike). Bump
+// only together with a runtime that supports Cubism 5 (root D24).
+const CORE_URL = 'https://cubism.live2d.com/sdk-web/core/05/live2dcubismcore.min.js';
 const CORE_DEST = join(ROOT, 'vendor/live2d/live2dcubismcore.min.js');
 
 // Live2D org's official CubismWebSamples repo, pinned to the "5-r.5" release
