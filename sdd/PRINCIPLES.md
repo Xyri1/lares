@@ -2,7 +2,7 @@
 
 **Artifact:** PRINCIPLES · **Project:** Lares · **Status:** Living · **Date:** 2026-07-24
 
-Cross-cutting invariants. Every SPEC-delta, PLAN, and PR is checked against these; a change that violates one is wrong even if it works. Amendments require an explicit DECISIONS row.
+Cross-cutting invariants. Every slice doc set and PR is checked against these; a change that violates one is wrong even if it works. Amendments require an explicit DECISIONS row.
 
 ---
 

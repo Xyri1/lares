@@ -34,6 +34,7 @@ binding on every change:
 
 ## Where truth lives — read by task
 Touching a contract, schema, or invariant  → sdd/SPEC.md (source of truth)
+Working a milestone                        → sdd/slices/NNN-name/ (slice SPEC / DECISIONS / PLAN)
 Checking a change against invariants       → sdd/PRINCIPLES.md (P-numbers)
 Proposing or questioning a design choice   → sdd/DECISIONS.md; cite D-numbers
 Scope questions (what's next, is X in)     → sdd/ROADMAP.md

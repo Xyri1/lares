@@ -2,7 +2,7 @@
 
 **Artifact:** SPEC · **Project:** Lares · **Status:** Living · **Date:** 2026-07-24
 
-The technical contract for v1. Numeric values marked *(default)* are tunable constants in one config module; changing them is not a SPEC-delta. Changing schemas, interfaces, state machines, or scenarios is. Unit-level detail lives in SPEC-deltas attached to ROADMAP milestones.
+The technical contract for v1. Numeric values marked *(default)* are tunable constants in one config module; changing them is not a contract change. Changing schemas, interfaces, state machines, or scenarios is. Unit-level detail lives in slice SPECs (`sdd/slices/NNN-name/`, attached to ROADMAP milestones); slice SPECs refine this document and never contradict it.
 
 ---
 
