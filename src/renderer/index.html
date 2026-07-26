@@ -15,9 +15,14 @@
         overflow: hidden;
         background: #f4f1ea;
       }
-      #stage {
+      /* One canvas, one WebGL context: A/B splits it into two slots (002-D2).
+         The wrapper is what pixi sizes to, so the dev panel can reserve its
+         strip without the stages rendering underneath it. */
+      #stage-wrap {
         position: absolute;
         inset: 0;
+      }
+      #stage {
         width: 100%;
         height: 100%;
       }
@@ -71,7 +76,7 @@
   </head>
 
   <body>
-    <canvas id="stage"></canvas>
+    <div id="stage-wrap"><canvas id="stage"></canvas></div>
     <script src="./live2dcubismcore.min.js"></script>
     <script type="module" src="./src/stage/index.ts"></script>
   </body>

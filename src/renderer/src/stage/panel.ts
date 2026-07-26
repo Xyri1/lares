@@ -1,10 +1,30 @@
+import presetJson from '../../../../presets/default.json'
 import type { Live2DRuntime } from '../runtime/live2d'
+import type { SynthPreset } from '../synth/synth'
+import type { AffectDriver } from './affect'
+import { drawOverlay, xToT, type OverlayToggles } from './overlayCanvas'
+import { PRESETS } from './presets'
+
+const PANEL_WIDTH = 260 // must match #dev-panel width in index.html
+
+const GOLDENS = [
+  'smooth-build',
+  'brutal-debugging-session',
+  'long-wait-for-input',
+  'recovery-arc'
+]
 
 // 001-D5: the gate harness. Ugly on purpose; survives behind the dev flag
 // as the standing debug surface.
-export function mountPanel(runtime: Live2DRuntime): void {
+export function mountPanel(
+  runtime: Live2DRuntime,
+  driver: AffectDriver,
+  setStageB?: (on: boolean) => Promise<void>
+): void {
   const panel = document.createElement('div')
   panel.id = 'dev-panel'
+  // Reserve the panel strip so stages (both, in A/B) render beside it, not under.
+  document.getElementById('stage-wrap')!.style.right = `${PANEL_WIDTH}px`
 
   const fps = document.createElement('div')
   fps.textContent = 'fps: --'
@@ -12,6 +32,20 @@ export function mountPanel(runtime: Live2DRuntime): void {
   setInterval(() => {
     fps.textContent = `fps: ${runtime.fps.toFixed(1)}`
   }, 500)
+
+  // Scenario tab built first so its startPlay (A/B-aware, 002-D2) also backs
+  // the one-click smoke buttons; DOM order below stays as before.
+  const tab = mountScenarioTab(driver, setStageB)
+
+  // Golden replay at 1×, fixed seed (A4 smoke) — kept as one-click smoke
+  // buttons alongside the fuller scenario tab below.
+  const scenarioRow = document.createElement('div')
+  for (const name of GOLDENS) {
+    scenarioRow.appendChild(button(`play ${name}`, () => tab.startPlay(name)))
+  }
+  panel.appendChild(scenarioRow)
+
+  panel.appendChild(tab.el)
 
   // Motion playback (A7)
   const motionRow = document.createElement('div')
@@ -32,6 +66,32 @@ export function mountPanel(runtime: Live2DRuntime): void {
     })
   )
   panel.appendChild(motionRow)
+
+  // Cue preview (A6) — one button per manifest cue. Applies the cue's raw
+  // param set with a short fade, auto-reverts to each param's default after
+  // ~3s (mirrors the future preview_expression semantics; no IRuntime change
+  // needed — a second applyExpression call targeting defaults is the revert).
+  const CUE_FADE_MS = 300
+  const CUE_REVERT_MS = 3000
+  const cuesRow = document.createElement('div')
+  panel.appendChild(cuesRow)
+  void window.lares.listCues().then((cues) => {
+    for (const cue of cues) {
+      cuesRow.appendChild(
+        button(`cue: ${cue.name}`, () => {
+          runtime.applyExpression(cue.params, 1, CUE_FADE_MS)
+          setTimeout(() => {
+            const revert: Record<string, number> = {}
+            for (const id of Object.keys(cue.params)) {
+              const p = runtime.parameters().find((pp) => pp.id === id)
+              if (p) revert[id] = p.default
+            }
+            runtime.applyExpression(revert, 1, CUE_FADE_MS)
+          }, CUE_REVERT_MS)
+        })
+      )
+    }
+  })
 
   // Expression via raw param map, 500ms fade (A7). Face params if present,
   // first param otherwise — Hiyori ships no .exp3.json to reference.
@@ -73,6 +133,155 @@ export function mountPanel(runtime: Live2DRuntime): void {
   }
 
   document.body.appendChild(panel)
+}
+
+// Scenario tab (slice 002 step 6, decision 5 — a section, not a new
+// window): picker, transport, and the trace overlay canvas. Click on the
+// canvas scrubs (decision 4); values it draws come straight off
+// driver.buffer(), the same objects that land in the trace file.
+const REPLAY_SEED = 42
+const OVERLAY_WIDTH = 460
+const OVERLAY_HEIGHT = 140
+
+function mountScenarioTab(
+  driver: AffectDriver,
+  setStageB?: (on: boolean) => Promise<void>
+): { el: HTMLElement; startPlay: (name: string) => void } {
+  const section = document.createElement('fieldset')
+  const legend = document.createElement('legend')
+  legend.textContent = 'scenario'
+  section.appendChild(legend)
+
+  const picker = document.createElement('select')
+  for (const name of GOLDENS) {
+    const opt = document.createElement('option')
+    opt.value = name
+    opt.textContent = name
+    picker.appendChild(opt)
+  }
+  section.appendChild(picker)
+
+  // A/B row (002-D2): toggle loads the second Hiyori, widens the window and
+  // reveals slot B; per-stage preset pickers choose each stage's mapping.
+  // Transport stays global — both stages get the same ticks.
+  let abOn = false
+  const presetA = presetPicker('default')
+  const presetB = presetPicker('expressive')
+  const abRow = document.createElement('div')
+  const abToggle = checkbox('A/B', false, (on) => {
+    void (setStageB?.(on) ?? Promise.resolve())
+      .then(() => {
+        abOn = on
+        presetB.disabled = !on
+        return window.lares.setAbMode(on)
+      })
+      .catch((err: unknown) => {
+        console.error(`[lares] A/B stage B failed to load: ${String(err)}`)
+        abToggle.querySelector('input')!.checked = false
+        abOn = false
+      })
+  })
+  presetB.disabled = true
+  abRow.append(abToggle, labelled('A:', presetA), labelled('B:', presetB))
+  section.appendChild(abRow)
+
+  const startPlay = (name: string): void =>
+    driver.play(name, REPLAY_SEED, 1, {
+      A: presetA.value,
+      ...(abOn ? { B: presetB.value } : {})
+    })
+
+  const transportRow = document.createElement('div')
+  transportRow.append(
+    button('play', () => startPlay(picker.value)),
+    button('pause', () => driver.pause()),
+    button('resume', () => driver.resume()),
+    button('1x', () => driver.setSpeed(1)),
+    button('8x', () => driver.setSpeed(8)),
+    button('64x', () => driver.setSpeed(64))
+  )
+  section.appendChild(transportRow)
+
+  const toggles: OverlayToggles = {
+    eValence: true,
+    eArousal: true,
+    mValence: false,
+    mArousal: false,
+    synthParams: new Set()
+  }
+  const togglesRow = document.createElement('div')
+  togglesRow.append(
+    checkbox('E.valence', toggles.eValence, (v) => (toggles.eValence = v)),
+    checkbox('E.arousal', toggles.eArousal, (v) => (toggles.eArousal = v)),
+    checkbox('M.valence', toggles.mValence, (v) => (toggles.mValence = v)),
+    checkbox('M.arousal', toggles.mArousal, (v) => (toggles.mArousal = v))
+  )
+  for (const p of (presetJson as SynthPreset).params) {
+    togglesRow.appendChild(
+      checkbox(p.id, false, (v) => {
+        if (v) toggles.synthParams.add(p.id)
+        else toggles.synthParams.delete(p.id)
+      })
+    )
+  }
+  section.appendChild(togglesRow)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = OVERLAY_WIDTH
+  canvas.height = OVERLAY_HEIGHT
+  canvas.style.background = '#111'
+  canvas.style.cursor = 'crosshair'
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect()
+    const t = xToT(e.clientX - rect.left, canvas.width, driver.buffer().endMs)
+    driver.seek(t)
+  })
+  section.appendChild(canvas)
+
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    const draw = (): void => {
+      drawOverlay(ctx, canvas.width, canvas.height, driver.buffer(), toggles)
+      requestAnimationFrame(draw)
+    }
+    requestAnimationFrame(draw)
+  }
+
+  // ponytail: overlay draws stage A only — per-stage curves are M2b's judging
+  // problem, and the written traces already carry both stages.
+  return { el: section, startPlay }
+}
+
+function presetPicker(initial: string): HTMLSelectElement {
+  const el = document.createElement('select')
+  for (const name of Object.keys(PRESETS)) {
+    const opt = document.createElement('option')
+    opt.value = name
+    opt.textContent = name
+    el.appendChild(opt)
+  }
+  el.value = initial
+  return el
+}
+
+function labelled(text: string, control: HTMLElement): HTMLLabelElement {
+  const el = document.createElement('label')
+  const span = document.createElement('span')
+  span.textContent = text
+  el.append(span, control)
+  return el
+}
+
+function checkbox(label: string, initial: boolean, onChange: (v: boolean) => void): HTMLLabelElement {
+  const el = document.createElement('label')
+  const input = document.createElement('input')
+  input.type = 'checkbox'
+  input.checked = initial
+  input.addEventListener('change', () => onChange(input.checked))
+  const span = document.createElement('span')
+  span.textContent = label
+  el.append(input, span)
+  return el
 }
 
 function button(text: string, onClick: () => void): HTMLButtonElement {

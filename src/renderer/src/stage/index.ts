@@ -1,4 +1,7 @@
+import presetJson from '../../../../presets/default.json'
 import { Live2DRuntime } from '../runtime/live2d'
+import type { SynthPreset } from '../synth/synth'
+import { createAffectDriver } from './affect'
 import { mountPanel } from './panel'
 
 function showError(message: string): void {
@@ -33,9 +36,32 @@ async function boot(): Promise<void> {
 
   window.lares.reportInventory(runtime.parameters()) // body:inventory (root SPEC §8)
 
+  const driver = createAffectDriver(runtime, presetJson as SynthPreset)
+
   if (import.meta.env.DEV) {
     window.__runtime = runtime // console access for A2/A4 gate checks
-    mountPanel(runtime)
+    window.__driver = driver
+
+    // Second Hiyori loads lazily on the first A/B toggle (002-D2) — normal
+    // mode never pays for it — into the SAME pixi app/context as stage A, then
+    // just toggles visibility. Idempotent; resets on failure so it can retry.
+    let stageB: Promise<Live2DRuntime> | null = null
+    const setStageB = (on: boolean): Promise<void> => {
+      if (!on) return Promise.resolve(stageB?.then((rb) => rb.setActive(false)) ?? undefined)
+      stageB ??= (async () => {
+        const rb = new Live2DRuntime(runtime)
+        await rb.load(character.live2d.model)
+        window.__runtimeB = rb
+        driver.addStage('B', rb)
+        return rb
+      })().catch((err: unknown) => {
+        stageB = null
+        throw err
+      })
+      return stageB.then((rb) => rb.setActive(true))
+    }
+
+    mountPanel(runtime, driver, setStageB)
   }
 }
 

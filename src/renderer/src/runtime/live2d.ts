@@ -42,17 +42,39 @@ export class Live2DRuntime implements IRuntime {
     startedAt: number
   }
 
-  constructor(view: HTMLCanvasElement) {
-    this.app = new Application({
-      view,
-      backgroundAlpha: 0,
-      antialias: true,
-      autoDensity: true,
-      resolution: window.devicePixelRatio || 1,
-      resizeTo: window
-    })
-    this.app.ticker.maxFPS = 30 // root SPEC §10: flat cap; verified by the panel readout
+  // Pass a canvas to own a new pixi Application; pass an existing runtime to
+  // SHARE its Application, context and ticker (002-D2 A/B). Two WebGL contexts
+  // cannot share pixi's URL-keyed texture cache — one context steals the other's
+  // textures and a stage goes blank — so both Hiyoris live in one context and
+  // split the screen into slots.
+  private peers: Live2DRuntime[]
+  private active = true
+
+  constructor(target: HTMLCanvasElement | Live2DRuntime) {
+    if (target instanceof Live2DRuntime) {
+      this.app = target.app
+      this.peers = target.peers
+      this.peers.push(this)
+    } else {
+      this.app = new Application({
+        view: target,
+        backgroundAlpha: 0,
+        antialias: true,
+        autoDensity: true,
+        resolution: window.devicePixelRatio || 1,
+        resizeTo: target.parentElement ?? window
+      })
+      this.app.ticker.maxFPS = 30 // root SPEC §10: flat cap; verified by the panel readout
+      this.peers = [this]
+    }
     this.app.ticker.add(this.tick, this, UPDATE_PRIORITY.LOW)
+  }
+
+  /** Show/hide this stage and re-split the screen between active stages. */
+  setActive(on: boolean): void {
+    this.active = on
+    if (this.model) this.model.visible = on
+    for (const p of this.peers) p.fit()
   }
 
   // Measured from processed ticks — pixi's Ticker.FPS reports raw rAF cadence
@@ -77,6 +99,12 @@ export class Live2DRuntime implements IRuntime {
 
   async load(modelPath: string): Promise<void> {
     this.model = await Live2DModel.from(modelPath, { autoUpdate: false, autoInteract: false })
+    // Synth owns breath/blink/sway (slice 002 step 4): disable the library's
+    // autobreath/autoblink so per-frame setParams isn't fighting them. Both
+    // fields are optional-chained in the library's update path.
+    const internal = this.model.internalModel as unknown as { breath?: unknown; eyeBlink?: unknown }
+    internal.breath = undefined
+    internal.eyeBlink = undefined
     this.app.stage.addChild(this.model)
     const params = this.core()._model.parameters
     this.inventory = Array.from({ length: params.count }, (_, i) => ({
@@ -87,8 +115,14 @@ export class Live2DRuntime implements IRuntime {
       default: params.defaultValues[i]
     }))
     this.paramIndex = new Map(this.inventory.map((p, i) => [p.id, i]))
-    this.fit()
-    window.addEventListener('resize', () => this.fit())
+    for (const p of this.peers) p.fit() // a joining stage re-splits the screen
+    // app.resize() forces pixi's measurement NOW (its own listener defers to
+    // the next rAF) so fit() reads the fresh screen size — matters for the
+    // single programmatic resize the A/B toggle produces.
+    window.addEventListener('resize', () => {
+      this.app.resize()
+      this.fit()
+    })
   }
 
   parameters(): ParamInfo[] {
@@ -156,13 +190,18 @@ export class Live2DRuntime implements IRuntime {
     if (dirty) core.update()
   }
 
+  // Each active stage gets an equal horizontal slot of the shared canvas;
+  // with one stage that's the whole window, i.e. pre-A/B behavior.
   private fit(): void {
-    if (!this.model) return
+    if (!this.model || !this.active) return
     const { width, height } = this.app.screen
+    const shown = this.peers.filter((p) => p.active)
+    const slotWidth = width / shown.length
+    const slotX = slotWidth * shown.indexOf(this)
     this.model.scale.set(1)
-    const scale = Math.min(width / this.model.width, height / this.model.height)
+    const scale = Math.min(slotWidth / this.model.width, height / this.model.height)
     this.model.scale.set(scale)
-    this.model.x = (width - this.model.width) / 2
+    this.model.x = slotX + (slotWidth - this.model.width) / 2
     this.model.y = (height - this.model.height) / 2
   }
 }

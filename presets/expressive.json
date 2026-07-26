@@ -1,0 +1,20 @@
+{
+  "params": [
+    { "id": "ParamBrowLY", "source": "valence", "gain": 1.4, "offset": 0.1 },
+    { "id": "ParamBrowRY", "source": "valence", "gain": 1.4, "offset": 0.1 },
+    { "id": "ParamBrowLForm", "source": "valence", "gain": 1.1, "offset": 0.1 },
+    { "id": "ParamBrowRForm", "source": "valence", "gain": 1.1, "offset": 0.1 },
+    { "id": "ParamMouthForm", "source": "valence", "gain": 1.8, "offset": 0.2 },
+    { "id": "ParamMouthOpenY", "source": "arousal", "gain": 0.6, "offset": 0.05 }
+  ],
+  "idle": {
+    "breath": { "id": "ParamBreath", "basePeriodMs": 3000, "amplitude": 1 },
+    "blink": {
+      "ids": ["ParamEyeLOpen", "ParamEyeROpen"],
+      "baseIntervalMs": 2400,
+      "durationMs": 140,
+      "valenceGain": 0.3
+    },
+    "sway": { "id": "ParamBodyAngleX", "baseAmplitude": 10, "periodMs": 3600 }
+  }
+}
