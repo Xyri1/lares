@@ -59,9 +59,26 @@ export function createStepper(
         }
       }
       engine.tick(t)
-      return engine.snapshot()
+      return resolvePreempt(engine, engine.snapshot())
     }
   }
+}
+
+// The engine's synthetic preempt entry carries the BASELINE STATE name
+// ('awaiting_input' / 'error'), which is not a cue — a body looking it up in
+// the character's cue table finds nothing and shows no face. Root §4 says the
+// engine picks an expression when it needs one, and root §8 says cue names are
+// what cross the seam, so the pick happens here, in the brain, using the
+// engine's own nearest-cue-with-hysteresis selection. Downstream (trace + feed
+// alike) sees cue names only.
+const PREEMPT_NAMES: ReadonlySet<string> = new Set(['awaiting_input', 'error'])
+
+function resolvePreempt(engine: AffectEngine, snap: AffectSnapshot): AffectSnapshot {
+  const [head, ...rest] = snap.expressionStack
+  if (!head || !PREEMPT_NAMES.has(head.cueOrFreeform)) return snap
+  const cue = engine.selectCue()
+  if (cue === null) return snap
+  return { ...snap, expressionStack: [{ ...head, cueOrFreeform: cue }, ...rest] }
 }
 
 /** One engine trace line — the byte format A3's golden runs compare. */

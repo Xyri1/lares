@@ -102,9 +102,23 @@ export class Live2DRuntime implements IRuntime {
     // Synth owns breath/blink/sway (slice 002 step 4): disable the library's
     // autobreath/autoblink so per-frame setParams isn't fighting them. Both
     // fields are optional-chained in the library's update path.
-    const internal = this.model.internalModel as unknown as { breath?: unknown; eyeBlink?: unknown }
+    const internal = this.model.internalModel as unknown as {
+      breath?: unknown
+      eyeBlink?: unknown
+      on(event: string, fn: () => void): void
+    }
     internal.breath = undefined
     internal.eyeBlink = undefined
+    // Our parameter writes have to land INSIDE the model's own update pass, not
+    // from the pixi ticker around it. Cubism4InternalModel.update() runs at
+    // render time as: motion → [afterMotionUpdate] → physics → pose →
+    // coreModel.update() → draw → loadParameters(). The auto-started Idle
+    // motion group rewrites every parameter it owns at the top of that pass, so
+    // anything written from the ticker (which runs after render) was overwritten
+    // before it was ever drawn. Writing on afterMotionUpdate puts us exactly
+    // where Cubism expects an expression layer: on top of the motion, under
+    // physics and pose.
+    internal.on('afterMotionUpdate', () => this.writeParams())
     this.app.stage.addChild(this.model)
     const params = this.core()._model.parameters
     this.inventory = Array.from({ length: params.count }, (_, i) => ({
@@ -138,6 +152,21 @@ export class Live2DRuntime implements IRuntime {
     }
   }
 
+  // setParams is a sticky merge and applyExpression pins until replaced, so a
+  // parameter the affect layer once touched never goes back to the model's own
+  // motion. This hands everything back at once: defaults written straight to
+  // the core (a released id would otherwise keep its last value — nothing in
+  // the Cubism pipeline restores defaults), then both layers dropped.
+  // ponytail: all 70 params, not just the touched ones — a debug button can
+  // afford one extra loop, and there is no bookkeeping to get wrong.
+  resetParams(): void {
+    if (!this.model) return
+    const core = this.core()
+    this.inventory.forEach((p, i) => core.setParameterValueByIndex(i, p.default, 1))
+    this.overrides.clear()
+    this.expression = undefined
+  }
+
   applyExpression(ref: string | Record<string, number>, weight: number, fadeMs: number): void {
     if (typeof ref === 'string') {
       // Hiyori ships no .exp3.json; the ref form lands with the first model that does (A7).
@@ -167,12 +196,16 @@ export class Live2DRuntime implements IRuntime {
       this.fpsWindowStart = now
     }
     if (!this.model) return
+    // Feeds the model's delta budget; the actual update (and our writeParams
+    // hook inside it) runs when pixi renders the model.
     this.model.update(this.app.ticker.deltaMS)
+  }
+
+  // Called from inside the model's update pass — see the hook in load().
+  private writeParams(): void {
     const core = this.core()
-    let dirty = false
     for (const [id, o] of this.overrides) {
       core.setParameterValueByIndex(this.paramIndex.get(id)!, o.value, o.weight)
-      dirty = true
     }
     if (this.expression) {
       const { params, weight, fadeMs, startedAt } = this.expression
@@ -182,12 +215,8 @@ export class Live2DRuntime implements IRuntime {
         if (i === undefined) continue
         const p = this.inventory[i]
         core.setParameterValueByIndex(i, clamp(value, p.min, p.max), weight * fade)
-        dirty = true
       }
     }
-    // Writes after the model's own update need an explicit propagate to reach
-    // the mesh (001-D2 spike finding).
-    if (dirty) core.update()
   }
 
   // Each active stage gets an equal horizontal slot of the shared canvas;

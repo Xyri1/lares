@@ -1,10 +1,14 @@
 import type { IRuntime } from '../runtime/iface'
 import { createSynth, mulberry32, type Synth, type SynthFeed, type SynthPreset } from '../synth/synth'
+import { composeFrame, initialFade, type CueParams, type FadeState, type StackEntry } from './compose'
 import { PRESETS } from './presets'
 import { driveTick, frameToLine, replayHistory } from './synthReplay'
 import { createTraceBuffer, pushEngine, resetBuffer, type TraceBuffer } from './traceBuffer'
 
 export type StageId = 'A' | 'B'
+
+/** How long a panel cue preview holds before it fades back out. */
+const PREVIEW_MS = 3000
 
 export interface AffectDriver {
   /** Start a golden replay at the given seed/speed (default 1×). No-op while
@@ -20,15 +24,33 @@ export interface AffectDriver {
   buffer(stage?: StageId): TraceBuffer
   /** Register stage B once its runtime (second Hiyori) has loaded (002-D2). */
   addStage(id: StageId, runtime: IRuntime): void
+  /** Panel cue preview: push a transient entry in front of the live
+   * expression stack. Goes through the same compositor playback uses, so
+   * what a preview shows is exactly what a scenario emote will show. */
+  preview(cue: string, durationMs?: number): void
+  /** Debug: back to a fresh-boot face. Pauses any run, drops the expression
+   * stack / preview / in-flight fades, and releases every parameter the
+   * affect layer has taken so the model's own idle motion owns them again.
+   * Leaves the trace buffer alone — the overlay is history, not state. */
+  reset(): void
 }
+
+/** What a stage's synth reads, plus the expression stack the compositor
+ * reads — one object per feed message, so both stay in lockstep. */
+type StageFeed = SynthFeed & { expressionStack?: readonly StackEntry[] }
 
 // Per-stage state: own runtime, own synth instances, own rng stream (one
 // mulberry32 per stage seeded with the SAME seed — stages never consume each
-// other's random sequence), own trace buffer.
+// other's random sequence), own compositor fade state, own trace buffer.
 interface StageState {
   runtime: IRuntime
-  feed: SynthFeed
+  /** Parameter defaults of this stage's model — the compositor's floor. */
+  defaults: Record<string, number>
+  /** Every id this stage has ever written — see `write()`. */
+  driven: Set<string>
+  feed: StageFeed
   live: Synth
+  fade: FadeState
   replay: { synth: Synth; preset: SynthPreset; seed: number; lines: string[] } | null
   latest: Record<string, number> | null
   trace: TraceBuffer
@@ -46,15 +68,22 @@ interface StageState {
 //                             (seed)        thirds (t + i·100/3), computed on
 //                                           tick ARRIVAL — rAF only presents
 //                                           the latest computed frame (002-D3)
-export function createAffectDriver(runtime: IRuntime, preset: SynthPreset): AffectDriver {
+export function createAffectDriver(
+  runtime: IRuntime,
+  preset: SynthPreset,
+  cues: CueParams
+): AffectDriver {
   // Rest-point feed so a Lar idles before any brain tick arrives.
-  const restFeed = (): SynthFeed => ({ E: { valence: 0.1, arousal: 0.25 } })
+  const restFeed = (): StageFeed => ({ E: { valence: 0.1, arousal: 0.25 } })
   const idlePreset = preset
 
   const makeStage = (rt: IRuntime): StageState => ({
     runtime: rt,
+    defaults: Object.fromEntries(rt.parameters().map((p) => [p.id, p.default])),
+    driven: new Set<string>(),
     feed: restFeed(),
     live: createSynth(idlePreset, Math.random),
+    fade: initialFade(),
     replay: null,
     latest: null,
     trace: createTraceBuffer()
@@ -65,13 +94,38 @@ export function createAffectDriver(runtime: IRuntime, preset: SynthPreset): Affe
   const replaying = (): [StageId, StageState][] =>
     (Object.entries(stages) as [StageId, StageState][]).filter(([, st]) => st.replay)
 
+  // The single composition path (compose.ts): synth output in, screen values
+  // out, the stage's cross-fade state carried across frames. Every driven
+  // parameter — replay, live idle, and panel preview alike — passes through
+  // here exactly once per frame.
+  const compose = (
+    st: StageState,
+    params: Record<string, number>,
+    stack: readonly StackEntry[],
+    tMs: number
+  ): Record<string, number> => {
+    const r = composeFrame(cues, params, st.defaults, stack, tMs, st.fade)
+    st.fade = r.state
+    return r.params
+  }
+
+  const composer =
+    (st: StageState) =>
+    (params: Record<string, number>, feed: StageFeed, tMs: number): Record<string, number> =>
+      compose(st, params, feed.expressionStack ?? [], tMs)
+
+  // Transient panel preview, stage A only. ponytail: ignored while a replay
+  // runs — the replay's composed output must stay a pure function of the feed
+  // and tick time (002-D3), and a click is neither.
+  let preview: StackEntry | null = null
+
   window.lares.onAffectUpdate((f) => {
     const st = stages[f.stageId as StageId]
     if (!st) return
     st.feed = f
     if (!st.replay) return
     pushEngine(st.trace, f)
-    for (const frame of driveTick(st.replay.synth, f, f.tick)) {
+    for (const frame of driveTick(st.replay.synth, f, f.tick, composer(st))) {
       st.replay.lines.push(frameToLine(frame))
       st.trace.synth.push(frame)
       st.latest = frame.params
@@ -89,7 +143,14 @@ export function createAffectDriver(runtime: IRuntime, preset: SynthPreset): Affe
       const rp = st.replay!
       resetBuffer(st.trace)
       for (const f of mine) pushEngine(st.trace, f)
-      const replayed = replayHistory(() => createSynth(rp.preset, mulberry32(rp.seed)), mine)
+      // Fresh synth AND fresh compositor — both are stateful, both must
+      // restart at tick 0 for the replayed frames to land byte-identical.
+      st.fade = initialFade()
+      const replayed = replayHistory(
+        () => createSynth(rp.preset, mulberry32(rp.seed)),
+        mine,
+        () => composer(st)
+      )
       rp.synth = replayed.synth
       rp.lines = replayed.frames.map(frameToLine)
       st.trace.synth.push(...replayed.frames)
@@ -108,21 +169,47 @@ export function createAffectDriver(runtime: IRuntime, preset: SynthPreset): Affe
       st.replay = null
       st.latest = null
       st.live = createSynth(idlePreset, Math.random) // fresh idle state after replay
+      st.fade = initialFade()
     }
     window.lares.sendSynthTrace(linesByStage)
   })
 
+  // IRuntime.setParams is a sticky merge: an id stops being written but keeps
+  // its last value forever. Composed frames drop a cue's params once it has
+  // faded out, and rAF may skip the frame that carried the resting value
+  // (badly so at 64×, or whenever the window is occluded and rAF throttles) —
+  // so a released param could stay pinned mid-fade. Every id the affect layer
+  // has ever driven is therefore refilled with its resting value when the
+  // frame omits it. Presentation only: the trace keeps the composed frame.
+  const write = (st: StageState, frame: Record<string, number>): void => {
+    let out = frame
+    for (const id of st.driven) {
+      if (id in out) continue
+      if (out === frame) out = { ...frame }
+      out[id] = st.defaults[id] ?? 0
+    }
+    for (const id of Object.keys(out)) st.driven.add(id)
+    st.runtime.setParams(out)
+  }
+
   const present = (): void => {
-    for (const st of Object.values(stages)) {
+    const now = performance.now()
+    for (const [id, st] of Object.entries(stages) as [StageId, StageState][]) {
       if (!st) continue
       if (st.replay) {
-        if (st.latest) st.runtime.setParams(st.latest)
+        // Replay frames were composed on tick arrival, on the scenario clock.
+        if (st.latest) write(st, st.latest)
       } else {
-        st.runtime.setParams(st.live.computeFrame(st.feed, performance.now()))
+        const stack = previewed(id, st.feed.expressionStack ?? [])
+        write(st, compose(st, st.live.computeFrame(st.feed, now), stack, now))
       }
     }
     requestAnimationFrame(present)
   }
+
+  const previewed = (id: StageId, stack: readonly StackEntry[]): readonly StackEntry[] =>
+    preview && id === 'A' ? [preview, ...stack] : stack
+
   requestAnimationFrame(present)
 
   return {
@@ -148,8 +235,10 @@ export function createAffectDriver(runtime: IRuntime, preset: SynthPreset): Affe
           seed,
           lines: []
         }
+        st.fade = initialFade()
         resetBuffer(st.trace)
       }
+      preview = null
       void window.lares.playScenario(name, seed, speed, presets).then((res) => {
         if (!res.ok) {
           console.error(`[lares] scenario:play refused: ${res.error}`)
@@ -180,6 +269,25 @@ export function createAffectDriver(runtime: IRuntime, preset: SynthPreset): Affe
     },
     addStage(id: StageId, rt: IRuntime): void {
       if (!stages[id]) stages[id] = makeStage(rt)
+    },
+    reset(): void {
+      void window.lares.pauseScenario() // no-op (and a refused promise) if idle
+      preview = null
+      for (const st of Object.values(stages)) {
+        if (!st) continue
+        st.latest = null // a paused replay must stop re-driving on every rAF
+        st.feed = restFeed()
+        st.fade = initialFade()
+        st.driven.clear()
+        st.runtime.resetParams()
+      }
+    },
+    preview(cue: string, durationMs = PREVIEW_MS): void {
+      if (!cues[cue]) {
+        console.error(`[lares] unknown cue "${cue}"`)
+        return
+      }
+      preview = { cueOrFreeform: cue, weight: 1, expiryMs: performance.now() + durationMs }
     }
   }
 }
