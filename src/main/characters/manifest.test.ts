@@ -53,4 +53,47 @@ describe('loadCharacter', () => {
     expect(result).toMatchObject({ ok: false })
     if (!result.ok) expect(result.error).toContain('not valid JSON')
   })
+
+  it('defaults expressions to empty when the block is absent', () => {
+    const result = loadCharacter(writePackage(VALID))
+    expect(result).toMatchObject({ ok: true, expressions: {} })
+  })
+
+  it('accepts expressions and cue param sets, and reports them back', () => {
+    const manifest = {
+      ...VALID,
+      expressions: { neutral: { valence: 0.1, arousal: 0.25 } },
+      renderers: {
+        live2d: {
+          ...VALID.renderers.live2d,
+          cues: { neutral: { params: { ParamMouthForm: 0 } } }
+        }
+      }
+    }
+    const result = loadCharacter(writePackage(manifest))
+    expect(result).toMatchObject({ ok: true })
+    if (result.ok) expect(result.expressions).toEqual({ neutral: { valence: 0.1, arousal: 0.25 } })
+  })
+
+  it('rejects an out-of-range expression valence', () => {
+    const manifest = { ...VALID, expressions: { neutral: { valence: 1.5, arousal: 0.25 } } }
+    const result = loadCharacter(writePackage(manifest))
+    expect(result).toMatchObject({ ok: false })
+    if (!result.ok) expect(result.error).toContain('valence')
+  })
+
+  it('rejects a non-numeric cue param value', () => {
+    const manifest = {
+      ...VALID,
+      renderers: {
+        live2d: {
+          ...VALID.renderers.live2d,
+          cues: { neutral: { params: { ParamMouthForm: 'wide' } } }
+        }
+      }
+    }
+    const result = loadCharacter(writePackage(manifest))
+    expect(result).toMatchObject({ ok: false })
+    if (!result.ok) expect(result.error).toContain('params')
+  })
 })
