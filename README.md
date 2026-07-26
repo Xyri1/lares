@@ -1,29 +1,35 @@
-# lares-app
+# Lares
 
-A minimal Electron application with TypeScript
+Open-source desktop companion that gives AI agents a face. A Live2D character (a **Lar**) expresses the emotional arc of the agent sessions it watches — thinking, stuck, recovering — through continuously driven animation, not pre-baked clips.
 
-## Project Setup
+Agents report feelings in the first person (MCP / local HTTP). Deterministic hooks supply the baseline heartbeat. Nothing leaves the machine.
 
-### Install
+**Status:** M1a (Canvas) in progress — see [`sdd/slices/001-canvas/`](sdd/slices/001-canvas/).
 
-```bash
-$ pnpm install
-```
+**Stack:** Electron + TypeScript (electron-vite, pnpm); Live2D via pixi-live2d-display.
 
-### Development
+## Setup
 
 ```bash
-$ pnpm dev
+pnpm install
+pnpm fetch-assets   # once after clone — Cubism Core + Hiyori sample
+pnpm dev            # Electron app; renderer on 127.0.0.1:5300
 ```
 
-### Build
+## Commands
 
-```bash
-$ pnpm build
-```
+| Command | What it does |
+| --- | --- |
+| `pnpm dev` | Run the app in development |
+| `pnpm build` | Typecheck + production build |
+| `pnpm test` | Vitest (main-side pure logic) |
+| `pnpm fetch-assets` | Download Live2D Core + Hiyori into gitignored paths |
 
-### Test
+## Docs
 
-```bash
-$ pnpm test
-```
+Product and design truth lives under [`sdd/`](sdd/):
+
+- [`sdd/PRD.md`](sdd/PRD.md) — why this product exists
+- [`sdd/SPEC.md`](sdd/SPEC.md) — contracts and invariants
+- [`sdd/ROADMAP.md`](sdd/ROADMAP.md) — what's next
+- [`AGENTS.md`](AGENTS.md) — repo map for contributors and coding agents
