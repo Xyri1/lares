@@ -36,7 +36,12 @@ async function boot(): Promise<void> {
 
   window.lares.reportInventory(runtime.parameters()) // body:inventory (root SPEC §8)
 
-  const driver = createAffectDriver(runtime, presetJson as SynthPreset)
+  // Cue name → Live2D param set. The feed carries cue NAMES only (root §8);
+  // resolving them to parameters is body-side knowledge and stops here (P6).
+  const cues = await window.lares.listCues()
+  const cueParams = Object.fromEntries(cues.map((c) => [c.name, c.params]))
+
+  const driver = createAffectDriver(runtime, presetJson as SynthPreset, cueParams)
 
   if (import.meta.env.DEV) {
     window.__runtime = runtime // console access for A2/A4 gate checks
@@ -61,7 +66,7 @@ async function boot(): Promise<void> {
       return stageB.then((rb) => rb.setActive(true))
     }
 
-    mountPanel(runtime, driver, setStageB)
+    mountPanel(runtime, driver, cues, setStageB)
   }
 }
 

@@ -19,6 +19,7 @@ const GOLDENS = [
 export function mountPanel(
   runtime: Live2DRuntime,
   driver: AffectDriver,
+  cues: CueListEntry[],
   setStageB?: (on: boolean) => Promise<void>
 ): void {
   const panel = document.createElement('div')
@@ -67,31 +68,23 @@ export function mountPanel(
   )
   panel.appendChild(motionRow)
 
-  // Cue preview (A6) — one button per manifest cue. Applies the cue's raw
-  // param set with a short fade, auto-reverts to each param's default after
-  // ~3s (mirrors the future preview_expression semantics; no IRuntime change
-  // needed — a second applyExpression call targeting defaults is the revert).
-  const CUE_FADE_MS = 300
-  const CUE_REVERT_MS = 3000
+  // Cue preview (A6) — one button per manifest cue. Pushes a transient entry
+  // in front of the live expression stack; the compositor fades it in, holds,
+  // and fades it back out on expiry. Same path a scenario emote takes, so the
+  // preview is the truth about what playback will look like.
   const cuesRow = document.createElement('div')
+  for (const cue of cues) {
+    cuesRow.appendChild(button(`cue: ${cue.name}`, () => driver.preview(cue.name)))
+  }
+  // Clean slate without restarting the app — the affect layer's writes are
+  // sticky, so tuning sessions otherwise accumulate pinned parameters.
+  cuesRow.appendChild(
+    button('reset', () => {
+      stopSweep()
+      driver.reset()
+    })
+  )
   panel.appendChild(cuesRow)
-  void window.lares.listCues().then((cues) => {
-    for (const cue of cues) {
-      cuesRow.appendChild(
-        button(`cue: ${cue.name}`, () => {
-          runtime.applyExpression(cue.params, 1, CUE_FADE_MS)
-          setTimeout(() => {
-            const revert: Record<string, number> = {}
-            for (const id of Object.keys(cue.params)) {
-              const p = runtime.parameters().find((pp) => pp.id === id)
-              if (p) revert[id] = p.default
-            }
-            runtime.applyExpression(revert, 1, CUE_FADE_MS)
-          }, CUE_REVERT_MS)
-        })
-      )
-    }
-  })
 
   // Expression via raw param map, 500ms fade (A7). Face params if present,
   // first param otherwise — Hiyori ships no .exp3.json to reference.
@@ -291,7 +284,17 @@ function button(text: string, onClick: () => void): HTMLButtonElement {
   return el
 }
 
+// The sweep owns a rAF loop; the handle is what lets reset (and a second
+// sweep click) stop it instead of leaving it driving params forever.
+let sweepRaf = 0
+
+function stopSweep(): void {
+  if (sweepRaf) cancelAnimationFrame(sweepRaf)
+  sweepRaf = 0
+}
+
 function sweepAll(runtime: Live2DRuntime, progress: HTMLElement): void {
+  stopSweep()
   const params = runtime.parameters()
   const PER_PARAM_MS = 400
   let i = 0
@@ -299,6 +302,7 @@ function sweepAll(runtime: Live2DRuntime, progress: HTMLElement): void {
   const step = (): void => {
     const p = params[i]
     if (!p) {
+      sweepRaf = 0
       progress.textContent = `sweep done (${params.length} params)`
       return
     }
@@ -314,7 +318,7 @@ function sweepAll(runtime: Live2DRuntime, progress: HTMLElement): void {
       runtime.setParams({ [p.id]: v })
       progress.textContent = `sweep ${i + 1}/${params.length}: ${p.id}`
     }
-    requestAnimationFrame(step)
+    sweepRaf = requestAnimationFrame(step)
   }
-  requestAnimationFrame(step)
+  sweepRaf = requestAnimationFrame(step)
 }
