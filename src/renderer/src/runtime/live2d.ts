@@ -10,6 +10,11 @@ install(PIXI)
 
 Live2DModel.registerTicker(Ticker)
 
+// Default Lar size (root SPEC §7): the model renders 400 logical px tall —
+// the normative judging size for all of M2b. autoDensity keeps it crisp on
+// HiDPI. Smaller windows still fit-to-window rather than crop.
+const DEFAULT_LAR_HEIGHT = 400
+
 // Raw Cubism Core parameter struct, reached through documented internals
 // (001-D2 spike). Parallel arrays indexed 0..count-1.
 interface CoreParamStruct {
@@ -228,7 +233,10 @@ export class Live2DRuntime implements IRuntime {
     const slotWidth = width / shown.length
     const slotX = slotWidth * shown.indexOf(this)
     this.model.scale.set(1)
-    const scale = Math.min(slotWidth / this.model.width, height / this.model.height)
+    const scale = Math.min(
+      slotWidth / this.model.width,
+      Math.min(height, DEFAULT_LAR_HEIGHT) / this.model.height
+    )
     this.model.scale.set(scale)
     this.model.x = slotX + (slotWidth - this.model.width) / 2
     this.model.y = (height - this.model.height) / 2
