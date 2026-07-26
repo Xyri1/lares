@@ -90,7 +90,7 @@ Identity and `expressions` are renderer-neutral (P5). Import validation: schema 
 
 ## 7. Scenario player
 
-Scenario file: `{ name, timeScale, events: [{ at_ms, envelope | emote }] }`. Player injects through the same ingress path as real traffic (in-process, past the §2 origin checks). Golden scenarios ship in-repo: `brutal-debugging-session`, `smooth-build`, `long-wait-for-input`, `recovery-arc`. UI: pick scenario, scrub, speed 1×/8×/64×, record (export via OS screen capture guidance, no built-in encoder in v1).
+Scenario file: `{ name, timeScale, events: [{ at_ms, envelope | emote }] }`. Player injects through the same ingress path as real traffic (in-process, past the §2 origin checks). Golden scenarios ship in-repo: `brutal-debugging-session`, `smooth-build`, `long-wait-for-input`, `recovery-arc`. UI: pick scenario, scrub, speed 1×/8×/64×, record (export via OS screen capture guidance, no built-in encoder in v1). Default Lar size — the normative judging size in §9 (S1, S5) — is the model rendered 400 logical px tall, DPI-scaled.
 
 ## 8. Interfaces (the P6 seam)
 
