@@ -1,0 +1,427 @@
+{
+  "name": "brutal-debugging-session",
+  "timeScale": 1,
+  "events": [
+    {
+      "at_ms": 0,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "SessionStart",
+          "source": "startup",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 5000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "UserPromptSubmit",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "prompt": "Run 'exit 1' and tell me the exit code, then read does-not-exist.txt. Once you've sorted out the errors, fix build.sh and confirm it runs, then read the log back.",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 15000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "exit 1",
+            "description": "Run exit 1 to test exit code handling"
+          },
+          "tool_use_id": "toolu-1",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 30650,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PostToolUseFailure",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "exit 1",
+            "description": "Run exit 1 to test exit code handling"
+          },
+          "tool_use_id": "toolu-1",
+          "error": "Exit code 1",
+          "is_interrupt": false,
+          "duration_ms": 15650,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 60000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "does-not-exist.txt"
+          },
+          "tool_use_id": "toolu-2",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 60002,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PostToolUseFailure",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "does-not-exist.txt"
+          },
+          "tool_use_id": "toolu-2",
+          "error": "File does not exist. Note: your current working directory is C:\\Users\\dev\\Projects\\lares.",
+          "is_interrupt": false,
+          "duration_ms": 2,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 110000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "exit 1",
+            "description": "Retry: confirm the failure persists"
+          },
+          "tool_use_id": "toolu-3",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 125650,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PostToolUseFailure",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "exit 1",
+            "description": "Retry: confirm the failure persists"
+          },
+          "tool_use_id": "toolu-3",
+          "error": "Exit code 1",
+          "is_interrupt": false,
+          "duration_ms": 15650,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 126000,
+      "emote": {
+        "cue": "frustrated",
+        "intensity": 1,
+        "duration_s": 8
+      }
+    },
+    {
+      "at_ms": 170000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "bash build.sh",
+            "description": "Run the build script"
+          },
+          "tool_use_id": "toolu-4",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 185000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "bash build.sh",
+            "description": "Run the build script"
+          },
+          "tool_response": {
+            "stdout": "build: 0 errors",
+            "stderr": "",
+            "interrupted": false,
+            "isImage": false,
+            "noOutputExpected": false
+          },
+          "tool_use_id": "toolu-4",
+          "duration_ms": 14800,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 230000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Write",
+          "tool_input": {
+            "file_path": "build.log",
+            "content": "ok"
+          },
+          "tool_use_id": "toolu-5",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 232000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PostToolUseFailure",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Write",
+          "tool_input": {
+            "file_path": "build.log",
+            "content": "ok"
+          },
+          "tool_use_id": "toolu-5",
+          "error": "EACCES: permission denied, open 'build.log'",
+          "is_interrupt": false,
+          "duration_ms": 1800,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 280000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Write",
+          "tool_input": {
+            "file_path": "build.log",
+            "content": "ok"
+          },
+          "tool_use_id": "toolu-6",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 282000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Write",
+          "tool_input": {
+            "file_path": "build.log",
+            "content": "ok"
+          },
+          "tool_response": {
+            "type": "create",
+            "filePath": "build.log",
+            "content": "ok",
+            "structuredPatch": [],
+            "originalFile": null,
+            "userModified": false
+          },
+          "tool_use_id": "toolu-6",
+          "duration_ms": 10,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 330000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "build.log"
+          },
+          "tool_use_id": "toolu-7",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 330300,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "build.log"
+          },
+          "tool_response": {
+            "type": "text",
+            "file": {
+              "filePath": "build.log",
+              "content": "ok",
+              "numLines": 1,
+              "startLine": 1,
+              "totalLines": 1
+            }
+          },
+          "tool_use_id": "toolu-7",
+          "duration_ms": 3,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 390000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "20000000-0000-4000-8000-000000000002",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "20000000-0000-4000-8000-000000000002",
+          "hook_event_name": "Stop",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "stop_hook_active": false,
+          "last_assistant_message": "Build passes now, exit code was 1 on the first two attempts.",
+          "background_tasks": [],
+          "session_crons": [],
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\20000000-0000-4000-8000-000000000002.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    }
+  ]
+}

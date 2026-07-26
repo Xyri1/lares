@@ -1,0 +1,261 @@
+{
+  "name": "long-wait-for-input",
+  "timeScale": 1,
+  "events": [
+    {
+      "at_ms": 0,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "SessionStart",
+          "source": "startup",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 3000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "UserPromptSubmit",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "prompt": "Read config.json, then write a summary to summary.txt. You may need permission for the next step.",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 10000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "config.json"
+          },
+          "tool_use_id": "toolu-1",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 10200,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "config.json"
+          },
+          "tool_response": {
+            "type": "text",
+            "file": {
+              "filePath": "config.json",
+              "content": "{}",
+              "numLines": 1,
+              "startLine": 1,
+              "totalLines": 1
+            }
+          },
+          "tool_use_id": "toolu-1",
+          "duration_ms": 4,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 25000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Write",
+          "tool_input": {
+            "file_path": "summary.txt",
+            "content": "empty config"
+          },
+          "tool_use_id": "toolu-2",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 25300,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Write",
+          "tool_input": {
+            "file_path": "summary.txt",
+            "content": "empty config"
+          },
+          "tool_response": {
+            "type": "create",
+            "filePath": "summary.txt",
+            "content": "empty config",
+            "structuredPatch": [],
+            "originalFile": null,
+            "userModified": false
+          },
+          "tool_use_id": "toolu-2",
+          "duration_ms": 11,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 40000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "Notification",
+          "notification_type": "permission_prompt",
+          "message": "Claude needs your permission to use Bash",
+          "title": "Permission required",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 240000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "UserPromptSubmit",
+          "prompt_id": "prompt-2",
+          "permission_mode": "default",
+          "prompt": "Yes, go ahead and run the cleanup command.",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 250000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-2",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "rm -f *.tmp",
+            "description": "Clean up temp files"
+          },
+          "tool_use_id": "toolu-3",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 250400,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-2",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "rm -f *.tmp",
+            "description": "Clean up temp files"
+          },
+          "tool_response": {
+            "stdout": "",
+            "stderr": "",
+            "interrupted": false,
+            "isImage": false,
+            "noOutputExpected": true
+          },
+          "tool_use_id": "toolu-3",
+          "duration_ms": 380,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 255000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "30000000-0000-4000-8000-000000000003",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "30000000-0000-4000-8000-000000000003",
+          "hook_event_name": "Stop",
+          "prompt_id": "prompt-2",
+          "permission_mode": "default",
+          "stop_hook_active": false,
+          "last_assistant_message": "Cleaned up.",
+          "background_tasks": [],
+          "session_crons": [],
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\30000000-0000-4000-8000-000000000003.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    }
+  ]
+}

@@ -9,3 +9,4 @@ AGENTS.local.md
 
 vendor/
 characters/*/runtime/
+traces/

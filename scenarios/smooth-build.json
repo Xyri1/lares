@@ -1,0 +1,383 @@
+{
+  "name": "smooth-build",
+  "timeScale": 1,
+  "events": [
+    {
+      "at_ms": 0,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "SessionStart",
+          "source": "startup",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 4000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "UserPromptSubmit",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "prompt": "Write hello-lares to out.txt, read it back, tidy up the wording in README.md, run whoami, and use a subagent to double-check the result. Reply OK when done.",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 10000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Write",
+          "tool_input": {
+            "file_path": "out.txt",
+            "content": "hello-lares"
+          },
+          "tool_use_id": "toolu-1",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 10300,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Write",
+          "tool_input": {
+            "file_path": "out.txt",
+            "content": "hello-lares"
+          },
+          "tool_response": {
+            "type": "create",
+            "filePath": "out.txt",
+            "content": "hello-lares",
+            "structuredPatch": [],
+            "originalFile": null,
+            "userModified": false
+          },
+          "tool_use_id": "toolu-1",
+          "duration_ms": 12,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 25000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "out.txt"
+          },
+          "tool_use_id": "toolu-2",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 25200,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Read",
+          "tool_input": {
+            "file_path": "out.txt"
+          },
+          "tool_response": {
+            "type": "text",
+            "file": {
+              "filePath": "out.txt",
+              "content": "hello-lares",
+              "numLines": 1,
+              "startLine": 1,
+              "totalLines": 1
+            }
+          },
+          "tool_use_id": "toolu-2",
+          "duration_ms": 3,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 40000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Edit",
+          "tool_input": {
+            "file_path": "README.md",
+            "old_string": "lares",
+            "new_string": "Lares"
+          },
+          "tool_use_id": "toolu-3",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 40500,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Edit",
+          "tool_input": {
+            "file_path": "README.md",
+            "old_string": "lares",
+            "new_string": "Lares"
+          },
+          "tool_response": {
+            "filePath": "README.md",
+            "structuredPatch": [],
+            "userModified": false
+          },
+          "tool_use_id": "toolu-3",
+          "duration_ms": 18,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 65000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "whoami",
+            "description": "Show the current user"
+          },
+          "tool_use_id": "toolu-4",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 81000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "whoami",
+            "description": "Show the current user"
+          },
+          "tool_response": {
+            "stdout": "dev",
+            "stderr": "",
+            "interrupted": false,
+            "isImage": false,
+            "noOutputExpected": false
+          },
+          "tool_use_id": "toolu-4",
+          "duration_ms": 15856,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 110000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PreToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Agent",
+          "tool_input": {
+            "description": "Double-check the result",
+            "prompt": "Read out.txt and confirm it says hello-lares. Reply PONG if correct.",
+            "subagent_type": "claude",
+            "run_in_background": false
+          },
+          "tool_use_id": "toolu-5",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 111000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "SubagentStart",
+          "prompt_id": "prompt-1",
+          "agent_id": "agent-1",
+          "agent_type": "claude",
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 114000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "SubagentStop",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "agent_id": "agent-1",
+          "agent_type": "claude",
+          "stop_hook_active": false,
+          "agent_transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001\\subagents\\agent-agent-1.jsonl",
+          "last_assistant_message": "PONG",
+          "background_tasks": [],
+          "session_crons": [],
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 114300,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "PostToolUse",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "tool_name": "Agent",
+          "tool_input": {
+            "description": "Double-check the result",
+            "prompt": "Read out.txt and confirm it says hello-lares. Reply PONG if correct.",
+            "subagent_type": "claude",
+            "run_in_background": false
+          },
+          "tool_response": {
+            "status": "completed",
+            "agentId": "agent-1",
+            "agentType": "claude",
+            "content": [
+              {
+                "type": "text",
+                "text": "PONG"
+              }
+            ]
+          },
+          "tool_use_id": "toolu-5",
+          "duration_ms": 1874,
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    },
+    {
+      "at_ms": 140000,
+      "envelope": {
+        "v": 1,
+        "harness": "claude-code",
+        "session_id": "10000000-0000-4000-8000-000000000001",
+        "cwd": "C:\\Users\\dev\\Projects\\lares",
+        "event": {
+          "session_id": "10000000-0000-4000-8000-000000000001",
+          "hook_event_name": "Stop",
+          "prompt_id": "prompt-1",
+          "permission_mode": "default",
+          "stop_hook_active": false,
+          "last_assistant_message": "OK",
+          "background_tasks": [],
+          "session_crons": [],
+          "transcript_path": "C:\\Users\\dev\\.claude\\projects\\lares\\10000000-0000-4000-8000-000000000001.jsonl",
+          "cwd": "C:\\Users\\dev\\Projects\\lares"
+        }
+      }
+    }
+  ]
+}
