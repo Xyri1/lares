@@ -5,7 +5,7 @@ Lares is an open-source desktop companion that gives AI agents a face: a
 Live2D character (a Lar) expresses the emotional arc of the agent sessions
 it watches through continuously driven animation parameters — first-person
 emotes over MCP/local HTTP, deterministic hooks as the baseline heartbeat.
-State: M1a (Canvas) in progress — see sdd/slices/001-canvas/. Stack:
+State: M1a (Canvas) closed 2026-07-26; M2a (Soul) is next — see sdd/ROADMAP.md. Stack:
 Electron + TypeScript (electron-vite, pnpm); Live2D via pixi-live2d-display.
 
 ## Repo minimap
