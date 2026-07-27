@@ -5,12 +5,15 @@ Lares is an open-source desktop companion that gives AI agents a face: a
 Live2D character (a Lar) expresses the emotional arc of the agent sessions
 it watches through continuously driven animation parameters — first-person
 emotes over MCP/local HTTP, deterministic hooks as the baseline heartbeat.
-State: M2a (Soul) in progress — see sdd/slices/002-soul/. Stack:
+State: M1b (Skeleton) closed 2026-07-27 — she stands on the desktop; see
+sdd/slices/003-skeleton/. M2b (Performance) is the open human-paced
+tuning track; M3a (Nerves) is the next build milestone. Stack:
 Electron + TypeScript (electron-vite, pnpm); Live2D via pixi-live2d-display.
 
 ## Repo minimap
 sdd/         SDD artifacts — SPEC.md is the source of truth
-src/main     brain: manifest load, lares:// asset protocol, IPC
+src/main     brain: manifest load, lares:// asset protocol, IPC, and the two
+             windows — the desktop overlay (prod) + the dev control window
 src/renderer body: stage/ (bootstrap, dev panel) + runtime/ (IRuntime over
              pixi-live2d-display — nothing else imports the Live2D packages)
 scripts/     fetch-assets.mjs — downloads Core + Hiyori into gitignored paths
