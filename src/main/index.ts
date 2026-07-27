@@ -1,11 +1,14 @@
 import { app, shell, BrowserWindow, dialog, ipcMain, protocol, net, screen } from 'electron'
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { syncClaudeCode } from './adapters/claude-code/writer'
+import { writeCodexShim } from './adapters/codex/shim'
 import { loadCharacter } from './characters/manifest'
+import { DensityLog } from './densityLog'
 import { Nerves } from './nerves'
 import {
   clampToWorkArea,
@@ -42,6 +45,7 @@ const runtimeFile = (): string => join(homedir(), '.lares', 'runtime.json')
 let liveNerves: Nerves | null = null
 let nervesServer: ReturnType<typeof createServer> | null = null
 let nervesTick: ReturnType<typeof setInterval> | null = null
+let densityLog: DensityLog | null = null
 
 function broadcastFeed(feed: AffectFeedMessage): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -64,12 +68,52 @@ function configuredPort(): number {
   return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : 21473
 }
 
+async function syncAdapters(port: number): Promise<void> {
+  const home = homedir()
+  const forwarderPath = join(app.getAppPath(), 'scripts', 'forwarder.js')
+  await Promise.all([
+    syncClaudeCode({
+      claudeDirectory: join(home, '.claude'),
+      settingsPath: join(home, '.claude', 'settings.json'),
+      claudeConfigPath: join(home, '.claude.json'),
+      appPath: process.execPath,
+      forwarderPath,
+      port,
+      platform: process.platform,
+      log: (message) => console.error(`[lares] Claude Code adapter: ${message}`)
+    })
+      .then((result) => {
+        if (result.settings === 'updated' || result.mcp === 'updated') {
+          console.log('[lares] Claude Code adapter registered; live sessions pick it up next session')
+        }
+      })
+      .catch((error) => console.error('[lares] Claude Code adapter registration failed', error)),
+    writeCodexShim({
+      binDir: join(home, '.lares', 'bin'),
+      appPath: process.execPath,
+      forwarderPath,
+      platform: process.platform
+    }).catch((error) => console.error('[lares] Codex launcher shim failed', error))
+  ])
+}
+
 async function startNerves(): Promise<void> {
+  densityLog = process.env.LARES_DENSITY_LOG
+    ? new DensityLog(resolve(process.env.LARES_DENSITY_LOG))
+    : null
   const manifest = loadCharacter(join(charactersRoot(), 'hiyori', 'lar.character.json'))
   liveNerves = new Nerves('Hiyori', manifest.ok ? manifest.expressions : SCENARIO_CUES, Date.now())
+  densityLog?.recordBaseline(liveNerves.status(Date.now()).sessions.baseline, Date.now())
   nervesServer = createServer({
-    ingest: (envelope, nowMs) => liveNerves!.ingest(envelope, nowMs),
-    emote: (args, source, nowMs) => liveNerves!.emote(args, source, nowMs),
+    ingest: (envelope, nowMs) => {
+      liveNerves!.ingest(envelope, nowMs)
+      densityLog?.recordBaseline(liveNerves!.status(nowMs).sessions.baseline, nowMs)
+    },
+    emote: (args, source, nowMs) => {
+      const result = liveNerves!.emote(args, source, nowMs)
+      densityLog?.recordEmote(source, args, result, nowMs)
+      return result
+    },
     listCues: () => liveNerves!.listCues(),
     status: (nowMs) => liveNerves!.status(nowMs)
   })
@@ -79,9 +123,11 @@ async function startNerves(): Promise<void> {
     const directory = join(homedir(), '.lares')
     mkdirSync(directory, { recursive: true })
     writeFileSync(runtimeFile(), JSON.stringify({ version: 1, port, pid: process.pid }))
+    await syncAdapters(port)
     nervesTick = setInterval(() => {
       const nowMs = Date.now()
       liveNerves!.tick(nowMs)
+      densityLog?.recordBaseline(liveNerves!.status(nowMs).sessions.baseline, nowMs)
       if (activePlayback === null) {
         broadcastFeed(feedMessage(liveNerves!.snapshot(), Math.floor(nowMs / 100)))
       }
@@ -104,6 +150,7 @@ async function startNerves(): Promise<void> {
 function stopNerves(): void {
   if (nervesTick) clearInterval(nervesTick)
   nervesTick = null
+  densityLog = null
   removeRuntimeFile()
   const server = nervesServer
   nervesServer = null

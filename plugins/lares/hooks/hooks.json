@@ -1,0 +1,92 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
+            "commandWindows": "call \"%USERPROFILE%\\.lares\\bin\\lares-forwarder.cmd\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
+            "commandWindows": "call \"%USERPROFILE%\\.lares\\bin\\lares-forwarder.cmd\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
+            "commandWindows": "call \"%USERPROFILE%\\.lares\\bin\\lares-forwarder.cmd\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
+            "commandWindows": "call \"%USERPROFILE%\\.lares\\bin\\lares-forwarder.cmd\""
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
+            "commandWindows": "call \"%USERPROFILE%\\.lares\\bin\\lares-forwarder.cmd\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
+            "commandWindows": "call \"%USERPROFILE%\\.lares\\bin\\lares-forwarder.cmd\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
+            "commandWindows": "call \"%USERPROFILE%\\.lares\\bin\\lares-forwarder.cmd\""
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
+            "commandWindows": "call \"%USERPROFILE%\\.lares\\bin\\lares-forwarder.cmd\""
+          }
+        ]
+      }
+    ]
+  }
+}

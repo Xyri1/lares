@@ -11,6 +11,7 @@
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
+    "adapter:remove": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/remove-adapters.mjs",
     "fetch-assets": "node scripts/fetch-assets.mjs",
     "smoke:nerves": "node scripts/synthetic-session.mjs",
     "build": "pnpm run typecheck && electron-vite build",

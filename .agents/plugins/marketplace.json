@@ -1,0 +1,20 @@
+{
+  "name": "lares",
+  "interface": {
+    "displayName": "Lares"
+  },
+  "plugins": [
+    {
+      "name": "lares",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lares"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

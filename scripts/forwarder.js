@@ -20,6 +20,9 @@ const fs = require('node:fs')
 const harness = process.argv[2]
 if (harness !== 'claude-code' && harness !== 'codex') finish()
 
+const harnessPid = Number(process.env.LARES_HARNESS_PID)
+const pid = Number.isInteger(harnessPid) && harnessPid > 0 ? harnessPid : undefined
+
 const runtimeFile =
   process.env.LARES_RUNTIME_FILE ||
   require('node:path').join(require('node:os').homedir(), '.lares', 'runtime.json')
@@ -67,7 +70,7 @@ process.stdin.on('end', () => {
     harness,
     session_id: event.session_id,
     ...(event.cwd === undefined ? {} : { cwd: event.cwd }),
-    pid: process.ppid,
+    ...(pid === undefined ? {} : { pid }),
     event
   })
   const request = require('node:http').request(

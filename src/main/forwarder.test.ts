@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
+import { claudeCodeCommand } from './adapters/claude-code/writer'
+import { writeCodexShim } from './adapters/codex/shim'
+import { Nerves } from './nerves'
 import { createServer, type ServerDeps } from './server/server'
 
 const script = resolve('scripts/forwarder.js')
@@ -22,16 +25,18 @@ interface RunResult {
   exitMs: number
 }
 
-function runForwarder(runtimeFile: string, input: string | null, timing = false): Promise<RunResult> {
+function run(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  input: string | null,
+  windowsVerbatimArguments = false
+): Promise<RunResult> {
   const started = performance.now()
-  const child = spawn(electron, [script, 'claude-code'], {
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-      LARES_RUNTIME_FILE: runtimeFile,
-      ...(timing ? { LARES_FORWARDER_TIMING: '1' } : {})
-    },
-    stdio: ['pipe', 'pipe', 'pipe']
+  const child = spawn(command, args, {
+    env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsVerbatimArguments
   })
   let stdout = ''
   let stderr = ''
@@ -54,6 +59,21 @@ function runForwarder(runtimeFile: string, input: string | null, timing = false)
       resolveRun({ code, stdout, stderr, exitMs })
     })
   })
+}
+
+function runForwarder(runtimeFile: string, input: string | null, timing = false): Promise<RunResult> {
+  return run(
+    electron,
+    [script, 'claude-code'],
+    {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      LARES_HARNESS_PID: String(process.pid),
+      LARES_RUNTIME_FILE: runtimeFile,
+      ...(timing ? { LARES_FORWARDER_TIMING: '1' } : {})
+    },
+    input
+  )
 }
 
 describe('embedded-Node forwarder', () => {
@@ -127,5 +147,93 @@ describe('embedded-Node forwarder', () => {
       }
     ])
     expect(process.pid).toBeGreaterThan(0)
+  })
+
+  it('survives the real plugin shell path, including a spaced Windows profile', async () => {
+    const nowMs = Date.now()
+    const nerves = new Nerves('Test', { pleased: { valence: 0.2, arousal: 0.1 } }, nowMs, (pid) =>
+      pid === process.pid
+    )
+    const value = createServer({
+      ingest: (envelope, at) => nerves.ingest(envelope, at),
+      emote: () => undefined,
+      listCues: () => [],
+      status: (at) => nerves.status(at)
+    })
+    servers.push(value)
+    const port = await value.start(0)
+
+    const profile = join(directory, 'Jane Doe')
+    const binDir = join(profile, '.lares', 'bin')
+    await writeCodexShim({
+      binDir,
+      appPath: electron,
+      forwarderPath: script,
+      platform: process.platform
+    })
+    await writeFile(
+      join(profile, '.lares', 'runtime.json'),
+      JSON.stringify({ version: 1, port, pid: process.pid })
+    )
+    const hooks = JSON.parse(
+      await readFile(resolve('plugins/lares/hooks/hooks.json'), 'utf8')
+    )
+    const handler = hooks.hooks.SessionStart[0].hooks[0]
+    const command = process.platform === 'win32' ? handler.commandWindows : handler.command
+    const shell = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : (process.env.SHELL ?? '/bin/sh')
+    const args = process.platform === 'win32' ? ['/d', '/s', '/c', command] : ['-lc', command]
+
+    const result = await run(
+      shell,
+      args,
+      {
+        ...process.env,
+        HOME: profile,
+        USERPROFILE: profile,
+        LARES_HARNESS_PID: ''
+      },
+      JSON.stringify({ ...nativeEvent, hook_event_name: 'SessionStart' }),
+      process.platform === 'win32'
+    )
+    nerves.tick(Date.now() + 100)
+
+    expect(result).toMatchObject({ code: 0, stdout: '', stderr: '' })
+    expect(nerves.status(Date.now()).sessions.sessions).toMatchObject([
+      { session_id: nativeEvent.session_id, harness: 'codex', state: 'thinking' }
+    ])
+  })
+
+  it('survives the real Claude Code shell path — Git Bash on every platform', async () => {
+    const ingested: unknown[] = []
+    const value = server(ingested)
+    const port = await value.start(0)
+
+    const profile = join(directory, 'Jane Doe')
+    await mkdir(join(profile, '.lares'), { recursive: true })
+    await writeFile(
+      join(profile, '.lares', 'runtime.json'),
+      JSON.stringify({ version: 1, port, pid: process.pid })
+    )
+
+    const command = claudeCodeCommand(electron, script, process.platform)
+    // Claude Code uses Git Bash on Windows — never System32's WSL bash.
+    const shell =
+      process.platform === 'win32'
+        ? (process.env.CLAUDE_CODE_GIT_BASH_PATH ?? 'C:\\Program Files\\Git\\usr\\bin\\bash.exe')
+        : (process.env.SHELL ?? '/bin/sh')
+    const result = await run(
+      shell,
+      ['-c', command],
+      { ...process.env, HOME: profile, USERPROFILE: profile },
+      JSON.stringify(nativeEvent)
+    )
+
+    expect(result).toMatchObject({ code: 0, stdout: '', stderr: '' })
+    expect(ingested).toMatchObject([
+      { v: 1, harness: 'claude-code', session_id: nativeEvent.session_id, event: nativeEvent }
+    ])
+    const envelope = ingested[0] as { pid?: number }
+    if (process.platform === 'win32') expect(envelope.pid).toBeUndefined()
+    else expect(envelope.pid).toBe(process.pid)
   })
 })

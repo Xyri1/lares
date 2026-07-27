@@ -1,0 +1,17 @@
+{
+  "name": "lares",
+  "version": "0.1.0",
+  "description": "Give Codex sessions a local Lares companion.",
+  "author": {
+    "name": "Lares contributors"
+  },
+  "interface": {
+    "displayName": "Lares",
+    "shortDescription": "Give Codex sessions a local companion.",
+    "longDescription": "Lares forwards Codex lifecycle events to the local Lares app.",
+    "developerName": "Lares contributors",
+    "category": "Productivity",
+    "capabilities": []
+  },
+  "mcpServers": "./.mcp.json"
+}
