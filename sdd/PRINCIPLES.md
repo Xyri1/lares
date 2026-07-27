@@ -25,3 +25,5 @@ Cross-cutting invariants. Every slice doc set and PR is checked against these; a
 **P9 — The fence holds.** The D03 non-goals (no permission bubbles, gamification, marketplace, observer mode, VRM, pet chat, telemetry) bind until explicitly revised. *Teeth:* fence-crossing work requires a new DECISIONS row approved before code, not after.
 
 **P10 — Aggregate loudly.** One Lar, all sessions: baseline state resolves by actionability (needs-input > error > working > done > idle), so the most useful signal always wins the face. *Teeth:* no aggregation change may cause a needs-input session to be visually masked by any lower-priority state.
+
+**P11 — Push-only sensing.** Lares senses what harnesses tell it, never what it scrapes: every input crosses the §2 ingress as an event or tool call some process chose to send. *Teeth:* no component reads harness-owned files, polls harness state, or watches another program's artifacts — session logs, config files, process tables. A harness with an unreliable or absent hook surface is unsupported, not worked around; a "just tail the log" change fails review. (Adopted 2026-07-27 with slice 005, amending D15.)
