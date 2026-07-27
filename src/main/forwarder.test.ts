@@ -22,10 +22,15 @@ interface RunResult {
   exitMs: number
 }
 
-function runForwarder(runtimeFile: string, input: string | null): Promise<RunResult> {
+function runForwarder(runtimeFile: string, input: string | null, timing = false): Promise<RunResult> {
   const started = performance.now()
   const child = spawn(electron, [script, 'claude-code'], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', LARES_RUNTIME_FILE: runtimeFile },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      LARES_RUNTIME_FILE: runtimeFile,
+      ...(timing ? { LARES_FORWARDER_TIMING: '1' } : {})
+    },
     stdio: ['pipe', 'pipe', 'pipe']
   })
   let stdout = ''
@@ -78,7 +83,14 @@ describe('embedded-Node forwarder', () => {
     return value
   }
 
-  it.todo('exits within the 50ms A8 budget when discovery is absent or refused')
+  it('exits within the 50ms A8 budget (in-script, 004-D8) when discovery is absent', async () => {
+    const result = await runForwarder(runtimeFile, null, true)
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toMatch(/^\d+$/)
+    expect(Number(result.stderr)).toBeLessThan(50)
+  })
 
   it('exits silently within the hard 500ms budget when discovery is absent', async () => {
     const result = await runForwarder(runtimeFile, null)

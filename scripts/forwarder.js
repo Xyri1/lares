@@ -1,3 +1,4 @@
+const startedAt = Date.now()
 let finished = false
 const budget = setTimeout(finish, 500)
 
@@ -5,6 +6,12 @@ function finish() {
   if (finished) return
   finished = true
   clearTimeout(budget)
+  // A8 measures in-script time (004-D8); spawn cost is outside the figure.
+  if (process.env.LARES_FORWARDER_TIMING) {
+    try {
+      require('node:fs').writeSync(2, String(Date.now() - startedAt))
+    } catch {}
+  }
   process.exit(0)
 }
 
