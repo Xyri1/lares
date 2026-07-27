@@ -61,6 +61,16 @@ interface LaresBridge {
   sendSynthTrace(linesByStage: Record<string, string[]>): void
   /** Widen the window for side-by-side A/B, restore on exit (002-D2). */
   setAbMode(on: boolean): Promise<ControlResult>
+  /** Overlay only: shrink the window tight around the model and place it
+   *  (003-D5). Main adds the padding and owns where she lands. */
+  fitToModel(size: { width: number; height: number }): Promise<ControlResult>
+  /** Overlay only: `stage:pointer` (root §8) — is the cursor on the body?
+   *  Main flips click-through from this (003-D3). Send transitions only. */
+  reportPointer(overBody: boolean): void
+  /** Overlay drag in screen coordinates (003-D4); dragEnd persists the drop. */
+  dragStart(at: { x: number; y: number }): void
+  dragMove(at: { x: number; y: number }): void
+  dragEnd(): void
 }
 
 interface Window {

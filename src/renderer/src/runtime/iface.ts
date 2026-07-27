@@ -19,4 +19,11 @@ export interface IRuntime {
   applyExpression(ref: string | Record<string, number>, weight: number, fadeMs: number): void
   playMotion(group: string, index?: number, priority?: number): void
   hitTest(x: number, y: number): string[]
+  /** Alpha (0..255) of the rendered pixel at CSS position (x, y). The overlay
+   *  click-through test: Hiyori's authored hit area turned out to be a
+   *  torso-only box, so 003-D3's per-pixel fallback is what shipped. */
+  alphaAt(x: number, y: number): number
+  /** The model's footprint in CSS px when drawn at the default Lar size —
+   *  what the overlay window fits itself to (003-D5). */
+  larSize(): { width: number; height: number }
 }

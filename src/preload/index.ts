@@ -29,7 +29,21 @@ const lares = {
   sendSynthTrace: (linesByStage: Record<string, string[]>): void => {
     ipcRenderer.send('scenario:synthTrace', linesByStage)
   },
-  setAbMode: (on: boolean): Promise<ControlResult> => ipcRenderer.invoke('window:abMode', on)
+  setAbMode: (on: boolean): Promise<ControlResult> => ipcRenderer.invoke('window:abMode', on),
+  fitToModel: (size: { width: number; height: number }): Promise<ControlResult> =>
+    ipcRenderer.invoke('window:fitToModel', size),
+  reportPointer: (overBody: boolean): void => {
+    ipcRenderer.send('stage:pointer', overBody)
+  },
+  dragStart: (at: { x: number; y: number }): void => {
+    ipcRenderer.send('window:dragStart', at)
+  },
+  dragMove: (at: { x: number; y: number }): void => {
+    ipcRenderer.send('window:dragMove', at)
+  },
+  dragEnd: (): void => {
+    ipcRenderer.send('window:dragEnd')
+  }
 }
 
 contextBridge.exposeInMainWorld('lares', lares)

@@ -2,7 +2,15 @@ import presetJson from '../../../../presets/default.json'
 import { Live2DRuntime } from '../runtime/live2d'
 import type { SynthPreset } from '../synth/synth'
 import { createAffectDriver } from './affect'
+import { wireOverlayPointer } from './overlayPointer'
 import { mountPanel } from './panel'
+
+// Which window this document is (003-D1). Both windows load the same bundle,
+// so `import.meta.env.DEV` cannot tell them apart — it's build-time, and under
+// `pnpm dev` it is true for the overlay too. Set before first paint so the
+// desktop never flashes through the stage backdrop.
+const OVERLAY = new URLSearchParams(location.search).get('mode') === 'overlay'
+if (OVERLAY) document.documentElement.classList.add('overlay')
 
 function showError(message: string): void {
   const el = document.createElement('div')
@@ -43,7 +51,16 @@ async function boot(): Promise<void> {
 
   const driver = createAffectDriver(runtime, presetJson as SynthPreset, cueParams)
 
-  if (import.meta.env.DEV) {
+  if (OVERLAY) {
+    // Tight fit last, once the model can report its own footprint (003-D5) —
+    // main owns the padding and where she lands.
+    void window.lares.fitToModel(runtime.larSize())
+    wireOverlayPointer(runtime)
+  }
+
+  // Scenario control stays a dev-window affair (003-D1): the overlay only
+  // mirrors the feed, which reaches it over the broadcast (003-D2).
+  if (import.meta.env.DEV && !OVERLAY) {
     window.__runtime = runtime // console access for A2/A4 gate checks
     window.__driver = driver
 

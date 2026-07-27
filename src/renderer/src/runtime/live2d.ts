@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js'
-import { Application, Ticker, UPDATE_PRIORITY } from 'pixi.js'
+import { Application, Renderer, Ticker, UPDATE_PRIORITY } from 'pixi.js'
 import { install } from '@pixi/unsafe-eval'
 import { Live2DModel, MotionPriority } from 'pixi-live2d-display/cubism4'
 import type { IRuntime, ParamInfo } from './iface'
@@ -66,6 +66,11 @@ export class Live2DRuntime implements IRuntime {
         backgroundAlpha: 0,
         antialias: true,
         autoDensity: true,
+        // alphaAt() reads the drawing buffer between frames, which is garbage
+        // once the compositor has taken it. ponytail: set for both windows —
+        // one flag beats threading a mode through the constructor, and at
+        // 30fps on a window this size the cost does not show up.
+        preserveDrawingBuffer: true,
         resolution: window.devicePixelRatio || 1,
         resizeTo: target.parentElement ?? window
       })
@@ -186,6 +191,31 @@ export class Live2DRuntime implements IRuntime {
 
   hitTest(x: number, y: number): string[] {
     return this.model?.hitTest(x, y) ?? []
+  }
+
+  // 003-D3's fallback, measured not guessed: Hiyori's one authored HitArea
+  // covers a 96x136 box over her torso and nothing else — no head, no hands —
+  // so A6 fails on the authored test and the silhouette itself becomes the
+  // hit area. One pixel per 30fps tick; the readback stall is bounded by the
+  // caller's throttle, and only the overlay ever calls it.
+  alphaAt(x: number, y: number): number {
+    const gl = (this.app.renderer as Renderer).gl
+    const res = this.app.renderer.resolution
+    const px = Math.round(x * res)
+    // readPixels counts rows from the bottom; the DOM counts from the top.
+    const py = gl.drawingBufferHeight - Math.round(y * res) - 1
+    if (px < 0 || py < 0 || px >= gl.drawingBufferWidth || py >= gl.drawingBufferHeight) return 0
+    const pixel = new Uint8Array(4)
+    gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
+    return pixel[3]
+  }
+
+  // Aspect is read off the live display object rather than a stored natural
+  // size: fit() only ever applies a UNIFORM scale, so the ratio is the same
+  // whatever fit() last did to it.
+  larSize(): { width: number; height: number } {
+    const aspect = this.model ? this.model.width / this.model.height : 1
+    return { width: Math.round(DEFAULT_LAR_HEIGHT * aspect), height: DEFAULT_LAR_HEIGHT }
   }
 
   private core(): CoreModel {

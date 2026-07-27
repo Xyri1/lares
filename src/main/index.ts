@@ -1,10 +1,18 @@
-import { app, shell, BrowserWindow, ipcMain, protocol, net } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, net, screen } from 'electron'
 import { existsSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { loadCharacter } from './characters/manifest'
+import {
+  clampToWorkArea,
+  loadPosition,
+  parsePoint,
+  savePosition,
+  type Point,
+  type Rect
+} from './position'
 import { SCENARIO_CUES } from './scenario/cues'
 import { loadScenario } from './scenario/load'
 import { playScenarioPaced, type PacedPlayback, type StageId } from './scenario/player'
@@ -154,8 +162,14 @@ function registerScenarioIpc(): void {
       const controller = playScenarioPaced(scenario, SCENARIO_CUES, {
         speed: safeSpeed,
         stages,
+        // 003-D2: the feed fans out to every live window, so the overlay
+        // mirrors playback on the desktop. Everything else below stays aimed
+        // at the requester — scenario control and the synth trace are a
+        // dev-window affair, and the overlay must not answer for them.
         onFeed: (feed) => {
-          if (!sender.isDestroyed()) sender.send('affect:update', feed)
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
+          }
         },
         onSeek: (history) => {
           if (!sender.isDestroyed()) sender.send('scenario:seeked', history)
@@ -252,6 +266,118 @@ function registerScenarioIpc(): void {
 const BASE_WIDTH = 480
 const AB_WIDTH = 1220 // two side-by-side stages + the dev panel strip
 
+// Transparent breathing room around the model, and the first-run corner
+// inset (003-D5). Both stay small: every transparent pixel is click-through
+// surface that has to behave.
+const OVERLAY_PAD = 8
+const SPAWN_MARGIN = 24
+
+// `pnpm dev` is the only run that earns the scenario-control window. `is.dev`
+// alone will not do it — that is `!app.isPackaged`, so it stays true under
+// `electron-vite preview`, and A1's production half ("only the overlay") would
+// fail on the very command the spec names. Only the dev server sets this var,
+// which is why the renderer load path below already pairs the two.
+const IS_DEV_RUN = is.dev && !!process.env['ELECTRON_RENDERER_URL']
+
+/** The overlay is the packaged deliverable; only ever one of it. */
+let overlayWindow: BrowserWindow | null = null
+
+const positionFile = (): string => join(app.getPath('userData'), 'window.json')
+
+/** Where she goes: the remembered spot snapped into a visible work area (A4),
+ *  or the bottom-right corner of the primary display on a first run. */
+function overlayBounds(width: number, height: number): Rect {
+  const saved = loadPosition(positionFile())
+  if (saved) {
+    const areas = screen.getAllDisplays().map((d) => d.workArea)
+    return { ...clampToWorkArea({ ...saved, width, height }, areas), width, height }
+  }
+  const work = screen.getPrimaryDisplay().workArea
+  return {
+    x: Math.round(work.x + work.width - width - SPAWN_MARGIN),
+    y: Math.round(work.y + work.height - height - SPAWN_MARGIN),
+    width,
+    height
+  }
+}
+
+function wireCommon(win: BrowserWindow, tag: string, query?: Record<string, string>): void {
+  if (is.dev) {
+    // Pipe renderer console to the terminal so `pnpm dev` failures are visible
+    // without opening devtools.
+    win.webContents.on('console-message', (event) => {
+      console.log(`[renderer:${tag}:${event.level}] ${event.message}`)
+    })
+  }
+
+  win.webContents.setWindowOpenHandler((details) => {
+    shell.openExternal(details.url)
+    return { action: 'deny' }
+  })
+
+  if (IS_DEV_RUN) {
+    const url = new URL(process.env['ELECTRON_RENDERER_URL']!)
+    for (const [k, v] of Object.entries(query ?? {})) url.searchParams.set(k, v)
+    void win.loadURL(url.toString())
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'), { query })
+  }
+}
+
+// The Lar on the desktop (003-D1): frameless, transparent, always-on-top, and
+// click-through everywhere except her body. Transparency is create-time in
+// Electron, which is why this is a second window rather than a mode of the
+// dev one.
+function createOverlayWindow(): void {
+  const overlay = new BrowserWindow({
+    // Placeholder until the renderer reports the model's footprint; the
+    // height is already final, so only the width moves under the fit.
+    width: 320,
+    height: 400 + OVERLAY_PAD * 2,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    // 003-D5: the taskbar entry is the only quit path until M5a's tray.
+    skipTaskbar: false,
+    ...(process.platform === 'linux' ? { icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  // Standard floating level — above ordinary windows, not screen-saver
+  // aggression (003-D5).
+  overlay.setAlwaysOnTop(true, 'floating')
+  // Clicks fall through by default; the body's hit test switches capture back
+  // on over `stage:pointer` (003-D3). Re-applied on every load, not once at
+  // construction: a navigation resets forwarding, and without forwarding no
+  // move ever reaches the hit test — which also covers HMR reloads in dev.
+  overlay.webContents.on('did-finish-load', () => {
+    overlay.setIgnoreMouseEvents(true, { forward: true })
+  })
+
+  overlayWindow = overlay
+  overlay.on('closed', () => {
+    overlayWindow = null
+  })
+
+  overlay.on('ready-to-show', () => {
+    // Placed at the placeholder width so she never flashes in the wrong
+    // corner; window:fitToModel re-places her once the model has measured
+    // itself. ponytail: a first run shifts her by a few px for one frame —
+    // a saved position is byte-identical across both calls.
+    const [width, height] = overlay.getSize()
+    overlay.setBounds(overlayBounds(width, height))
+    overlay.show()
+  })
+
+  wireCommon(overlay, 'overlay', { mode: 'overlay' })
+}
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: BASE_WIDTH,
@@ -269,45 +395,95 @@ function createWindow(): void {
     mainWindow.show()
   })
 
-  if (is.dev) {
-    // Pipe renderer console to the terminal so `pnpm dev` failures are visible
-    // without opening devtools.
-    mainWindow.webContents.on('console-message', (event) => {
-      console.log(`[renderer:${event.level}] ${event.message}`)
-    })
-  }
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  wireCommon(mainWindow, 'dev')
 }
 
-app.whenReady().then(() => {
-  electronApp.setAppUserModelId('io.lares')
+// 003-D1: packaged runs are the overlay alone; `pnpm dev` adds the framed
+// scenario-control window beside it.
+function createWindows(): void {
+  createOverlayWindow()
+  if (IS_DEV_RUN) createWindow()
+}
 
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+// Everything here is overlay-only and re-checks that the sender IS the
+// overlay — the dev window shares this preload and must not move the Lar.
+function registerOverlayIpc(): void {
+  const fromOverlay = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean =>
+    overlayWindow !== null && BrowserWindow.fromWebContents(event.sender) === overlayWindow
+
+  // stage:pointer (root §8) — cursor on the body ⇒ the window captures;
+  // anywhere else inside the rect ⇒ the click lands on the desktop (003-D3).
+  ipcMain.on('stage:pointer', (event, overBody: unknown) => {
+    if (!fromOverlay(event)) return
+    overlayWindow!.setIgnoreMouseEvents(overBody !== true, { forward: true })
   })
 
-  registerAssetProtocol()
-  registerCharacterIpc()
-  registerScenarioIpc()
-  createWindow()
-
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  ipcMain.handle('window:fitToModel', (event, size: unknown) => {
+    if (!fromOverlay(event)) return { ok: false, error: 'not the overlay' }
+    // P7: renderer input. Clamped to something a desktop can actually hold —
+    // a bad aspect must not produce a 30000px window.
+    const s = size as Record<string, unknown> | null
+    if (typeof s !== 'object' || s === null) return { ok: false, error: 'invalid size' }
+    const dim = (v: unknown): number | null =>
+      typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(2048, Math.round(v)) : null
+    const width = dim(s.width)
+    const height = dim(s.height)
+    if (width === null || height === null) return { ok: false, error: 'invalid size' }
+    overlayWindow!.setBounds(overlayBounds(width + OVERLAY_PAD * 2, height + OVERLAY_PAD * 2))
+    return { ok: true }
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
+  // Drag in screen coordinates (003-D4). Main holds the origin so a dropped
+  // or replayed move can never accumulate drift.
+  let drag: { winX: number; winY: number; from: Point } | null = null
+
+  ipcMain.on('window:dragStart', (event, at: unknown) => {
+    const from = parsePoint(at)
+    if (!fromOverlay(event) || !from) return
+    const [winX, winY] = overlayWindow!.getPosition()
+    drag = { winX, winY, from }
+  })
+
+  ipcMain.on('window:dragMove', (event, at: unknown) => {
+    const to = parsePoint(at)
+    if (!drag || !fromOverlay(event) || !to) return
+    overlayWindow!.setPosition(drag.winX + (to.x - drag.from.x), drag.winY + (to.y - drag.from.y))
+  })
+
+  ipcMain.on('window:dragEnd', (event) => {
+    if (!drag || !fromOverlay(event)) return
+    drag = null
+    const [x, y] = overlayWindow!.getPosition()
+    savePosition(positionFile(), { x, y }) // A3: she stands where she was dropped
+  })
+}
+
+// A5: a second launch exits immediately; the running instance is untouched
+// (no focus steal — the spec says unaffected).
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.whenReady().then(() => {
+    electronApp.setAppUserModelId('io.lares')
+
+    app.on('browser-window-created', (_, window) => {
+      optimizer.watchWindowShortcuts(window)
+    })
+
+    registerAssetProtocol()
+    registerCharacterIpc()
+    registerScenarioIpc()
+    registerOverlayIpc()
+    createWindows()
+
+    app.on('activate', function () {
+      if (BrowserWindow.getAllWindows().length === 0) createWindows()
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit()
+    }
+  })
+}

@@ -15,6 +15,12 @@
         overflow: hidden;
         background: #f4f1ea;
       }
+      /* Overlay mode (003-D1): the desktop shows through everything the model
+         does not paint, so any opaque backdrop here becomes a visible box. */
+      html.overlay,
+      html.overlay body {
+        background: transparent;
+      }
       /* One canvas, one WebGL context: A/B splits it into two slots (002-D2).
          The wrapper is what pixi sizes to, so the dev panel can reserve its
          strip without the stages rendering underneath it. */
