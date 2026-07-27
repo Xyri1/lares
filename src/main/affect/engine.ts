@@ -14,8 +14,13 @@ import {
   type Vec2
 } from './constants'
 
+export interface FreeformExpression {
+  params: Record<string, number>
+  label?: string
+}
+
 export interface ExpressionEntry {
-  cueOrFreeform: string
+  cueOrFreeform: string | FreeformExpression
   weight: number
   expiryMs: number
 }
@@ -47,8 +52,6 @@ export class AffectEngine {
   private queue: ExpressionEntry[] = []
   private preempting: ExpressionEntry | null = null
   private lastTickMs: number
-  // ponytail: map grows one entry per source, never pruned — fine for a handful
-  // of sessions; add pruning if sources become unbounded.
   private saturation = new Map<string, { cue: string; count: number; lastMs: number }>()
   private selectedCue: string | null = null
 
@@ -81,6 +84,9 @@ export class AffectEngine {
       }
     }
     this.queue = this.queue.filter((e) => e.expiryMs > nowMs)
+    for (const [source, entry] of this.saturation) {
+      if (nowMs - entry.lastMs >= SATURATION_WINDOW_MS) this.saturation.delete(source)
+    }
   }
 
   applyCueNudge(cue: string, source: string, nowMs: number, intensity = 1): void {
@@ -114,11 +120,21 @@ export class AffectEngine {
       : null
   }
 
-  enqueueExpression(cueOrFreeform: string, weight: number, expiryMs: number): void {
-    this.queue.push({ cueOrFreeform, weight, expiryMs })
-    // ponytail: overflow drops the oldest (freshest emotion wins); revisit if
-    // cutting the playing expression short looks bad on stage.
-    if (this.queue.length > QUEUE_CAP) this.queue.shift()
+  enqueueExpression(
+    cueOrFreeform: ExpressionEntry['cueOrFreeform'],
+    weight: number,
+    nowMs: number,
+    durationMs: number
+  ): boolean {
+    this.queue = this.queue.filter((entry) => entry.expiryMs > nowMs)
+    if (this.queue.length >= QUEUE_CAP) return false
+    const startsAt = Math.max(nowMs, this.queue.at(-1)?.expiryMs ?? nowMs)
+    this.queue.push({ cueOrFreeform, weight, expiryMs: startsAt + durationMs })
+    return true
+  }
+
+  clearExpressions(): void {
+    this.queue = []
   }
 
   selectCue(): string | null {
@@ -147,7 +163,16 @@ export class AffectEngine {
       E: { ...this.E },
       M: { ...this.M },
       baselineState: this.baselineState,
-      expressionStack: stack.map((e) => ({ ...e }))
+      expressionStack: stack.map((entry) => ({
+        ...entry,
+        cueOrFreeform:
+          typeof entry.cueOrFreeform === 'string'
+            ? entry.cueOrFreeform
+            : {
+                ...entry.cueOrFreeform,
+                params: { ...entry.cueOrFreeform.params }
+              }
+      }))
     }
   }
 }

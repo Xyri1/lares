@@ -71,12 +71,26 @@ describe('compose — precedence', () => {
     expect(held.ParamCheek).toBeUndefined()
   })
 
-  it('skips freeform entries that name no cue and falls through to one that does', () => {
+  it('skips unknown cue names and falls through to one it can resolve', () => {
     const [, held] = run([
       [0, [entry('a wistful sigh'), entry('pleased')]],
       [FADE_MS, [entry('a wistful sigh'), entry('pleased')]]
     ])
     expect(held.ParamMouthForm).toBe(1)
+  })
+
+  it('renders an opaque freeform parameter set without cue lookup', () => {
+    const freeform: StackEntry = {
+      cueOrFreeform: { params: { ParamMouthForm: -0.25, ParamCheek: 0.4 }, label: 'wry' },
+      weight: 1,
+      expiryMs: Infinity
+    }
+    const [, held] = run([
+      [0, [freeform]],
+      [FADE_MS, [freeform]]
+    ])
+    expect(held.ParamMouthForm).toBe(-0.25)
+    expect(held.ParamCheek).toBe(0.4)
   })
 
   it('ignores expired entries', () => {

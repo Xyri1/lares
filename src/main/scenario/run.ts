@@ -1,6 +1,6 @@
-import { AffectEngine, type AffectSnapshot } from '../affect/engine'
+import type { AffectSnapshot } from '../affect/engine'
 import type { Vec2 } from '../affect/constants'
-import { Ingestor } from '../sessions/ingest'
+import { Nerves } from '../nerves'
 import type { Scenario } from './types'
 
 export const STEP_MS = 100
@@ -38,8 +38,7 @@ export function createStepper(
   const lastEventMs = events.reduce((max, e) => Math.max(max, e.at_ms), 0)
   const endMs = lastEventMs + tailMs
 
-  const engine = new AffectEngine(cues, 0)
-  const ingestor = new Ingestor(engine)
+  const nerves = new Nerves('scenario', cues, 0)
   const fired = new Array<boolean>(events.length).fill(false)
 
   return {
@@ -50,35 +49,15 @@ export function createStepper(
         fired[i] = true
         const evt = events[i]
         if ('envelope' in evt) {
-          ingestor.ingest(evt.envelope, t)
+          nerves.ingest(evt.envelope, t)
         } else {
-          const intensity = evt.emote.intensity ?? 1
-          const durationMs = (evt.emote.duration_s ?? 6) * 1000
-          engine.applyCueNudge(evt.emote.cue, 'scenario:emote', t, intensity)
-          engine.enqueueExpression(evt.emote.cue, intensity, t + durationMs)
+          nerves.emote(evt.emote, 'scenario:emote', t)
         }
       }
-      engine.tick(t)
-      return resolvePreempt(engine, engine.snapshot())
+      nerves.tick(t)
+      return nerves.snapshot()
     }
   }
-}
-
-// The engine's synthetic preempt entry carries the BASELINE STATE name
-// ('awaiting_input' / 'error'), which is not a cue — a body looking it up in
-// the character's cue table finds nothing and shows no face. Root §4 says the
-// engine picks an expression when it needs one, and root §8 says cue names are
-// what cross the seam, so the pick happens here, in the brain, using the
-// engine's own nearest-cue-with-hysteresis selection. Downstream (trace + feed
-// alike) sees cue names only.
-const PREEMPT_NAMES: ReadonlySet<string> = new Set(['awaiting_input', 'error'])
-
-function resolvePreempt(engine: AffectEngine, snap: AffectSnapshot): AffectSnapshot {
-  const [head, ...rest] = snap.expressionStack
-  if (!head || !PREEMPT_NAMES.has(head.cueOrFreeform)) return snap
-  const cue = engine.selectCue()
-  if (cue === null) return snap
-  return { ...snap, expressionStack: [{ ...head, cueOrFreeform: cue }, ...rest] }
 }
 
 /** One engine trace line — the byte format A3's golden runs compare. */

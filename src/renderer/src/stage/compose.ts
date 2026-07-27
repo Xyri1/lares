@@ -19,7 +19,7 @@
 
 /** One expression-stack entry as it crosses the feed (root SPEC §4). */
 export interface StackEntry {
-  cueOrFreeform: string
+  cueOrFreeform: string | { params: Record<string, number>; label?: string }
   weight: number
   expiryMs: number
 }
@@ -34,27 +34,47 @@ export const FADE_MS = 300
 
 /** Cross-fade state, threaded frame to frame. Opaque to callers. */
 export interface FadeState {
-  /** Cue name currently faded in, '' for "nothing". */
+  /** Stable visual key currently faded in, '' for "nothing". */
   key: string
   weight: number
+  params: Record<string, number>
   /** Composed values of the previous overlay, frozen at the switch instant. */
   from: Record<string, number>
   sinceMs: number
 }
 
 export function initialFade(): FadeState {
-  return { key: '', weight: 1, from: {}, sinceMs: -Infinity }
+  return { key: '', weight: 1, params: {}, from: {}, sinceMs: -Infinity }
 }
 
-/** First entry that names a cue we can render and has not expired. Freeform
- * text carries no parameters this slice, so it is skipped rather than held. */
-function activeEntry(stack: readonly StackEntry[], cues: CueParams, tMs: number): StackEntry | null {
+interface ActiveExpression {
+  key: string
+  params: Readonly<Record<string, number>>
+  weight: number
+}
+
+/** First renderable, unexpired cue or opaque freeform knob set. */
+function activeEntry(
+  stack: readonly StackEntry[],
+  cues: CueParams,
+  tMs: number
+): ActiveExpression | null {
   for (const e of stack) {
     // A non-number expiry (Infinity survives IPC, null survives a JSON round
     // trip) means "no expiry" — never "expired" (P7: tolerate the wire).
     const expiry = typeof e.expiryMs === 'number' ? e.expiryMs : Infinity
     if (expiry <= tMs) continue
-    if (cues[e.cueOrFreeform]) return e
+    if (typeof e.cueOrFreeform === 'string') {
+      const params = cues[e.cueOrFreeform]
+      if (params) return { key: `cue:${e.cueOrFreeform}`, params, weight: e.weight }
+      continue
+    }
+    const params = e.cueOrFreeform.params
+    const key = Object.keys(params)
+      .sort()
+      .map((id) => `${id}:${params[id]}`)
+      .join('|')
+    return { key: `freeform:${key}`, params, weight: e.weight }
   }
   return null
 }
@@ -62,13 +82,12 @@ function activeEntry(stack: readonly StackEntry[], cues: CueParams, tMs: number)
 /** Absolute target value of one overlay parameter: the cue value pulled
  * `weight` of the way from whatever the layers below produced. */
 function overlayTarget(
-  cues: CueParams,
-  key: string,
+  overlay: Readonly<Record<string, number>>,
   weight: number,
   id: string,
   below: number
 ): number {
-  const v = cues[key]?.[id]
+  const v = overlay[id]
   return v === undefined ? below : below + (v - below) * weight
 }
 
@@ -91,28 +110,29 @@ export function composeFrame(
 ): { params: Record<string, number>; state: FadeState } {
   const below = (id: string): number => base[id] ?? defaults[id] ?? 0
   const active = activeEntry(stack, cues, tMs)
-  const key = active ? active.cueOrFreeform : ''
+  const key = active?.key ?? ''
   const weight = active ? active.weight : 1
+  const params = active ? { ...active.params } : {}
 
   let state = prev
   if (key !== prev.key || weight !== prev.weight) {
     // Freeze what is on screen right now and fade from there to the new target.
     const from: Record<string, number> = {}
     const k = fadeFactor(prev, tMs)
-    for (const id of overlayIds(cues, prev, prev.key)) {
+    for (const id of overlayIds(prev.from, prev.params)) {
       const a = prev.from[id] ?? below(id)
-      const b = overlayTarget(cues, prev.key, prev.weight, id, below(id))
+      const b = overlayTarget(prev.params, prev.weight, id, below(id))
       from[id] = a + (b - a) * k
     }
-    state = { key, weight, from, sinceMs: tMs }
+    state = { key, weight, params, from, sinceMs: tMs }
   }
 
   const k = fadeFactor(state, tMs)
-  const params = { ...base }
-  for (const id of overlayIds(cues, state, key)) {
+  const result = { ...base }
+  for (const id of overlayIds(state.from, state.params)) {
     const a = state.from[id] ?? below(id)
-    const b = overlayTarget(cues, key, weight, id, below(id))
-    params[id] = a + (b - a) * k
+    const b = overlayTarget(state.params, state.weight, id, below(id))
+    result[id] = a + (b - a) * k
   }
   // Once the fade has landed, the outgoing set has reached its resting value
   // (the layer below, i.e. the model default for cue-only ids) and can be
@@ -120,7 +140,7 @@ export function composeFrame(
   if (k >= 1 && Object.keys(state.from).length > 0) {
     state = { ...state, from: {} }
   }
-  return { params, state }
+  return { params: result, state }
 }
 
 function fadeFactor(state: FadeState, tMs: number): number {
@@ -132,9 +152,12 @@ function fadeFactor(state: FadeState, tMs: number): number {
 // Union of the outgoing set and the incoming cue's set, outgoing first, so
 // key order in the composed frame is a pure function of the inputs (the synth
 // trace's byte format depends on it).
-function overlayIds(cues: CueParams, state: FadeState, key: string): string[] {
-  const ids = Object.keys(state.from)
+function overlayIds(
+  from: Readonly<Record<string, number>>,
+  overlay: Readonly<Record<string, number>>
+): string[] {
+  const ids = Object.keys(from)
   const seen = new Set(ids)
-  for (const id of Object.keys(cues[key] ?? {})) if (!seen.has(id)) ids.push(id)
+  for (const id of Object.keys(overlay)) if (!seen.has(id)) ids.push(id)
   return ids
 }

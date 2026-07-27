@@ -76,6 +76,22 @@ describe('loadScenario', () => {
     expect(() => loadScenario(writeScenario(bad))).toThrow(/hook_event_name/)
   })
 
+  it.each([
+    ['cwd', 42, /cwd must be a string/],
+    ['pid', 0, /pid must be a positive integer/]
+  ])('uses the ingress validator for malformed envelope %s', (field, value, message) => {
+    const bad = {
+      ...VALID,
+      events: [
+        {
+          at_ms: 0,
+          envelope: { ...SESSION_START_ENVELOPE, [field]: value }
+        }
+      ]
+    }
+    expect(() => loadScenario(writeScenario(bad))).toThrow(message)
+  })
+
   it('rejects an emote missing cue', () => {
     const bad = { ...VALID, events: [{ at_ms: 0, emote: {} }] }
     expect(() => loadScenario(writeScenario(bad))).toThrow(/cue/)

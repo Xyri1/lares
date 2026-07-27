@@ -153,8 +153,8 @@ describe('per-source saturation', () => {
 describe('expression stack expiry and preemption', () => {
   it('holds entries FIFO and drops expired ones on tick', () => {
     const e = new AffectEngine({}, 0)
-    e.enqueueExpression('smile', 1, 5000)
-    e.enqueueExpression('nod', 0.5, 8000)
+    e.enqueueExpression('smile', 1, 0, 5000)
+    e.enqueueExpression('nod', 0.5, 0, 3000)
     expect(e.snapshot().expressionStack).toEqual([
       { cueOrFreeform: 'smile', weight: 1, expiryMs: 5000 },
       { cueOrFreeform: 'nod', weight: 0.5, expiryMs: 8000 }
@@ -165,17 +165,29 @@ describe('expression stack expiry and preemption', () => {
     ])
   })
 
-  it('caps queue depth at 4 by dropping the oldest', () => {
+  it('rejects a fifth queue entry without dropping the oldest', () => {
     const e = new AffectEngine({}, 0)
-    for (let i = 1; i <= 5; i++) e.enqueueExpression(`x${i}`, 1, 100_000)
+    for (let i = 1; i <= 4; i++) expect(e.enqueueExpression(`x${i}`, 1, 0, 1000)).toBe(true)
+    expect(e.enqueueExpression('x5', 1, 0, 1000)).toBe(false)
     const stack = e.snapshot().expressionStack
     expect(stack).toHaveLength(4)
-    expect(stack[0].cueOrFreeform).toBe('x2')
+    expect(stack[0].cueOrFreeform).toBe('x1')
+    expect(stack[3].expiryMs).toBe(4000)
+  })
+
+  it('clears the pending queue for immediate replacement', () => {
+    const e = new AffectEngine({}, 0)
+    e.enqueueExpression('smile', 1, 0, 5000)
+    e.clearExpressions()
+    e.enqueueExpression('alert', 1, 1000, 2000)
+    expect(e.snapshot().expressionStack).toEqual([
+      { cueOrFreeform: 'alert', weight: 1, expiryMs: 3000 }
+    ])
   })
 
   it('preempts the queue on an error or awaiting_input baseline, preserving it', () => {
     const e = new AffectEngine({}, 0)
-    e.enqueueExpression('smile', 1, 5000)
+    e.enqueueExpression('smile', 1, 0, 5000)
     e.setBaselineState('error')
     let stack = e.snapshot().expressionStack
     expect(stack[0]).toMatchObject({ cueOrFreeform: 'error', weight: 1 })
@@ -189,7 +201,7 @@ describe('expression stack expiry and preemption', () => {
 
   it('resumes the preserved queue when the baseline moves on', () => {
     const e = new AffectEngine({}, 0)
-    e.enqueueExpression('smile', 1, 5000)
+    e.enqueueExpression('smile', 1, 0, 5000)
     e.setBaselineState('error')
     e.setBaselineState('working')
     expect(e.snapshot().expressionStack).toEqual([
@@ -199,7 +211,7 @@ describe('expression stack expiry and preemption', () => {
 
   it('drops entries that expired during preemption', () => {
     const e = new AffectEngine({}, 0)
-    e.enqueueExpression('smile', 1, 5000)
+    e.enqueueExpression('smile', 1, 0, 5000)
     e.setBaselineState('error')
     e.tick(6000)
     e.setBaselineState('working')

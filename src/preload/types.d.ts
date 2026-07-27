@@ -15,7 +15,11 @@ interface AffectFeed {
   E: { valence: number; arousal: number }
   M: { valence: number; arousal: number }
   baselineState: string
-  expressionStack: { cueOrFreeform: string; weight: number; expiryMs: number }[]
+  expressionStack: {
+    cueOrFreeform: string | { params: Record<string, number>; label?: string }
+    weight: number
+    expiryMs: number
+  }[]
   beats: string[]
 }
 

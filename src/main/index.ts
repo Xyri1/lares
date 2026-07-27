@@ -1,10 +1,12 @@
-import { app, shell, BrowserWindow, ipcMain, protocol, net, screen } from 'electron'
-import { existsSync } from 'node:fs'
+import { app, shell, BrowserWindow, dialog, ipcMain, protocol, net, screen } from 'electron'
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { loadCharacter } from './characters/manifest'
+import { Nerves } from './nerves'
 import {
   clampToWorkArea,
   loadPosition,
@@ -15,8 +17,15 @@ import {
 } from './position'
 import { SCENARIO_CUES } from './scenario/cues'
 import { loadScenario } from './scenario/load'
-import { playScenarioPaced, type PacedPlayback, type StageId } from './scenario/player'
+import {
+  feedMessage,
+  playScenarioPaced,
+  type AffectFeedMessage,
+  type PacedPlayback,
+  type StageId
+} from './scenario/player'
 import { writeTrace } from './scenario/trace'
+import { createServer } from './server/server'
 
 // Character assets reach the renderer over lares:// so the load path is
 // identical in dev (http origin) and packaged (file origin) builds.
@@ -28,6 +37,78 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 const charactersRoot = (): string => join(app.getAppPath(), 'characters')
+const runtimeFile = (): string => join(homedir(), '.lares', 'runtime.json')
+
+let liveNerves: Nerves | null = null
+let nervesServer: ReturnType<typeof createServer> | null = null
+let nervesTick: ReturnType<typeof setInterval> | null = null
+
+function broadcastFeed(feed: AffectFeedMessage): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
+  }
+}
+
+function removeRuntimeFile(): void {
+  try {
+    unlinkSync(runtimeFile())
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.error('[lares] failed to remove discovery file', error)
+    }
+  }
+}
+
+function configuredPort(): number {
+  const value = Number(process.env.LARES_PORT)
+  return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : 21473
+}
+
+async function startNerves(): Promise<void> {
+  const manifest = loadCharacter(join(charactersRoot(), 'hiyori', 'lar.character.json'))
+  liveNerves = new Nerves('Hiyori', manifest.ok ? manifest.expressions : SCENARIO_CUES, Date.now())
+  nervesServer = createServer({
+    ingest: (envelope, nowMs) => liveNerves!.ingest(envelope, nowMs),
+    emote: (args, source, nowMs) => liveNerves!.emote(args, source, nowMs),
+    listCues: () => liveNerves!.listCues(),
+    status: (nowMs) => liveNerves!.status(nowMs)
+  })
+
+  try {
+    const port = await nervesServer.start(configuredPort())
+    const directory = join(homedir(), '.lares')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(runtimeFile(), JSON.stringify({ version: 1, port, pid: process.pid }))
+    nervesTick = setInterval(() => {
+      const nowMs = Date.now()
+      liveNerves!.tick(nowMs)
+      if (activePlayback === null) {
+        broadcastFeed(feedMessage(liveNerves!.snapshot(), Math.floor(nowMs / 100)))
+      }
+    }, 100)
+    console.log(`[lares] listening on http://127.0.0.1:${port}`)
+  } catch (error) {
+    removeRuntimeFile()
+    const code = (error as NodeJS.ErrnoException).code
+    const message =
+      code === 'EADDRINUSE'
+        ? `Port ${configuredPort()} is already in use. Lares ingress is disabled.`
+        : `Lares ingress failed to start: ${error instanceof Error ? error.message : String(error)}`
+    console.error(`[lares] ${message}`)
+    dialog.showErrorBox('Lares ingress unavailable', message)
+    void nervesServer.stop()
+    nervesServer = null
+  }
+}
+
+function stopNerves(): void {
+  if (nervesTick) clearInterval(nervesTick)
+  nervesTick = null
+  removeRuntimeFile()
+  const server = nervesServer
+  nervesServer = null
+  if (server) void server.stop().catch((error) => console.error('[lares] server stop failed', error))
+}
 
 function registerAssetProtocol(): void {
   protocol.handle('lares', (request) => {
@@ -51,8 +132,10 @@ function registerCharacterIpc(): void {
   })
 
   ipcMain.on('body:inventory', (_event, params: unknown[]) => {
-    // Root SPEC §8 body→brain message; brain-side consumers arrive in M2/M3.
-    console.log(`[lares] body:inventory — ${Array.isArray(params) ? params.length : 0} parameters`)
+    const accepted = liveNerves?.setInventory(params) ?? false
+    console.log(
+      `[lares] body:inventory — ${accepted && Array.isArray(params) ? params.length : 0} parameters`
+    )
   })
 
   ipcMain.handle('cues:list', () => {
@@ -166,11 +249,7 @@ function registerScenarioIpc(): void {
         // mirrors playback on the desktop. Everything else below stays aimed
         // at the requester — scenario control and the synth trace are a
         // dev-window affair, and the overlay must not answer for them.
-        onFeed: (feed) => {
-          for (const win of BrowserWindow.getAllWindows()) {
-            if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
-          }
-        },
+        onFeed: broadcastFeed,
         onSeek: (history) => {
           if (!sender.isDestroyed()) sender.send('scenario:seeked', history)
         },
@@ -474,6 +553,7 @@ if (!app.requestSingleInstanceLock()) {
     registerCharacterIpc()
     registerScenarioIpc()
     registerOverlayIpc()
+    void startNerves()
     createWindows()
 
     app.on('activate', function () {
@@ -486,4 +566,6 @@ if (!app.requestSingleInstanceLock()) {
       app.quit()
     }
   })
+
+  app.on('before-quit', stopNerves)
 }

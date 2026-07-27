@@ -1,27 +1,9 @@
 import { readFileSync } from 'node:fs'
-import type { ClaudeCodeEnvelope } from '../sessions/mapEvent'
+import { parseEnvelope } from '../sessions/mapEvent'
 import type { EmoteEvent, Scenario, ScenarioEvent } from './types'
 
 function fail(msg: string): never {
   throw new Error(`Invalid scenario: ${msg}`)
-}
-
-function checkEnvelope(v: unknown, where: string): asserts v is ClaudeCodeEnvelope {
-  if (typeof v !== 'object' || v === null) fail(`${where}.envelope must be an object`)
-  const e = v as Partial<ClaudeCodeEnvelope>
-  if (e.v !== 1) fail(`${where}.envelope.v must be 1`)
-  if (e.harness !== 'claude-code') fail(`${where}.envelope.harness must be "claude-code"`)
-  if (typeof e.session_id !== 'string' || !e.session_id) {
-    fail(`${where}.envelope.session_id must be a non-empty string`)
-  }
-  if (
-    typeof e.event !== 'object' ||
-    e.event === null ||
-    typeof e.event.hook_event_name !== 'string' ||
-    !e.event.hook_event_name
-  ) {
-    fail(`${where}.envelope.event.hook_event_name must be a non-empty string`)
-  }
 }
 
 function checkEmote(v: unknown, where: string): asserts v is EmoteEvent {
@@ -69,8 +51,9 @@ export function loadScenario(filePath: string): Scenario {
     if (hasEnvelope === hasEmote) fail(`${where} must have exactly one of envelope or emote`)
     const at_ms = evt.at_ms * timeScale
     if (hasEnvelope) {
-      checkEnvelope(evt.envelope, where)
-      return { at_ms, envelope: evt.envelope }
+      const envelope = parseEnvelope(evt.envelope)
+      if (!envelope.ok) fail(`${where}.${envelope.error}`)
+      return { at_ms, envelope: envelope.value }
     }
     checkEmote(evt.emote, where)
     return { at_ms, emote: evt.emote }

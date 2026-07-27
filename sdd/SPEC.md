@@ -19,7 +19,7 @@ Module map (brain): `server/` (routes, MCP), `sessions/`, `affect/` (pure, zero 
 **Event route** `POST /v1/events` — envelope: `{ v: 1, harness: "claude-code" | "codex", session_id, cwd?, pid?, event: <harness-native JSON passthrough> }`. The forwarder adds the envelope and stamps `pid: process.ppid` — its parent is the harness process, which gives §3 liveness its probe target; `pid` stays optional because MCP-only session knowledge never has one (004-D5). All interpretation is server-side (adapter modules per harness). Responses: `202` accepted, `403` origin-rejected, `422` unparseable. Forwarder behavior: read discovery file; if absent or connection refused, exit 0 silently within 50ms (agents degrade gracefully, P3/D14); never block the harness beyond a 500ms *(default)* total budget.
 
 **MCP** — streamable HTTP at `POST /v1/mcp` (no token, D27). The server's MCP `instructions` field is the primary emote-adoption vector (D26): Context7-style trigger/anti-trigger guidance — emote at meaningful beats (session start, state change, third consecutive failure, recovery, completion), never per tool call — and tool descriptions are themselves written as triggers. Tools:
-- `emote(cue?, params?, intensity?, duration_s?, queue?, label?)` — the one expression tool, both branches (004-D2): exactly one of `cue` | `params`, both or neither ⇒ tool error. Cue branch: package cue, affect nudge `(Δv, Δa) · intensity` (§4). Params branch (freeform `{paramId: value}`): drives knobs directly, nudges nothing; `intensity` ignored-with-warning, `label` names the composition for `status()` and the authoring bridge.
+- `emote(cue?, params?, intensity?, duration_s?, queue?, label?)` — the one expression tool, both branches (004-D2): exactly one of `cue` | `params`, both or neither ⇒ tool error. Cue branch: package cue, affect nudge `(Δv, Δa) · intensity` (§4). Params branch (freeform `{paramId: value}`): drives knobs directly, nudges nothing; `intensity` ignored-with-warning, `label` names the composition for `status()` and the authoring bridge. `queue` defaults true; false clears pending non-preempting expressions and plays this expression next.
 - `list_cues()` → cues with affect coordinates and source (bundled | authored | raw)
 - `status()` → active character, session summary, protocol version
 - Authoring (D25 loop; ships M4, 004-D1): `list_parameters()` (id, name, min, max, default — from the active body's reported inventory, §8), `preview_expression(params)` (renders on the live Lar, auto-reverts after 5s), `save_expression(name, params)` (writes pending; activates only after user acceptance in-app).
@@ -28,9 +28,9 @@ Module map (brain): `server/` (routes, MCP), `sessions/`, `affect/` (pure, zero 
 
 ## 3. Sessions
 
-Table row: `{ session_id, harness, cwd, state, since, last_event_at, subagents: n, pid? }`. Created on SessionStart (or first event), removed on Stop/SessionEnd; **liveness**: rows with a known pid are reaped when the pid dies; rows without, after 30min *(default)* of silence.
+Table row: `{ session_id, harness, cwd, state, since, last_event_at, subagents: n, pid? }`. Created on SessionStart (or first event); Stop retains the row in `done`, while SessionEnd removes it. **Liveness:** rows with a known pid are reaped when the pid dies; rows without, after 30min *(default)* of silence.
 
-**States and priority:** `awaiting_input (100) > error (80) > working (60) > thinking (50) > done (30) > idle (10)`. Displayed baseline = max priority across live sessions (P10). `done` decays to `idle` after 60s *(default)*; no events across all sessions for 90s → idle; idle for 10min → sleep sequence.
+**States and priority:** `awaiting_input (100) > error (80) > working (60) > thinking (50) > done (30) > idle (10)`. Displayed baseline = max priority across live sessions (P10). `done` decays to `idle` after 60s *(default)*; after 90s without events, working/thinking/done display as idle, but live awaiting_input/error rows remain loud (P10); idle for 10min → sleep sequence.
 
 **Event→state mapping (normative for v1 adapters):**
 

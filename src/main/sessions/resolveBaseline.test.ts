@@ -10,12 +10,13 @@ describe('resolveBaseline', () => {
     expect(resolveBaseline([{ session_id: 's1', state: 'working' }])).toBe('working')
   })
 
-  it('throws for more than one session (fenced — no aggregation this slice)', () => {
-    expect(() =>
+  it('returns the highest-priority live session', () => {
+    expect(
       resolveBaseline([
         { session_id: 's1', state: 'working' },
-        { session_id: 's2', state: 'error' }
+        { session_id: 's2', state: 'awaiting_input' },
+        { session_id: 's3', state: 'error' }
       ])
-    ).toThrow()
+    ).toBe('awaiting_input')
   })
 })
