@@ -35,6 +35,23 @@ describe('adapter:remove', () => {
       join(home, '.claude.json'),
       JSON.stringify({ mcpServers: { lares: { type: 'http', url: 'old' }, user: {} } })
     )
+    const codexDirectory = join(home, '.codex')
+    await mkdir(codexDirectory)
+    await writeFile(
+      join(codexDirectory, 'hooks.json'),
+      JSON.stringify({
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                { type: 'command', command: '/old/bin/lares-forwarder' },
+                { type: 'command', command: 'keep-me' }
+              ]
+            }
+          ]
+        }
+      })
+    )
 
     const result = await new Promise<{ code: number | null; stdout: string }>((done, reject) => {
       const child = spawn(
@@ -53,11 +70,15 @@ describe('adapter:remove', () => {
 
     expect(result).toMatchObject({ code: 0 })
     expect(result.stdout).toContain('hooks=updated, mcp=updated')
+    expect(result.stdout).toContain('Codex hooks removal: hooks=updated')
     expect(JSON.parse(await readFile(join(claudeDirectory, 'settings.json'), 'utf8'))).toEqual({
       hooks: { Stop: [{ hooks: [{ type: 'command', command: 'keep-me' }] }] }
     })
     expect(JSON.parse(await readFile(join(home, '.claude.json'), 'utf8'))).toEqual({
       mcpServers: { user: {} }
+    })
+    expect(JSON.parse(await readFile(join(codexDirectory, 'hooks.json'), 'utf8'))).toEqual({
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'keep-me' }] }] }
     })
   })
 })

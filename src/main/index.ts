@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { syncClaudeCode } from './adapters/claude-code/writer'
+import { syncCodexHooks } from './adapters/codex/hooks'
 import { writeCodexShim } from './adapters/codex/shim'
 import { loadCharacter } from './characters/manifest'
 import { DensityLog } from './densityLog'
@@ -88,6 +89,14 @@ async function syncAdapters(port: number): Promise<void> {
         }
       })
       .catch((error) => console.error('[lares] Claude Code adapter registration failed', error)),
+    syncCodexHooks({
+      codexDirectory: join(home, '.codex'),
+      hooksPath: join(home, '.codex', 'hooks.json')
+    })
+      .then((result) => {
+        if (result === 'updated') console.log('[lares] Codex hooks registered; trust review runs next session')
+      })
+      .catch((error) => console.error('[lares] Codex hooks registration failed', error)),
     writeCodexShim({
       binDir: join(home, '.lares', 'bin'),
       appPath: process.execPath,

@@ -3,8 +3,8 @@ import { copyFile, readFile, rename, rm, stat, writeFile } from 'node:fs/promise
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 
-type JsonObject = Record<string, unknown>
-type FileResult = 'updated' | 'unchanged' | 'skipped'
+export type JsonObject = Record<string, unknown>
+export type FileResult = 'updated' | 'unchanged' | 'skipped'
 
 export interface ClaudeCodePaths {
   claudeDirectory: string
@@ -113,7 +113,7 @@ function withLaresHooks(settings: JsonObject, command: string): JsonObject {
   return { ...clean, hooks }
 }
 
-async function readJson(path: string): Promise<{ value: JsonObject } | undefined> {
+export async function readJson(path: string): Promise<{ value: JsonObject } | undefined> {
   let bytes: string
   try {
     bytes = await readFile(path, 'utf8')
@@ -132,7 +132,7 @@ async function readJson(path: string): Promise<{ value: JsonObject } | undefined
   return { value }
 }
 
-async function backupOnce(path: string): Promise<void> {
+export async function backupOnce(path: string): Promise<void> {
   try {
     await copyFile(path, `${path}.lares-backup`, constants.COPYFILE_EXCL)
   } catch (error) {
@@ -140,7 +140,7 @@ async function backupOnce(path: string): Promise<void> {
   }
 }
 
-async function atomicWrite(path: string, value: JsonObject): Promise<void> {
+export async function atomicWrite(path: string, value: JsonObject): Promise<void> {
   const temporary = `${path}.lares-tmp-${process.pid}-${randomUUID()}`
   try {
     let copied = false
@@ -160,7 +160,7 @@ async function atomicWrite(path: string, value: JsonObject): Promise<void> {
   }
 }
 
-async function writeSettings(
+export async function writeIfDifferent(
   path: string,
   transform: (settings: JsonObject) => JsonObject,
   createIfMissing: boolean
@@ -221,7 +221,7 @@ export async function syncClaudeCode(
   }
 
   const command = claudeCodeCommand(options.appPath, options.forwarderPath, options.platform)
-  const settings = await writeSettings(
+  const settings = await writeIfDifferent(
     options.settingsPath,
     (value) => withLaresHooks(value, command),
     true
@@ -252,7 +252,7 @@ export async function removeClaudeCode(
     return { settings: 'skipped', mcp: 'skipped' }
   }
 
-  const settings = await writeSettings(options.settingsPath, withoutLaresHooks, false)
+  const settings = await writeIfDifferent(options.settingsPath, withoutLaresHooks, false)
   const mcp = await writeMcp(
     options.claudeConfigPath,
     (value) => {

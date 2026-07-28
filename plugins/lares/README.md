@@ -1,6 +1,6 @@
 # Lares for Codex
 
-Lares forwards Codex lifecycle events to the local Lares app and provides its local MCP server.
+The plugin provides Lares's local MCP server; skills arrive later. The desktop app registers baseline lifecycle hooks at startup.
 
 ## Install
 
@@ -8,6 +8,6 @@ Lares forwards Codex lifecycle events to the local Lares app and provides its lo
 codex plugin marketplace add Xyri1/lares
 ```
 
-Start Codex, then use `/plugins` to install and enable Lares. Review and trust its hooks through Codex's standard hook trust flow with `/hooks`.
+Start the Lares app, then use `/plugins` to install and enable Lares in Codex.
 
-Start a new Codex session after enabling the plugin so its hooks are loaded.
+At the next session start, Codex shows one hook trust review listing Lares twice: the plugin's inert copy and the app's live user-level copy. Trust all, or review them with `/hooks`.
