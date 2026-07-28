@@ -56,7 +56,7 @@ export class AffectEngine {
   private selectedCue: string | null = null
 
   constructor(
-    private cues: Record<string, Vec2>,
+    private cues: Record<string, Vec2 | null>,
     nowMs: number
   ) {
     this.lastTickMs = nowMs
@@ -141,6 +141,7 @@ export class AffectEngine {
     let best: string | null = null
     let bestDist = Infinity
     for (const [name, pos] of Object.entries(this.cues)) {
+      if (pos === null) continue
       const d = dist(pos, this.E)
       if (d < bestDist) {
         best = name
@@ -151,7 +152,7 @@ export class AffectEngine {
     const current = this.selectedCue
     if (current !== null && current !== best && this.cues[current]) {
       // hysteresis: switch only when the new nearest wins by more than the margin
-      if (dist(this.cues[current], this.E) - bestDist <= CUE_HYSTERESIS) return current
+      if (dist(this.cues[current]!, this.E) - bestDist <= CUE_HYSTERESIS) return current
     }
     this.selectedCue = best
     return best

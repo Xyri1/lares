@@ -1,16 +1,32 @@
 import { app, shell, BrowserWindow, dialog, ipcMain, protocol, net, screen } from 'electron'
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  realpathSync,
+  unlinkSync,
+  writeFileSync
+} from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { syncClaudeCode } from './adapters/claude-code/writer'
 import { syncCodexHooks } from './adapters/codex/hooks'
 import { writeCodexShim } from './adapters/codex/shim'
-import { loadCharacter } from './characters/manifest'
+import { applyExp3, parseExp3File, parseModelCdi3File } from './characters/exp3'
+import {
+  saveExpression as saveCharacterExpression,
+  updateExpression as updateCharacterExpression
+} from './characters/authoring'
+import {
+  loadCharacter,
+  selectCharacterManifest,
+  type CueDefinition,
+  type ManifestResult
+} from './characters/manifest'
 import { DensityLog } from './densityLog'
-import { Nerves } from './nerves'
+import { Nerves, type ParamInfo } from './nerves'
 import {
   clampToWorkArea,
   loadPosition,
@@ -47,10 +63,79 @@ let liveNerves: Nerves | null = null
 let nervesServer: ReturnType<typeof createServer> | null = null
 let nervesTick: ReturnType<typeof setInterval> | null = null
 let densityLog: DensityLog | null = null
+let characterInventoryErrorShown = false
+let selectedCharacter:
+  | { ok: true; manifestPath: string; character: Extract<ManifestResult, { ok: true }> }
+  | { ok: false; error: string }
+  | null = null
 
 function broadcastFeed(feed: AffectFeedMessage): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
+  }
+}
+
+function broadcast(channel: 'authoring:preview' | 'authoring:revert', value?: unknown): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send(channel, value)
+  }
+}
+
+function activeCharacter():
+  | { ok: true; manifestPath: string; character: Extract<ManifestResult, { ok: true }> }
+  | { ok: false; error: string } {
+  if (selectedCharacter) return selectedCharacter
+  const selection = selectCharacterManifest(charactersRoot())
+  if (!selection.ok) {
+    selectedCharacter = selection
+    return selection
+  }
+  if (selection.warning) console.warn(`[lares] ${selection.warning}`)
+  const character = loadCharacter(selection.manifestPath)
+  selectedCharacter = character.ok
+    ? { ok: true, manifestPath: selection.manifestPath, character }
+    : { ok: false, error: character.error }
+  return selectedCharacter
+}
+
+function displayNames(modelPath: string): ReadonlyMap<string, string> {
+  const selected = activeCharacter()
+  return selected.ok
+    ? parseModelCdi3File(modelPath, dirname(selected.manifestPath))
+    : new Map()
+}
+
+function cueSource(cue: CueDefinition): 'bundled' | 'authored' | 'raw' {
+  if ('params' in cue) return 'raw'
+  return 'expression' in cue && cue.expression.startsWith('authored/') ? 'authored' : 'bundled'
+}
+
+function cueSources(
+  cues: Readonly<Record<string, CueDefinition>>
+): Record<string, 'bundled' | 'authored' | 'raw'> {
+  return Object.fromEntries(Object.entries(cues).map(([name, cue]) => [name, cueSource(cue)]))
+}
+
+function object(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} arguments must be an object`)
+  }
+  return value as Record<string, unknown>
+}
+
+// Range overshoot is NOT an error: exp3 files legitimately exceed declared
+// ranges (rigger saturation trick) and every Live2D runtime clamps at set
+// time — so do the engine and the body. Only unknown ids mark a broken package.
+function rejectUnknownParams(
+  cue: string,
+  params: Readonly<Record<string, number>>,
+  inventory: ReadonlyMap<string, ParamInfo>
+): void {
+  const unknown = Object.keys(params).filter((id) => !inventory.has(id))
+  if (unknown.length) {
+    throw new Error(
+      `Cue ${JSON.stringify(cue)}: unknown parameter ${unknown.map((id) => JSON.stringify(id)).join(', ')}`
+    )
   }
 }
 
@@ -110,8 +195,49 @@ async function startNerves(): Promise<void> {
   densityLog = process.env.LARES_DENSITY_LOG
     ? new DensityLog(resolve(process.env.LARES_DENSITY_LOG))
     : null
-  const manifest = loadCharacter(join(charactersRoot(), 'hiyori', 'lar.character.json'))
-  liveNerves = new Nerves('Hiyori', manifest.ok ? manifest.expressions : SCENARIO_CUES, Date.now())
+  const selected = activeCharacter()
+  const character = selected.ok ? selected.character : null
+  if (!selected.ok) console.error(`[lares] ${selected.error}`)
+  const cueDefinitions = character?.live2d.cues ?? {}
+  const names = character ? displayNames(character.live2d.model) : new Map<string, string>()
+  liveNerves = new Nerves(character?.name ?? 'No character', character?.expressions ?? {}, Date.now(), undefined, {
+    cueSources: cueSources(cueDefinitions),
+    resolveCue: (cue, defaults, inventory) => {
+      const definition = cueDefinitions[cue]
+      if (!definition) return undefined
+      if ('params' in definition) {
+        rejectUnknownParams(cue, definition.params, inventory)
+        return { params: definition.params }
+      }
+      if ('motion' in definition) return { motion: definition.motion }
+      const result = parseExp3File(
+        resolve(dirname(selected.ok ? selected.manifestPath : ''), definition.expression),
+        names
+      )
+      if (!result.ok) {
+        console.error(`[lares] cannot resolve cue ${JSON.stringify(cue)}: ${result.error}`)
+        return undefined
+      }
+      rejectUnknownParams(
+        cue,
+        Object.fromEntries(result.parameters.map((parameter) => [parameter.id, parameter.value])),
+        inventory
+      )
+      return { params: applyExp3(result.parameters, defaults) }
+    },
+    preview: (value) => broadcast('authoring:preview', value),
+    revertPreview: () => broadcast('authoring:revert')
+  })
+  const refreshCharacterState = (): Extract<ManifestResult, { ok: true }> => {
+    if (!selected.ok) throw new Error(selected.error)
+    const fresh = loadCharacter(selected.manifestPath)
+    if (!fresh.ok) throw new Error(fresh.error)
+    for (const cue of Object.keys(cueDefinitions)) delete cueDefinitions[cue]
+    Object.assign(cueDefinitions, fresh.live2d.cues ?? {})
+    selected.character = fresh
+    liveNerves!.reloadCues(fresh.expressions, cueSources(cueDefinitions))
+    return fresh
+  }
   densityLog?.recordBaseline(liveNerves.status(Date.now()).sessions.baseline, Date.now())
   nervesServer = createServer({
     ingest: (envelope, nowMs) => {
@@ -124,7 +250,37 @@ async function startNerves(): Promise<void> {
       return result
     },
     listCues: () => liveNerves!.listCues(),
-    status: (nowMs) => liveNerves!.status(nowMs)
+    status: (nowMs) => liveNerves!.status(nowMs),
+    listParameters: () => liveNerves!.listParameters(),
+    previewExpression: (args, nowMs) => liveNerves!.previewExpression(args, nowMs),
+    saveExpression: (raw) => {
+      if (!selected.ok) throw new Error(selected.error)
+      const args = object(raw, 'save_expression')
+      const params = liveNerves!.clampParams(args.params)
+      const result = saveCharacterExpression(
+        selected.manifestPath,
+        args.name as string,
+        params,
+        args.affect as { valence: number; arousal: number }
+      )
+      if (!result.ok) throw new Error(result.error)
+      refreshCharacterState()
+      return { saved: args.name, report: result.report }
+    },
+    updateExpression: (raw) => {
+      if (!selected.ok) throw new Error(selected.error)
+      const args = object(raw, 'update_expression')
+      const params = args.params === undefined ? undefined : liveNerves!.clampParams(args.params)
+      const result = updateCharacterExpression(selected.manifestPath, args.name as string, {
+        ...(args.affect === undefined
+          ? {}
+          : { affect: args.affect as { valence: number; arousal: number } }),
+        ...(params === undefined ? {} : { params })
+      })
+      if (!result.ok) throw new Error(result.error)
+      refreshCharacterState()
+      return { updated: args.name, report: result.report }
+    }
   })
 
   try {
@@ -173,39 +329,81 @@ function registerAssetProtocol(): void {
     const root = charactersRoot()
     const target = join(root, decodeURIComponent(url.pathname))
     if (!target.startsWith(root + sep)) return new Response('forbidden', { status: 403 }) // P7: no traversal
-    return net.fetch(pathToFileURL(target).toString())
+    try {
+      const realTarget = realpathSync(target)
+      if (!realTarget.startsWith(realpathSync(root) + sep)) {
+        return new Response('forbidden', { status: 403 })
+      }
+      return net.fetch(pathToFileURL(realTarget).toString())
+    } catch {
+      return new Response('not found', { status: 404 })
+    }
   })
 }
 
 function registerCharacterIpc(): void {
   ipcMain.handle('character:get', () => {
-    // ponytail: hiyori hardcoded — character selection is out of slice scope
-    const root = charactersRoot()
-    const result = loadCharacter(join(root, 'hiyori', 'lar.character.json'))
-    if (!result.ok) return result
-    const rel = relative(root, result.live2d.model).split(sep).join('/')
-    return { ...result, live2d: { ...result.live2d, model: `lares://characters/${rel}` } }
+    const selected = activeCharacter()
+    if (!selected.ok) return selected
+    const result = selected.character
+    const rel = relative(charactersRoot(), result.live2d.model).split(sep).join('/')
+    return {
+      ...result,
+      live2d: {
+        ...result.live2d,
+        model: `lares://characters/${rel.split('/').map(encodeURIComponent).join('/')}`
+      }
+    }
   })
 
   ipcMain.on('body:inventory', (_event, params: unknown[]) => {
-    const accepted = liveNerves?.setInventory(params) ?? false
+    const selected = activeCharacter()
+    const names = selected.ok ? displayNames(selected.character.live2d.model) : new Map()
+    const withDisplayNames = Array.isArray(params)
+      ? params.map((value) => {
+          if (typeof value !== 'object' || value === null) return value
+          const id = (value as { id?: unknown }).id
+          const name = typeof id === 'string' ? names.get(id) : undefined
+          return name ? { ...value, name } : value
+        })
+      : params
+    const accepted = liveNerves?.setInventory(withDisplayNames) ?? false
     console.log(
       `[lares] body:inventory — ${accepted && Array.isArray(params) ? params.length : 0} parameters`
     )
+    const issues = accepted ? (liveNerves?.cueValidationErrors() ?? []) : []
+    if (issues.length) {
+      const message = issues.join('\n')
+      console.error(`[lares] character parameter validation failed:\n${message}`)
+      if (!characterInventoryErrorShown) {
+        characterInventoryErrorShown = true
+        dialog.showErrorBox('Character package invalid', message)
+      }
+    }
   })
 
   ipcMain.handle('cues:list', () => {
-    // ponytail: hiyori hardcoded, matches character:get above
-    const root = charactersRoot()
-    const result = loadCharacter(join(root, 'hiyori', 'lar.character.json'))
-    if (!result.ok) return []
-    const cuesBlock = (result.live2d.cues ?? {}) as Record<string, { params?: Record<string, number> }>
-    return Object.entries(result.expressions).map(([name, coord]) => ({
-      name,
-      valence: coord.valence,
-      arousal: coord.arousal,
-      params: cuesBlock[name]?.params ?? {}
-    }))
+    const selected = activeCharacter()
+    if (!selected.ok) return []
+    const { character, manifestPath } = selected
+    return Object.entries(character.live2d.cues ?? {}).map(([name, cue]) => {
+      const coord = character.expressions[name] ?? null
+      const base = {
+        name,
+        valence: coord?.valence ?? null,
+        arousal: coord?.arousal ?? null
+      }
+      if ('params' in cue) return { ...base, params: cue.params }
+      if ('motion' in cue) {
+        const absolute = resolve(dirname(manifestPath), cue.motion)
+        const rel = relative(charactersRoot(), absolute).split(sep).join('/')
+        return {
+          ...base,
+          motion: `lares://characters/${rel.split('/').map(encodeURIComponent).join('/')}`
+        }
+      }
+      return base
+    })
   })
 }
 

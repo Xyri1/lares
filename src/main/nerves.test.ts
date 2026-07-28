@@ -107,6 +107,93 @@ describe('Nerves emote ingress', () => {
     })
   })
 
+  it('keeps null-coordinate cues directly emote-able but out of autonomous selection', () => {
+    const nerves = new Nerves(
+      'Imported',
+      { mapped: { valence: 0.4, arousal: 0.2 }, unmapped: null },
+      0
+    )
+    expect(nerves.emote({ cue: 'unmapped' }, 'agent', 0)).toEqual({ status: 'played' })
+    expect(nerves.snapshot().E).toEqual({ valence: 0.1, arousal: 0.25 })
+    expect(nerves.listCues()).toContainEqual({
+      name: 'unmapped',
+      valence: null,
+      arousal: null,
+      calibrated: false,
+      source: 'bundled'
+    })
+    expect(nerves.status(0).uncalibrated_cues).toBe(1)
+  })
+
+  it('resolves cue params through inventory and holds, replaces, reverts, and times out previews', () => {
+    const previews: unknown[] = []
+    let reverts = 0
+    const nerves = new Nerves(
+      'Imported',
+      {
+        smile: { valence: 0.4, arousal: 0.2 },
+        wave: null
+      },
+      0,
+      undefined,
+      {
+        resolveCue: (cue) =>
+          cue === 'smile' ? { params: { ParamMouthForm: 9 } } : { motion: 'runtime/wave.motion3.json' },
+        preview: (value) => previews.push(value),
+        revertPreview: () => reverts++
+      }
+    )
+    nerves.setInventory(INVENTORY)
+    expect(nerves.listParameters()[0]).toMatchObject({
+      id: 'ParamMouthForm',
+      display_name: 'Mouth form'
+    })
+
+    nerves.emote({ cue: 'smile' }, 'agent', 0)
+    expect(nerves.snapshot().expressionStack[0].cueOrFreeform).toEqual({
+      params: { ParamMouthForm: 1 },
+      label: 'smile'
+    })
+    expect(nerves.previewExpression({ params: { ParamMouthForm: -9 } }, 100)).toEqual({
+      status: 'previewing'
+    })
+    expect(nerves.previewExpression({ cue: 'smile' }, 200)).toEqual({ status: 'previewing' })
+    expect(previews).toEqual([
+      { params: { ParamMouthForm: -1 } },
+      { params: { ParamMouthForm: 1 } }
+    ])
+    nerves.tick(60_199)
+    expect(reverts).toBe(0)
+    nerves.tick(60_200)
+    expect(reverts).toBe(1)
+
+    expect(nerves.previewExpression({ cue: 'wave' }, 70_000)).toEqual({ status: 'played' })
+    expect(previews.at(-1)).toEqual({ cue: 'wave' })
+    expect(nerves.previewExpression({}, 70_001)).toEqual({ status: 'reverted' })
+    expect(reverts).toBe(2)
+  })
+
+  it('retains post-load cue validation errors for the app to surface loudly', () => {
+    const nerves = new Nerves(
+      'Broken',
+      { bad: null },
+      0,
+      undefined,
+      {
+        resolveCue: () => {
+          throw new Error('Cue "bad": unknown parameter "Missing"')
+        }
+      }
+    )
+    expect(nerves.setInventory(INVENTORY)).toBe(true)
+    expect(nerves.cueValidationErrors()).toEqual([
+      'Cue "bad": unknown parameter "Missing"'
+    ])
+    expect(() => nerves.previewExpression({ cue: 'bad' }, 0)).toThrow(
+      'has no parameters'
+    )
+  })
+
   it('round-trips the real MCP server into the performance snapshot', async () => {
     const nowMs = Date.now()
     const nerves = new Nerves('Hiyori', CUES, nowMs)
@@ -125,7 +212,11 @@ describe('Nerves emote ingress', () => {
       expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
         'emote',
         'list_cues',
-        'status'
+        'status',
+        'list_parameters',
+        'preview_expression',
+        'save_expression',
+        'update_expression'
       ])
       await client.callTool({ name: 'emote', arguments: { cue: 'pleased' } })
       expect(nerves.snapshot().expressionStack[0].cueOrFreeform).toBe('pleased')

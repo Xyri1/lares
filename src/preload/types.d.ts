@@ -34,14 +34,20 @@ interface StagePresets {
 
 type ControlResult = { ok: true } | { ok: false; error: string }
 
+/** Exact authoring preview is a separate P6 channel. Expressions arrive as
+ * brain-parsed opaque knob values; cue keeps motion playback body-side. */
+type AuthoringPreview = { params: Record<string, number> } | { cue: string }
+
 /** cues:list entry (slice SPEC §5/§7) — a cue's affect coordinates plus its
  * raw Live2D param set, zipped from the manifest's `expressions` and
  * `renderers.live2d.cues` blocks. */
 interface CueListEntry {
   name: string
-  valence: number
-  arousal: number
-  params: Record<string, number>
+  valence: number | null
+  arousal: number | null
+  params?: Record<string, number>
+  /** Indexed Live2D motion form: `group` or `group:index`. */
+  motion?: string
 }
 
 interface LaresBridge {
@@ -59,6 +65,8 @@ interface LaresBridge {
   seekScenario(tMs: number): Promise<ControlResult>
   listCues(): Promise<CueListEntry[]>
   onAffectUpdate(cb: (feed: AffectFeed) => void): void
+  onAuthoringPreview(cb: (preview: AuthoringPreview) => void): void
+  onAuthoringRevert(cb: () => void): void
   onScenarioSeeked(cb: (history: AffectFeed[]) => void): void
   onScenarioEnd(cb: () => void): void
   /** Synth trace lines keyed by stage id ('A' | 'B'). */

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadCharacter } from './manifest'
+import { loadCharacter, selectCharacterManifest, validateCharacter } from './manifest'
 
 const VALID = {
   format: 'lares/1',
@@ -95,5 +95,80 @@ describe('loadCharacter', () => {
     const result = loadCharacter(writePackage(manifest))
     expect(result).toMatchObject({ ok: false })
     if (!result.ok) expect(result.error).toContain('params')
+  })
+
+  it('accepts null coordinates and path-form expression and motion cues', () => {
+    const path = writePackage({
+      ...VALID,
+      expressions: { surprise: null, wave: null },
+      renderers: {
+        live2d: {
+          ...VALID.renderers.live2d,
+          cues: {
+            surprise: { expression: 'runtime/surprise.exp3.json' },
+            wave: { motion: 'runtime/wave.motion3.json' }
+          }
+        }
+      }
+    })
+    const runtime = join(path, '..', 'runtime')
+    writeFileSync(join(runtime, 'surprise.exp3.json'), JSON.stringify({ Parameters: [] }))
+    writeFileSync(join(runtime, 'wave.motion3.json'), '{}')
+
+    const result = loadCharacter(path)
+    expect(result).toMatchObject({ ok: true, expressions: { surprise: null, wave: null } })
+    if (result.ok) expect(result.report).toMatchObject({ uncalibrated: 2, cues: { expression: 1, motion: 1 } })
+  })
+
+  it('reports out-of-range coordinates, broken paths, and malformed expressions', () => {
+    const outOfRange = writePackage({
+      ...VALID,
+      expressions: { bad: { valence: 2, arousal: 0 } }
+    })
+    expect(validateCharacter(outOfRange).errors.join('\n')).toContain('valence')
+
+    const broken = writePackage({
+      ...VALID,
+      renderers: { live2d: { ...VALID.renderers.live2d, cues: { missing: { expression: 'runtime/missing.exp3.json' } } } }
+    })
+    expect(validateCharacter(broken).errors.join('\n')).toContain('missing.exp3.json')
+
+    const malformed = writePackage({
+      ...VALID,
+      renderers: { live2d: { ...VALID.renderers.live2d, cues: { bad: { expression: 'runtime/bad.exp3.json' } } } }
+    })
+    writeFileSync(join(malformed, '..', 'runtime', 'bad.exp3.json'), '{')
+    expect(validateCharacter(malformed).errors.join('\n')).toContain('bad.exp3.json')
+  })
+
+  it('requires every affect cue to have one renderer mapping and vice versa', () => {
+    const unmapped = writePackage({
+      ...VALID,
+      expressions: { missing: null }
+    })
+    expect(validateCharacter(unmapped).errors.join('\n')).toContain('no Live2D mapping')
+
+    const uncoordinated = writePackage({
+      ...VALID,
+      renderers: {
+        live2d: {
+          ...VALID.renderers.live2d,
+          cues: { extra: { params: { ParamMouthForm: 1 } } }
+        }
+      }
+    })
+    expect(validateCharacter(uncoordinated).errors.join('\n')).toContain('no affect coordinates')
+  })
+
+  it('selects the first package alphabetically and diagnoses zero or many packages', () => {
+    const root = mkdtempSync(join(tmpdir(), 'lares-characters-'))
+    expect(selectCharacterManifest(root)).toMatchObject({ ok: false, error: 'No character package found under ' + root })
+    mkdirSync(join(root, 'zeta'))
+    mkdirSync(join(root, 'alpha'))
+    writeFileSync(join(root, 'zeta', 'lar.character.json'), '{}')
+    writeFileSync(join(root, 'alpha', 'lar.character.json'), '{}')
+    const selected = selectCharacterManifest(root)
+    expect(selected).toMatchObject({ ok: true, manifestPath: join(root, 'alpha', 'lar.character.json') })
+    if (selected.ok) expect(selected.warning).toContain('Multiple character packages')
   })
 })

@@ -27,7 +27,11 @@ describe('createServer', () => {
         return { played: true }
       },
       listCues: () => [{ id: 'pleased' }],
-      status: () => ({ active: 'hiyori' })
+      status: () => ({ active: 'hiyori' }),
+      listParameters: () => [{ id: 'ParamMouthForm' }],
+      previewExpression: (args) => ({ preview: args }),
+      saveExpression: (args) => ({ saved: args }),
+      updateExpression: (args) => ({ updated: args })
     }
     app = createServer(deps)
     port = await app.start(0)
@@ -102,13 +106,17 @@ describe('createServer', () => {
     expect(response.status).toBe(415)
   })
 
-  it('round-trips the three tools with stateful MCP sessions', async () => {
+  it('round-trips the tools with stateful MCP sessions', async () => {
     const { client: first, transport: firstTransport } = await client()
     expect(first.getInstructions()).toContain('meaningful beats')
     expect((await first.listTools()).tools.map((tool) => tool.name)).toEqual([
       'emote',
       'list_cues',
-      'status'
+      'status',
+      'list_parameters',
+      'preview_expression',
+      'save_expression',
+      'update_expression'
     ])
     expect(await first.callTool({ name: 'list_cues', arguments: {} })).toMatchObject({
       content: [{ type: 'text', text: '[{"id":"pleased"}]' }]
@@ -119,6 +127,33 @@ describe('createServer', () => {
     expect(await first.callTool({ name: 'emote', arguments: { cue: 'pleased' } })).toMatchObject({
       content: [{ type: 'text', text: '{"played":true}' }]
     })
+    expect(await first.callTool({ name: 'list_parameters', arguments: {} })).toMatchObject({
+      content: [{ type: 'text', text: '[{"id":"ParamMouthForm"}]' }]
+    })
+    expect(
+      await first.callTool({
+        name: 'preview_expression',
+        arguments: { params: { ParamMouthForm: 1 } }
+      })
+    ).toMatchObject({
+      content: [{ type: 'text', text: '{"preview":{"params":{"ParamMouthForm":1}}}' }]
+    })
+    expect(
+      await first.callTool({
+        name: 'save_expression',
+        arguments: {
+          name: 'wry',
+          params: { ParamMouthForm: 1 },
+          affect: { valence: 0.2, arousal: 0.3 }
+        }
+      })
+    ).not.toMatchObject({ isError: true })
+    expect(
+      await first.callTool({
+        name: 'update_expression',
+        arguments: { name: 'wry', affect: { valence: 0.1, arousal: 0.2 } }
+      })
+    ).not.toMatchObject({ isError: true })
 
     const { client: second } = await client()
     await second.callTool({ name: 'emote', arguments: { cue: 'pleased' } })

@@ -3,6 +3,11 @@ import { Application, Renderer, Ticker, UPDATE_PRIORITY } from 'pixi.js'
 import { install } from '@pixi/unsafe-eval'
 import { Live2DModel, MotionPriority } from 'pixi-live2d-display/cubism4'
 import type { IRuntime, ParamInfo } from './iface'
+import {
+  isCubism4MotionManager,
+  LARES_MOTION_GROUP,
+  registerLooseMotion
+} from './looseMotion'
 
 // PixiJS 6 builds shaders with new Function(); this swaps in precompiled
 // versions so the strict CSP (script-src 'self', no unsafe-eval) can stay.
@@ -162,6 +167,17 @@ export class Live2DRuntime implements IRuntime {
     }
   }
 
+  releaseParams(ids: readonly string[]): void {
+    if (!this.model) return
+    const core = this.core()
+    for (const id of ids) {
+      const index = this.paramIndex.get(id)
+      if (index === undefined) continue
+      this.overrides.delete(id)
+      core.setParameterValueByIndex(index, this.inventory[index].default, 1)
+    }
+  }
+
   // setParams is a sticky merge and applyExpression pins until replaced, so a
   // parameter the affect layer once touched never goes back to the model's own
   // motion. This hands everything back at once: defaults written straight to
@@ -186,6 +202,18 @@ export class Live2DRuntime implements IRuntime {
   }
 
   playMotion(group: string, index?: number, priority = MotionPriority.NORMAL): void {
+    if (/^lares:\/\//i.test(group)) {
+      const manager = this.model?.internalModel.motionManager as unknown
+      if (!isCubism4MotionManager(manager)) {
+        console.warn('[lares] loose motion unsupported by this runtime')
+        return
+      }
+      const motionIndex = registerLooseMotion(manager, group)
+      void manager
+        .startMotion(LARES_MOTION_GROUP, motionIndex, priority)
+        .catch((error: unknown) => console.warn('[lares] loose motion failed', error))
+      return
+    }
     void this.model?.motion(group, index, priority)
   }
 

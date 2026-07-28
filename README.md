@@ -33,3 +33,4 @@ Product and design truth lives under [`sdd/`](sdd/):
 - [`sdd/SPEC.md`](sdd/SPEC.md) — contracts and invariants
 - [`sdd/ROADMAP.md`](sdd/ROADMAP.md) — what's next
 - [`AGENTS.md`](AGENTS.md) — repo map for contributors and coding agents
+- [`docs/character-format.md`](docs/character-format.md) — import and map a Live2D character package

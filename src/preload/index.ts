@@ -20,6 +20,12 @@ const lares = {
   onAffectUpdate: (cb: (feed: AffectFeed) => void): void => {
     ipcRenderer.on('affect:update', (_event, feed: AffectFeed) => cb(feed))
   },
+  onAuthoringPreview: (cb: (preview: AuthoringPreview) => void): void => {
+    ipcRenderer.on('authoring:preview', (_event, preview: AuthoringPreview) => cb(preview))
+  },
+  onAuthoringRevert: (cb: () => void): void => {
+    ipcRenderer.on('authoring:revert', () => cb())
+  },
   onScenarioSeeked: (cb: (history: AffectFeed[]) => void): void => {
     ipcRenderer.on('scenario:seeked', (_event, history: AffectFeed[]) => cb(history))
   },

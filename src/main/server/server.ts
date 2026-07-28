@@ -16,6 +16,10 @@ export interface ServerDeps {
   emote(args: unknown, sourceKey: string, nowMs: number): unknown | Promise<unknown>
   listCues(): unknown | Promise<unknown>
   status(nowMs: number): unknown | Promise<unknown>
+  listParameters?(): unknown | Promise<unknown>
+  previewExpression?(args: unknown, nowMs: number): unknown | Promise<unknown>
+  saveExpression?(args: unknown): unknown | Promise<unknown>
+  updateExpression?(args: unknown): unknown | Promise<unknown>
 }
 
 interface McpSession {
@@ -64,6 +68,11 @@ async function toolResult(action: () => unknown | Promise<unknown>) {
       isError: true
     }
   }
+}
+
+function authoring<T>(action: T | undefined): T {
+  if (!action) throw new Error('character authoring is unavailable')
+  return action
 }
 
 export function createServer(deps: ServerDeps): {
@@ -115,6 +124,52 @@ export function createServer(deps: ServerDeps): {
       'status',
       { description: 'Read the active character and session summary.' },
       () => toolResult(() => deps.status(Date.now()))
+    )
+    server.registerTool(
+      'list_parameters',
+      {
+        description:
+          'List the active character parameters before previewing or authoring an expression.'
+      },
+      () => toolResult(() => authoring(deps.listParameters)())
+    )
+    server.registerTool(
+      'preview_expression',
+      {
+        description:
+          'Preview exact params or an existing cue on the live character. Pass no fields to revert.',
+        inputSchema: {
+          params: z.record(z.string(), z.number()).optional(),
+          cue: z.string().optional()
+        }
+      },
+      (args) => toolResult(() => authoring(deps.previewExpression)(args, Date.now()))
+    )
+    server.registerTool(
+      'save_expression',
+      {
+        description:
+          'After the user accepts a preview, create a new authored expression. Existing names are refused.',
+        inputSchema: {
+          name: z.string(),
+          params: z.record(z.string(), z.number()),
+          affect: z.object({ valence: z.number(), arousal: z.number() })
+        }
+      },
+      (args) => toolResult(() => authoring(deps.saveExpression)(args))
+    )
+    server.registerTool(
+      'update_expression',
+      {
+        description:
+          'Update affect coordinates for any cue, or params for an authored cue. Unknown names are refused.',
+        inputSchema: {
+          name: z.string(),
+          affect: z.object({ valence: z.number(), arousal: z.number() }).optional(),
+          params: z.record(z.string(), z.number()).optional()
+        }
+      },
+      (args) => toolResult(() => authoring(deps.updateExpression)(args))
     )
     await server.connect(transport)
     return session

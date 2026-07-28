@@ -47,9 +47,14 @@ async function boot(): Promise<void> {
   // Cue name → Live2D param set. The feed carries cue NAMES only (root §8);
   // resolving them to parameters is body-side knowledge and stops here (P6).
   const cues = await window.lares.listCues()
-  const cueParams = Object.fromEntries(cues.map((c) => [c.name, c.params]))
+  const cueParams = Object.fromEntries(
+    cues.flatMap((c) => (c.params === undefined ? [] : [[c.name, c.params]]))
+  )
+  const cueMotions = Object.fromEntries(
+    cues.flatMap((c) => (c.motion === undefined ? [] : [[c.name, c.motion]]))
+  )
 
-  const driver = createAffectDriver(runtime, presetJson as SynthPreset, cueParams)
+  const driver = createAffectDriver(runtime, presetJson as SynthPreset, cueParams, cueMotions)
 
   if (OVERLAY) {
     // Tight fit last, once the model can report its own footprint (003-D5) —
