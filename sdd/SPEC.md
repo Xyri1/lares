@@ -12,6 +12,16 @@ One Electron app, split brain/body (D31). **Main process = the brain** (daemon):
 
 Module map (brain): `server/` (routes, MCP), `sessions/`, `affect/` (pure, zero Electron imports, vitest-covered), `characters/`, `scenario/`, `config/`. Body: `stage/` (window, feed subscription), `synth/` (feed → per-frame parameter synthesis), `runtime/` (pixi-live2d-display adapter).
 
+**Installed shell (M5a).** Lares is tray-only: no settings window and
+no Dock/taskbar presence. The tray owns character import/selection,
+scale (50/75/100/125/150%, 100% default), DND, launch-at-login,
+position reset, calibration, update, uninstall, and quit. Settings
+persist under Electron `userData`; DND hides only the body while the
+brain, sessions, affect, mood, ingress, and cached body inventory keep
+running. Reset Position uses the bottom-right of the current primary
+display. Launch-at-login and DND default off; automatic update checks
+default on.
+
 ## 2. Ingress
 
 **Discovery file** `~/.lares/runtime.json`, written on listen, deleted on clean exit: `{ version, port, pid }`. No auth (D27): the server binds `127.0.0.1` only; port 21473 *(default)*, override in config. Port taken ⇒ fail loudly (no server, no discovery file, visible error) — never scan for a free port: registered MCP URLs bake the port in, so a moved port is a half-broken daemon pretending to be healthy (004-D4). Browser-origin defense instead of tokens: any request carrying an `Origin` header is rejected, and POST routes require `Content-Type: application/json` (forces browsers into a failing CORS preflight). Local processes are outside the threat model — anything running as the user could have read a token file anyway.
@@ -83,11 +93,24 @@ Codex ships no dedicated failure event; the M3b recon looks for a failure signal
 
 Identity and `expressions` are renderer-neutral (P5). The manifest is a mapping layer: cue entries reference expression/motion files by package-relative path and never copy their contents; cue keys default to the artist's names verbatim (CJK included — agents read them natively; renaming is optional polish). Auto-import (D25 rung 1, dev script — slice 007) harvests by directory scan; the model index is advisory only (VTube-Studio-convention models index nothing). Affect coords start null: null-coord cues are legal and emote-able with a zero nudge, invisible only to the engine's affect-distance selection until calibrated (`list_cues` marks them; `status()` counts them). Expression application is one brain-side path for bundled and authored alike: Lares parses the exp3 (Add/Multiply/Overwrite against model defaults, display names via `cdi3.json`) and drives sliders through the standard pipeline — artist files and the model index are never modified. Agent-authored expressions (rung 2) are real `.exp3.json` files under `authored/`, written by `save_expression` after conversational user acceptance (D32 governs initiation). Import validation is a pure library function — schema; every referenced file exists; coords in range; exp3 parseable; report of cues by source and calibration state — with three callers: the import script, its `--check` flag, and the app at load (loud, P7); params-vs-inventory checks run in-app once the body loads the model (§8).
 
+**Installed character library (D33).** Managed packages live under
+`app.getPath("userData")/characters`. If none exist on first run, the
+app copies the build's explicitly selected, redistribution-cleared
+default package; upgrades never overwrite managed files. Import
+always copies an extracted directory: accept a ready Lares package or
+a raw tree containing exactly one recursive `.model3.json`; reject
+zero/multiple without guessing; preserve the tree and union indexed
+with loose `.exp3.json`/`.motion3.json` files. ZIP extraction is out of
+scope. Duplicate names coexist with numbered tray labels and no schema
+change. Validation plus successful body load precedes the active
+selection commit; failure leaves the current Lar running. Switching
+preserves sessions, affect/mood, position, scale, and DND.
+
 ## 6. Harness adapters
 
-**Claude Code:** silent launch-time registration (D29), re-run idempotently on every launch and on port change. Hooks: user-scope `~/.claude/settings.json`, owned by content-recognition — JSON has no comment markers, so a Lares entry is *defined* as any hook whose command references the bundled forwarder (any path variant, which also catches stale entries from moved installs); re-sync removes every recognized entry and appends the current set, preserving all other content byte-for-byte in structure (the field pattern — claude-pet, code-notify; 005-D1). Hooks registered: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Notification (matcher: `permission_prompt`), Stop, SubagentStart, SubagentStop — each runs the app binary with `ELECTRON_RUN_AS_NODE=1`, the bundled forwarder path, and harness tag `claude-code`; POSIX commands also capture `LARES_HARNESS_PID=$PPID`, while Windows commands clear it (005-D9). The full set was verified present in Claude Code 2.1.219 during M2a recon (failure payloads carry `error`, successes `tool_response`); permission `Notification`s do not fire in headless `-p` runs, so M3b's verification needs an interactive session. `idle_prompt` notifications are deliberately not registered — waiting-for-next-prompt is done/idle territory, already covered by Stop + decay. MCP entry: `mcpServers.lares` in `~/.claude.json` — the only file Claude Code reads user-scope MCP servers from — direct-edited, write-only-if-different with atomic rename (the stable port means one write per install, ever); file missing or unparseable ⇒ skip + log, never create or repair it (005-D2). Safety on both files: parse failure ⇒ abort loudly, touch nothing; `~/.claude/` absent ⇒ Claude Code isn't installed, skip silently, re-check next launch; a one-time backup is written before the first-ever modification and never overwritten after. Uninstall is the removal pass alone — a dev script in M3b; tray and installer entry points attach to the same function at M5a (005-D3). Hooks written while a session is live take effect on the next session (Claude Code snapshots hook config at session start); adapter UX says so. Skill file follows in the post-M3b skills pass (reinforcement only, D26).
+**Claude Code:** silent launch-time registration (D29), re-run idempotently on every launch and on port change. Hooks: user-scope `~/.claude/settings.json`, owned by content-recognition — JSON has no comment markers, so a Lares entry is *defined* as any hook whose command references the bundled forwarder (any path variant, which also catches stale entries from moved installs); re-sync removes every recognized entry and appends the current set, preserving all other content byte-for-byte in structure (the field pattern — claude-pet, code-notify; 005-D1). Hooks registered: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Notification (matcher: `permission_prompt`), Stop, SubagentStart, SubagentStop — each runs the app binary with `ELECTRON_RUN_AS_NODE=1`, the bundled forwarder path, and harness tag `claude-code`; POSIX commands also capture `LARES_HARNESS_PID=$PPID`, while Windows commands clear it (005-D9). The full set was verified present in Claude Code 2.1.219 during M2a recon (failure payloads carry `error`, successes `tool_response`); permission `Notification`s do not fire in headless `-p` runs, so M3b's verification needs an interactive session. `idle_prompt` notifications are deliberately not registered — waiting-for-next-prompt is done/idle territory, already covered by Stop + decay. MCP entry: `mcpServers.lares` in `~/.claude.json` — the only file Claude Code reads user-scope MCP servers from — direct-edited, write-only-if-different with atomic rename (the stable port means one write per install, ever); file missing or unparseable ⇒ skip + log, never create or repair it (005-D2). Safety on both files: parse failure ⇒ abort loudly, touch nothing; `~/.claude/` absent ⇒ Claude Code isn't installed, skip silently, re-check next launch; a one-time backup is written before the first-ever modification and never overwritten after. Uninstall is the removal pass alone — a dev script in M3b; tray and installer entry points attach to the same function at M5a (005-D3). Hooks written while a session is live take effect on the next session (Claude Code snapshots hook config at session start); adapter UX says so. Skill-file reinforcement is deferred beyond M5a (D26).
 
-**Codex:** a Lares plugin — a directory with a `.codex-plugin/plugin.json` manifest bundling the hook set (same events plus PermissionRequest) and the streamable-HTTP MCP entry (`http://127.0.0.1:<port>/v1/mcp`, no token — D27), skills slot filled post-M3b — hosted in the Lares GitHub repo as a plugin marketplace; the user adds the marketplace and installs via `/plugins`, passing Codex's own trust flow (guided, never bypassed — D29). The plugin stays thin — hook commands and the baked URL, no logic — so repo-HEAD stays compatible with any installed daemon (the wire contract froze at M3a). Plugin hook commands can't bake a per-machine app path, so they invoke a launcher shim the app maintains at a stable path (`~/.lares/bin/`), re-stamped with the current app binary on every launch (005-D8). No fallback of any kind: push-only sensing (P11, amending D15) — a Codex without the plugin is unsensed, and failure mapping degrades per §3 if recon finds no failure signal. **Known harness gap (D15, 2026-07-28):** current Codex builds trust-review plugin hooks but never execute them (`plugin_hooks` removed-and-off), so the plugin delivers MCP only — emotes work, baseline states don't. The design-around — an app-written user-level `~/.codex/hooks.json` under the Claude Code writer discipline, Codex's trust review still gating — is post-005 work; tripwire to revert is Codex shipping plugin-hook execution.
+**Codex:** a Lares plugin — a directory with a `.codex-plugin/plugin.json` manifest bundling the hook set (same events plus PermissionRequest) and the streamable-HTTP MCP entry (`http://127.0.0.1:<port>/v1/mcp`, no token — D27), with skills deferred beyond M5a — hosted in the Lares GitHub repo as a plugin marketplace; the user adds the marketplace and installs via `/plugins`, passing Codex's own trust flow (guided, never bypassed — D29). The plugin stays thin — hook commands and the baked URL, no logic — so repo-HEAD stays compatible with any installed daemon (the wire contract froze at M3a). Plugin hook commands can't bake a per-machine app path, so they invoke a launcher shim the app maintains at a stable path (`~/.lares/bin/`), re-stamped with the current app binary on every launch (005-D8). No fallback of any kind: push-only sensing (P11, amending D15) — a Codex without the plugin is unsensed, and failure mapping degrades per §3 if recon finds no failure signal. **Known harness gap (D15, 2026-07-28):** current Codex builds trust-review plugin hooks but never execute them (`plugin_hooks` removed-and-off), so the plugin delivers MCP only — emotes work, baseline states don't. The design-around — an app-written user-level `~/.codex/hooks.json` under the Claude Code writer discipline, Codex's trust review still gating — is post-005 work; tripwire to revert is Codex shipping plugin-hook execution.
 
 ## 7. Scenario player
 
@@ -123,4 +146,27 @@ Scenario file: `{ name, timeScale, events: [{ at_ms, envelope | emote }] }`. Pla
 
 ## 10. Non-functional budget
 
-Hook fire → visible reaction ≤250ms (forwarder spawn ≤120ms, POST ≤10ms, ingest ≤5ms, IPC ≤16ms, onset ≤100ms) — this budget is load-bearing for legibility and stays hard. Forwarder total ≤500ms hard budget, spawn included; the silent-exit path's ≤50ms binds in-script time only (script entry → exit, self-measured) — process startup alone exceeds 50ms on real machines (bare Node median 51.8ms, Electron-as-Node ~100–118ms; 004-D8), and the harness turn proceeds regardless. Renderer targets 30fps flat (ticker cap). Footprint numbers (idle ~3% of one core, <300MB RSS combined) are soft targets, not milestone gates — optimization is explicitly not a v1 focus; frame-rate governor and occlusion-paused rendering are parked post-v1. Zero network beyond §2 loopback and the disclosed update check.
+Hook fire → visible reaction ≤250ms (forwarder spawn ≤120ms, POST ≤10ms, ingest ≤5ms, IPC ≤16ms, onset ≤100ms) — this budget is load-bearing for legibility and stays hard. Forwarder total ≤500ms hard budget, spawn included; the silent-exit path's ≤50ms binds in-script time only (script entry → exit, self-measured) — process startup alone exceeds 50ms on real machines (bare Node median 51.8ms, Electron-as-Node ~100–118ms; 004-D8), and the harness turn proceeds regardless. Renderer targets 30fps flat (ticker cap). Footprint numbers (idle ~3% of one core, <300MB RSS combined) are soft targets, not milestone gates — optimization is explicitly not a v1 focus; frame-rate governor and occlusion-paused rendering are parked post-v1.
+
+**Network exception (D21).** Beyond §2 loopback, the sole request is
+the disclosed GitHub Releases update check: every app launch and every
+24h while running when enabled, plus a manual action. Requests are
+conditional with a persisted ETag; M5a only notifies and opens the
+release page, never downloads or installs.
+
+## 11. Installation and removal
+
+M5a's local gate is an unsigned macOS 13+ universal DMG and unsigned
+Windows 10/11 x64 NSIS installer, built manually on their native OS.
+Gatekeeper/SmartScreen bypass is documented and expected. Packaging
+explicitly includes the forwarder, fetched Cubism Core, one selected
+cleared default character, and required notices; it never globs the
+local character tree. Signing/notarization, GitHub Actions/public
+Release publication, and production one-line install URLs land at
+M5b (D30).
+
+Supported uninstall always removes the app and Lares-owned adapter
+hooks, MCP entries, and launcher shims. An unchecked-by-default
+**Also delete Lares data** choice additionally removes imported
+characters, authored expressions, calibration, settings, and window
+state.
