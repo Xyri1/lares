@@ -51,6 +51,7 @@ import {
   type Point,
   type Rect
 } from './position'
+import { productBodyTargets } from './productBody'
 import { SCENARIO_CUES } from './scenario/cues'
 import { loadScenario } from './scenario/load'
 import {
@@ -95,8 +96,16 @@ let characterSwitcher: CharacterSwitcher | null = null
 let characterAssets: CharacterAssetState | null = null
 let characterLoadBroker: CharacterLoadBroker | null = null
 
-function broadcastFeed(feed: AffectFeedMessage): void {
+// Dev A/B is a scenario harness, not a second product body. Scenario playback
+// still fans out for comparison; the normal live feed below targets only the overlay.
+function broadcastScenarioFeed(feed: AffectFeedMessage): void {
   for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
+  }
+}
+
+function sendLiveFeed(feed: AffectFeedMessage): void {
+  for (const win of productBodyTargets(overlayWindow, BrowserWindow.getAllWindows())) {
     if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
   }
 }
@@ -343,19 +352,19 @@ async function syncAdapters(port: number): Promise<void> {
   ])
 }
 
-function liveCharacterBodies(): CharacterBody[] {
-  return BrowserWindow.getAllWindows().map((window) => {
-    const contents = window.webContents
-    return {
-      id: String(contents.id),
-      isDestroyed: () => contents.isDestroyed(),
-      send: (channel, value) => contents.send(channel, value),
-      onDestroyed: (listener) => {
-        contents.once('destroyed', listener)
-        return () => contents.removeListener('destroyed', listener)
-      }
+function liveCharacterBody(): CharacterBody | null {
+  const window = productBodyTargets(overlayWindow, BrowserWindow.getAllWindows())[0]
+  if (!window) return null
+  const contents = window.webContents
+  return {
+    id: String(contents.id),
+    isDestroyed: () => contents.isDestroyed(),
+    send: (channel, value) => contents.send(channel, value),
+    onDestroyed: (listener) => {
+      contents.once('destroyed', listener)
+      return () => contents.removeListener('destroyed', listener)
     }
-  })
+  }
 }
 
 async function startNerves(): Promise<void> {
@@ -411,7 +420,7 @@ async function startNerves(): Promise<void> {
   }
   if (currentSelection) {
     characterAssets = new CharacterAssetState(dirname(currentSelection.manifestPath))
-    characterLoadBroker = new CharacterLoadBroker(characterAssets, liveCharacterBodies, 30_000)
+    characterLoadBroker = new CharacterLoadBroker(characterAssets, liveCharacterBody, 30_000)
     characterSwitcher = createCharacterSwitcher(
       charactersRoot(),
       currentSelection,
@@ -455,17 +464,42 @@ async function startNerves(): Promise<void> {
           return {
             files,
             nerves: prepared,
-            body: bodyCommitPayload(candidate, id, prepared)
+            body: bodyCommitPayload(candidate, id, prepared),
+            previous: {
+              selectedCharacter,
+              currentSelection,
+              cueDefinitions,
+              names,
+              characterInventoryErrorShown
+            }
           }
         },
         commit: (id, state) => characterLoadBroker!.commit(id, state.body),
         cancel: (id, reason) => characterLoadBroker!.cancel(id, reason),
+        rollback: (id, reason) => characterLoadBroker!.rollback(id, reason),
+        rollbackPublish: (_candidate, state) => {
+          selectedCharacter = state.previous.selectedCharacter
+          currentSelection = state.previous.currentSelection
+          cueDefinitions = state.previous.cueDefinitions
+          names = state.previous.names
+          characterInventoryErrorShown = state.previous.characterInventoryErrorShown
+        },
+        finalize: (id) => {
+          characterLoadBroker!.finalize(id)
+        },
         publish: (
           candidate,
           state: {
             files: PreparedCharacterFiles
             nerves: PreparedNervesCharacter
             body: ReturnType<typeof bodyCommitPayload>
+            previous: {
+              selectedCharacter: typeof selectedCharacter
+              currentSelection: typeof currentSelection
+              cueDefinitions: typeof cueDefinitions
+              names: typeof names
+              characterInventoryErrorShown: boolean
+            }
           }
         ) => {
           selectedCharacter = candidate
@@ -474,7 +508,6 @@ async function startNerves(): Promise<void> {
           names = state.files.names
           characterInventoryErrorShown = false
           liveNerves!.commitCharacter(state.nerves)
-          reportCharacterInventoryIssues()
         }
       }
     )
@@ -535,7 +568,7 @@ async function startNerves(): Promise<void> {
       liveNerves!.tick(nowMs)
       densityLog?.recordBaseline(liveNerves!.status(nowMs).sessions.baseline, nowMs)
       if (activePlayback === null) {
-        broadcastFeed(feedMessage(liveNerves!.snapshot(), Math.floor(nowMs / 100)))
+        sendLiveFeed(feedMessage(liveNerves!.snapshot(), Math.floor(nowMs / 100)))
       }
     }, 100)
     console.log(`[lares] listening on http://127.0.0.1:${port}`)
@@ -611,6 +644,10 @@ function registerCharacterIpc(): void {
 
   ipcMain.on('character:prepared', (event, raw: unknown) => {
     characterLoadBroker?.receive(String(event.sender.id), raw)
+  })
+
+  ipcMain.on('character:commit-result', (event, raw: unknown) => {
+    characterLoadBroker?.receiveCommit(String(event.sender.id), raw)
   })
 
   ipcMain.handle('cues:list', () => {
@@ -716,7 +753,7 @@ function registerScenarioIpc(): void {
         // mirrors playback on the desktop. Everything else below stays aimed
         // at the requester — scenario control and the synth trace are a
         // dev-window affair, and the overlay must not answer for them.
-        onFeed: broadcastFeed,
+        onFeed: broadcastScenarioFeed,
         onSeek: (history) => {
           if (!sender.isDestroyed()) sender.send('scenario:seeked', history)
         },

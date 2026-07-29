@@ -64,8 +64,11 @@ describe('transactional character switching', () => {
         prepare: async ({ candidate }) =>
           inventory(`Param${Object.keys(candidate.character.expressions)[0]}`),
         prepareCommit: (_candidate, params, cues) => ({ params, cues }),
-        commit: () => true,
+        commit: async () => {},
         cancel: () => false,
+        rollback: () => false,
+        rollbackPublish: () => {},
+        finalize: () => {},
         publish: (candidate, { params, cues }) => {
           nerves.switchCharacter(
             candidate.character.name,
@@ -109,8 +112,11 @@ describe('transactional character switching', () => {
           throw new Error('renderer fixture refused model')
         },
         prepareCommit: () => null,
-        commit: () => true,
+        commit: async () => {},
         cancel: () => true,
+        rollback: () => true,
+        rollbackPublish: () => {},
+        finalize: () => {},
         publish: () => commits++
       }
     )
@@ -132,14 +138,19 @@ describe('transactional character switching', () => {
       prepareCommit: () => {
         throw new Error('expression fixture is invalid')
       },
-      commit: () => {
+      commit: async () => {
         events.push('commit')
-        return true
       },
       cancel: () => {
         events.push('cancel')
         return true
       },
+      rollback: () => {
+        events.push('rollback')
+        return true
+      },
+      rollbackPublish: () => {},
+      finalize: () => events.push('finalize'),
       publish: () => events.push('publish')
     })
 
@@ -166,8 +177,11 @@ describe('transactional character switching', () => {
         precompute: () => null,
         prepare: ({ id }) => new Promise((resolve) => pending.set(id, resolve)),
         prepareCommit: (_candidate, params) => params,
-        commit: () => true,
+        commit: async () => {},
         cancel: () => true,
+        rollback: () => true,
+        rollbackPublish: () => {},
+        finalize: () => {},
         publish: (candidate) => commits.push(candidate.manifestPath)
       }
     )
@@ -198,11 +212,13 @@ describe('transactional character switching', () => {
         events.push('prepare-main')
         return { files, params }
       },
-      commit: () => {
+      commit: async () => {
         events.push('commit-bodies')
-        return true
       },
       cancel: () => false,
+      rollback: () => false,
+      rollbackPublish: () => {},
+      finalize: () => events.push('finalize-body'),
       publish: () => events.push('publish-main')
     })
 
@@ -212,7 +228,45 @@ describe('transactional character switching', () => {
       'prepare-bodies',
       'prepare-main',
       'commit-bodies',
-      'publish-main'
+      'publish-main',
+      'finalize-body'
     ])
+  })
+
+  it('rolls the acknowledged body back when main publication throws', async () => {
+    const { root, packages } = managedPackages()
+    const events: string[] = []
+    let mainCharacter = 'first'
+    const switcher = createCharacterSwitcher(root, packages[0], {
+      precompute: () => null,
+      prepare: async () => inventory('ParamSecond'),
+      prepareCommit: () => null,
+      commit: async () => {
+        events.push('commit')
+      },
+      cancel: () => false,
+      rollback: () => {
+        events.push('rollback')
+        return true
+      },
+      rollbackPublish: () => {
+        mainCharacter = 'first'
+        events.push('rollback-main')
+      },
+      finalize: () => events.push('finalize'),
+      publish: () => {
+        mainCharacter = 'second'
+        events.push('publish')
+        throw new Error('main publication failed')
+      }
+    })
+
+    await expect(switcher.switchTo(packages[1].manifestPath)).resolves.toEqual({
+      ok: false,
+      error: 'main publication failed'
+    })
+    expect(switcher.active()).toEqual(packages[0])
+    expect(mainCharacter).toBe('first')
+    expect(events).toEqual(['commit', 'publish', 'rollback-main', 'rollback'])
   })
 })

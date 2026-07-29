@@ -23,8 +23,11 @@ export interface CharacterSwitchOperations<Precomputed, CommitState> {
     precomputed: Precomputed,
     id: number
   ): CommitState
-  commit(id: number, state: CommitState): boolean
+  commit(id: number, state: CommitState): Promise<void>
   cancel(id: number, reason: string): boolean
+  rollback(id: number, reason: string): boolean
+  rollbackPublish(candidate: CharacterPackage, state: CommitState, id: number): void
+  finalize(id: number): void
   publish(candidate: CharacterPackage, state: CommitState, id: number): void
 }
 
@@ -82,14 +85,33 @@ export function createCharacterSwitcher<Precomputed, CommitState>(
           ? { ok: false, error: 'character switch was superseded' }
           : { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
-      if (!operations.commit(id, state)) {
-        operations.cancel(id, 'character body commit was refused')
+      try {
+        await operations.commit(id, state)
+      } catch (error) {
+        operations.rollback(id, 'character body commit failed')
         if (pendingId === id) pendingId = null
-        return { ok: false, error: 'character body commit was refused' }
+        return id !== latestId
+          ? { ok: false, error: 'character switch was superseded' }
+          : { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
-      operations.publish(candidate, state, id)
+      try {
+        operations.publish(candidate, state, id)
+      } catch (error) {
+        operations.rollbackPublish(candidate, state, id)
+        operations.rollback(id, 'main character publication failed')
+        if (pendingId === id) pendingId = null
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error)
+        }
+      }
       active = candidate
       if (pendingId === id) pendingId = null
+      try {
+        operations.finalize(id)
+      } catch {
+        // Publication is irreversible; finalization is best-effort cleanup.
+      }
       return { ok: true, manifestPath: candidate.manifestPath }
     }
   }

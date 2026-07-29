@@ -37,6 +37,21 @@ interface CoreModel {
   _model: { parameters: CoreParamStruct }
 }
 
+interface RuntimeExpression {
+  params: Record<string, number>
+  weight: number
+  fadeMs: number
+  startedAt: number
+}
+
+interface RuntimeModelState {
+  model: Live2DModel
+  inventory: ParamInfo[]
+  paramIndex: Map<string, number>
+  overrides: Map<string, { value: number; weight: number }>
+  expression?: RuntimeExpression
+}
+
 export class Live2DRuntime implements IRuntime {
   private app: Application
   private model?: Live2DModel
@@ -46,12 +61,7 @@ export class Live2DRuntime implements IRuntime {
   // motions/physics rewrite parameters each tick, so a one-shot write would
   // flash for a single frame. M2's affect engine replaces this bookkeeping.
   private overrides = new Map<string, { value: number; weight: number }>()
-  private expression?: {
-    params: Record<string, number>
-    weight: number
-    fadeMs: number
-    startedAt: number
-  }
+  private expression?: RuntimeExpression
 
   // Pass a canvas to own a new pixi Application; pass an existing runtime to
   // SHARE its Application, context and ticker (002-D2 A/B). Two WebGL contexts
@@ -62,6 +72,11 @@ export class Live2DRuntime implements IRuntime {
   private active = true
   private loadGeneration = 0
   private prepared?: { id: number; model: Live2DModel; inventory: ParamInfo[] }
+  private committed?: {
+    id: number
+    candidate: Live2DModel
+    previous?: RuntimeModelState
+  }
 
   constructor(target: HTMLCanvasElement | Live2DRuntime) {
     if (target instanceof Live2DRuntime) {
@@ -121,13 +136,14 @@ export class Live2DRuntime implements IRuntime {
 
   async load(modelPath: string): Promise<void> {
     await this.prepareLoad(0, modelPath)
-    this.commitLoad(0)
+    if (!this.commitLoad(0)) throw new Error('character load commit failed')
+    this.finalizeLoad(0)
   }
 
   async prepareLoad(id: number, modelPath: string): Promise<ParamInfo[]> {
     const generation = ++this.loadGeneration
     if (this.prepared) {
-      this.prepared.model.destroy(DESTROY_MODEL)
+      this.destroy(this.prepared.model)
       this.prepared = undefined
     }
     const model = await Live2DModel.from(modelPath, { autoUpdate: false, autoInteract: false })
@@ -165,32 +181,94 @@ export class Live2DRuntime implements IRuntime {
       this.prepared = { id, model, inventory }
       return inventory.map((param) => ({ ...param }))
     } catch (error) {
-      model.destroy(DESTROY_MODEL)
+      this.destroy(model)
       throw error
     }
   }
 
   commitLoad(id: number): boolean {
-    if (this.prepared?.id !== id) return false
+    if (this.committed || this.prepared?.id !== id) return false
     const { model, inventory } = this.prepared
     this.prepared = undefined
     const previous = this.model
+      ? {
+          model: this.model,
+          inventory: this.inventory,
+          paramIndex: this.paramIndex,
+          overrides: this.overrides,
+          expression: this.expression
+        }
+      : undefined
     this.model = model
     this.inventory = inventory
     this.paramIndex = new Map(inventory.map((param, index) => [param.id, index]))
-    this.overrides.clear()
+    this.overrides = new Map()
     this.expression = undefined
-    this.app.stage.addChild(model)
-    previous?.destroy(DESTROY_MODEL)
-    for (const peer of this.peers) peer.fit()
+    try {
+      for (const peer of this.peers) peer.fit()
+      this.app.stage.addChild(model)
+      this.committed = { id, candidate: model, previous }
+      if (previous) previous.model.visible = false
+      return true
+    } catch {
+      this.restore(previous)
+      this.destroy(model)
+      return false
+    }
+  }
+
+  rollbackLoad(id: number): boolean {
+    if (this.committed?.id !== id) return false
+    const { candidate, previous } = this.committed
+    this.committed = undefined
+    this.restore(previous)
+    this.destroy(candidate)
+    try {
+      for (const peer of this.peers) peer.fit()
+    } catch {
+      // The prior model is already restored; layout retry occurs on resize.
+    }
+    return true
+  }
+
+  finalizeLoad(id: number): boolean {
+    if (this.committed?.id !== id) return false
+    const previous = this.committed.previous
+    this.committed = undefined
+    if (previous) this.destroy(previous.model)
     return true
   }
 
   cancelLoad(id: number): boolean {
     if (this.prepared?.id !== id) return false
-    this.prepared.model.destroy(DESTROY_MODEL)
+    this.destroy(this.prepared.model)
     this.prepared = undefined
     return true
+  }
+
+  private restore(previous?: RuntimeModelState): void {
+    if (!previous) {
+      this.model = undefined
+      this.inventory = []
+      this.paramIndex = new Map()
+      this.overrides = new Map()
+      this.expression = undefined
+      return
+    }
+    this.model = previous.model
+    this.inventory = previous.inventory
+    this.paramIndex = previous.paramIndex
+    this.overrides = previous.overrides
+    this.expression = previous.expression
+    previous.model.visible = this.active
+  }
+
+  private destroy(model: Live2DModel): void {
+    try {
+      model.destroy(DESTROY_MODEL)
+    } catch {
+      // Resource disposal is finalization and must not break transaction state.
+    }
   }
 
   parameters(): ParamInfo[] {

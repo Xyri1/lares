@@ -72,57 +72,70 @@ function safePath(rawPath: string): string | null {
   }
 }
 
-interface Bodies {
-  bodies: CharacterBody[]
-  removeDestroyedListeners: Array<() => void>
+interface BodyState {
+  body: CharacterBody
+  removeDestroyedListener: () => void
 }
 
-interface Pending extends Bodies {
-  results: Map<string, ParamInfo[]>
+interface Pending extends BodyState {
   resolve(inventory: ParamInfo[]): void
   reject(error: Error): void
   timer: ReturnType<typeof setTimeout>
 }
 
+interface AwaitingCommit extends BodyState {
+  resolve(): void
+  reject(error: Error): void
+  timer: ReturnType<typeof setTimeout>
+}
+
+function bestEffortSend(body: CharacterBody, channel: string, value: unknown): void {
+  if (body.isDestroyed()) return
+  try {
+    body.send(channel, value)
+  } catch {
+    // Cleanup is authoritative; renderer cancellation is best-effort.
+  }
+}
+
 export class CharacterLoadBroker {
   private readonly pending = new Map<number, Pending>()
-  private readonly prepared = new Map<number, Bodies>()
+  private readonly prepared = new Map<number, BodyState>()
+  private readonly committing = new Map<number, AwaitingCommit>()
+  private readonly committed = new Map<number, BodyState>()
 
   constructor(
     private readonly assets: CharacterAssetState,
-    private readonly bodies: () => CharacterBody[],
+    private readonly body: () => CharacterBody | null,
     private readonly timeoutMs: number
   ) {}
 
   prepare(id: number, root: string, payload: unknown): Promise<ParamInfo[]> {
     this.assets.prepare(id, root)
-    const bodies = this.bodies().filter((body) => !body.isDestroyed())
-    if (bodies.length === 0) {
+    const body = this.body()
+    if (!body || body.isDestroyed()) {
       this.assets.cancel(id)
       return Promise.reject(new Error('character body is unavailable'))
     }
     return new Promise((resolve, reject) => {
       const transaction: Pending = {
-        bodies,
-        results: new Map(),
+        body,
         resolve,
         reject,
         timer: setTimeout(
-          () => this.fail(id, new Error('character body prepare timed out')),
+          () => this.failPrepare(id, new Error('character body prepare timed out')),
           this.timeoutMs
         ),
-        removeDestroyedListeners: []
+        removeDestroyedListener: () => {}
       }
-      transaction.removeDestroyedListeners = bodies.map((body) =>
-        body.onDestroyed(() =>
-          this.fail(id, new Error(`character body ${JSON.stringify(body.id)} was destroyed`))
-        )
+      transaction.removeDestroyedListener = body.onDestroyed(() =>
+        this.failPrepare(id, new Error(`character body ${JSON.stringify(body.id)} was destroyed`))
       )
       this.pending.set(id, transaction)
       try {
-        for (const body of bodies) body.send('character:prepare', payload)
+        body.send('character:prepare', payload)
       } catch (error) {
-        this.fail(id, error instanceof Error ? error : new Error(String(error)))
+        this.failPrepare(id, error instanceof Error ? error : new Error(String(error)))
       }
     })
   }
@@ -133,77 +146,149 @@ export class CharacterLoadBroker {
     if (!Number.isSafeInteger(result.id)) return false
     const id = result.id as number
     const pending = this.pending.get(id)
-    if (!pending || !pending.bodies.some((body) => body.id === bodyId)) return false
+    if (!pending || pending.body.id !== bodyId) return false
     if (result.ok === false && typeof result.error === 'string') {
-      this.fail(id, new Error(result.error))
+      this.failPrepare(id, new Error(result.error))
       return true
     }
     if (result.ok !== true) return false
     const inventory = parseInventory(result.inventory)
     if (!inventory) {
-      this.fail(id, new Error('renderer returned an invalid body inventory'))
-      return true
-    }
-    pending.results.set(bodyId, inventory)
-    if (pending.results.size !== pending.bodies.length) return true
-    const inventories = [...pending.results.values()]
-    if (inventories.some((value) => JSON.stringify(value) !== JSON.stringify(inventories[0]))) {
-      this.fail(id, new Error('character bodies returned different parameter inventories'))
+      this.failPrepare(id, new Error('renderer returned an invalid body inventory'))
       return true
     }
     this.cleanupPending(id)
     this.prepared.set(id, {
-      bodies: pending.bodies,
-      removeDestroyedListeners: pending.bodies.map((body) =>
-        body.onDestroyed(() => this.cancel(id, 'character body was destroyed before commit'))
+      body: pending.body,
+      removeDestroyedListener: pending.body.onDestroyed(() =>
+        this.rollback(id, 'character body was destroyed before commit')
       )
     })
-    pending.resolve(inventories[0])
+    pending.resolve(inventory)
     return true
   }
 
-  commit(id: number, payload: unknown = id): boolean {
+  commit(id: number, payload: unknown = id): Promise<void> {
     const prepared = this.prepared.get(id)
-    if (!prepared || prepared.bodies.some((body) => body.isDestroyed())) {
-      this.cancel(id, 'character body was destroyed before commit')
-      return false
+    if (!prepared) return Promise.reject(new Error('character switch is not prepared'))
+    if (prepared.body.isDestroyed()) {
+      this.rollback(id, 'character body was destroyed before commit')
+      return Promise.reject(new Error('character body was destroyed before commit'))
     }
     this.prepared.delete(id)
-    for (const remove of prepared.removeDestroyedListeners) remove()
-    for (const body of prepared.bodies) body.send('character:commit', payload)
-    this.assets.commit(id)
+    prepared.removeDestroyedListener()
+    return new Promise((resolve, reject) => {
+      const transaction: AwaitingCommit = {
+        body: prepared.body,
+        resolve,
+        reject,
+        timer: setTimeout(
+          () =>
+            this.failCommit(id, new Error('character body commit acknowledgement timed out')),
+          this.timeoutMs
+        ),
+        removeDestroyedListener: () => {}
+      }
+      transaction.removeDestroyedListener = prepared.body.onDestroyed(() =>
+        this.failCommit(id, new Error('character body was destroyed during commit'))
+      )
+      this.committing.set(id, transaction)
+      try {
+        prepared.body.send('character:commit', payload)
+      } catch (error) {
+        this.failCommit(id, error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
+
+  receiveCommit(bodyId: string, raw: unknown): boolean {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return false
+    const result = raw as Record<string, unknown>
+    if (!Number.isSafeInteger(result.id)) return false
+    const id = result.id as number
+    const committing = this.committing.get(id)
+    if (!committing || committing.body.id !== bodyId) return false
+    if (result.ok === false && typeof result.error === 'string') {
+      this.failCommit(id, new Error(result.error))
+      return true
+    }
+    if (result.ok !== true) return false
+    this.cleanupCommitting(id)
+    this.committed.set(id, {
+      body: committing.body,
+      removeDestroyedListener: committing.body.onDestroyed(() =>
+        this.rollback(id, 'character body was destroyed before finalization')
+      )
+    })
+    committing.resolve()
+    return true
+  }
+
+  finalize(id: number): boolean {
+    const committed = this.committed.get(id)
+    if (!committed) return false
+    this.committed.delete(id)
+    committed.removeDestroyedListener()
+    if (!this.assets.commit(id)) {
+      bestEffortSend(committed.body, 'character:rollback', id)
+      return false
+    }
+    bestEffortSend(committed.body, 'character:finalize', id)
     return true
   }
 
   cancel(id: number, reason = 'character switch was cancelled'): boolean {
+    return this.rollback(id, reason)
+  }
+
+  rollback(id: number, reason = 'character switch was rolled back'): boolean {
     const pending = this.pending.get(id)
     const prepared = this.prepared.get(id)
-    const bodies = pending?.bodies ?? prepared?.bodies
-    if (!bodies) return this.assets.cancel(id)
+    const committing = this.committing.get(id)
+    const committed = this.committed.get(id)
+    const body = pending?.body ?? prepared?.body ?? committing?.body ?? committed?.body
+    if (!body) return this.assets.cancel(id)
     if (pending) {
       this.cleanupPending(id)
       pending.reject(new Error(reason))
     }
     if (prepared) {
       this.prepared.delete(id)
-      for (const remove of prepared.removeDestroyedListeners) remove()
+      prepared.removeDestroyedListener()
     }
-    for (const body of bodies) {
-      if (!body.isDestroyed()) body.send('character:cancel', id)
+    if (committing) {
+      this.cleanupCommitting(id)
+      committing.reject(new Error(reason))
+    }
+    if (committed) {
+      this.committed.delete(id)
+      committed.removeDestroyedListener()
     }
     this.assets.cancel(id)
+    bestEffortSend(
+      body,
+      committing || committed ? 'character:rollback' : 'character:cancel',
+      id
+    )
     return true
   }
 
-  private fail(id: number, error: Error): void {
+  private failPrepare(id: number, error: Error): void {
     const pending = this.pending.get(id)
     if (!pending) return
     this.cleanupPending(id)
-    for (const body of pending.bodies) {
-      if (!body.isDestroyed()) body.send('character:cancel', id)
-    }
     this.assets.cancel(id)
     pending.reject(error)
+    bestEffortSend(pending.body, 'character:cancel', id)
+  }
+
+  private failCommit(id: number, error: Error): void {
+    const committing = this.committing.get(id)
+    if (!committing) return
+    this.cleanupCommitting(id)
+    this.assets.cancel(id)
+    committing.reject(error)
+    bestEffortSend(committing.body, 'character:rollback', id)
   }
 
   private cleanupPending(id: number): void {
@@ -211,6 +296,14 @@ export class CharacterLoadBroker {
     if (!pending) return
     this.pending.delete(id)
     clearTimeout(pending.timer)
-    for (const remove of pending.removeDestroyedListeners) remove()
+    pending.removeDestroyedListener()
+  }
+
+  private cleanupCommitting(id: number): void {
+    const committing = this.committing.get(id)
+    if (!committing) return
+    this.committing.delete(id)
+    clearTimeout(committing.timer)
+    committing.removeDestroyedListener()
   }
 }

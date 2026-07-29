@@ -60,90 +60,181 @@ describe('character asset transaction state', () => {
 })
 
 describe('main character load broker', () => {
-  it('prepares and commits every live body before changing the active protocol root', async () => {
+  it('waits for the overlay commit acknowledgement before finalizing the root', async () => {
     const overlay = new Body('overlay')
-    const dev = new Body('dev')
     const assets = new CharacterAssetState('/characters/first')
-    const broker = new CharacterLoadBroker(assets, () => [overlay, dev], 1000)
+    const broker = new CharacterLoadBroker(assets, () => overlay, 1000)
 
     const prepared = broker.prepare(1, '/characters/second', { id: 1 })
     expect(overlay.sent[0]).toEqual({ channel: 'character:prepare', value: { id: 1 } })
-    expect(dev.sent[0]).toEqual({ channel: 'character:prepare', value: { id: 1 } })
     expect(assets.resolve('lares://characters/model')?.root).toBe('/characters/first')
     broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })
-    let settled = false
-    void prepared.then(() => {
-      settled = true
-    })
-    await Promise.resolve()
-    expect(settled).toBe(false)
-    broker.receive('dev', { id: 1, ok: true, inventory: INVENTORY })
     await expect(prepared).resolves.toEqual(INVENTORY)
 
     const commit = { id: 1, cues: [{ name: 'Expression', params: { Param: 0.5 } }] }
-    expect(broker.commit(1, commit)).toBe(true)
+    const committed = broker.commit(1, commit)
     expect(overlay.sent.at(-1)).toEqual({ channel: 'character:commit', value: commit })
-    expect(dev.sent.at(-1)).toEqual({ channel: 'character:commit', value: commit })
+    expect(assets.resolve('lares://characters/model')?.root).toBe('/characters/first')
+    broker.receiveCommit('overlay', { id: 1, ok: true })
+    await expect(committed).resolves.toBeUndefined()
+
+    expect(broker.finalize(1)).toBe(true)
+    expect(overlay.sent.at(-1)).toEqual({ channel: 'character:finalize', value: 1 })
     expect(assets.resolve('lares://characters/model')?.root).toBe('/characters/second')
   })
 
-  it('cancels all bodies on timeout and ignores a late prepared result', async () => {
+  it('rolls back on commit acknowledgement timeout and ignores a late result', async () => {
     vi.useFakeTimers()
     try {
       const overlay = new Body('overlay')
-      const dev = new Body('dev')
       const assets = new CharacterAssetState('/characters/first')
-      const broker = new CharacterLoadBroker(assets, () => [overlay, dev], 50)
+      const broker = new CharacterLoadBroker(assets, () => overlay, 50)
       const prepared = broker.prepare(1, '/characters/second', { id: 1 })
-      const rejected = expect(prepared).rejects.toThrow('timed out')
+      broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })
+      await prepared
+      const committed = broker.commit(1, { id: 1, cues: [] })
+      const rejected = expect(committed).rejects.toThrow('commit acknowledgement timed out')
 
       await vi.advanceTimersByTimeAsync(50)
       await rejected
-      expect(overlay.sent.at(-1)).toEqual({ channel: 'character:cancel', value: 1 })
-      expect(dev.sent.at(-1)).toEqual({ channel: 'character:cancel', value: 1 })
+      expect(overlay.sent.at(-1)).toEqual({ channel: 'character:rollback', value: 1 })
       expect(assets.resolve('lares://candidate/1/model')).toBeNull()
-      expect(broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })).toBe(false)
-      expect(broker.commit(1)).toBe(false)
+      expect(broker.receiveCommit('overlay', { id: 1, ok: true })).toBe(false)
+      expect(broker.finalize(1)).toBe(false)
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('cancels immediately when a participating body is destroyed', async () => {
+  it('cleans an unacknowledged prepare without waiting for a later switch', async () => {
+    vi.useFakeTimers()
+    try {
+      const body = new Body('overlay')
+      const assets = new CharacterAssetState('/characters/first')
+      const broker = new CharacterLoadBroker(assets, () => body, 50)
+      const prepared = broker.prepare(1, '/characters/second', { id: 1 })
+      const rejected = expect(prepared).rejects.toThrow('prepare timed out')
+
+      await vi.advanceTimersByTimeAsync(50)
+      await rejected
+      expect(body.sent.at(-1)).toEqual({ channel: 'character:cancel', value: 1 })
+      expect(assets.resolve('lares://candidate/1/model')).toBeNull()
+      expect(broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rolls back immediately when the overlay is destroyed during commit', async () => {
     const overlay = new Body('overlay')
-    const dev = new Body('dev')
     const broker = new CharacterLoadBroker(
       new CharacterAssetState('/characters/first'),
-      () => [overlay, dev],
+      () => overlay,
       30_000
     )
     const prepared = broker.prepare(1, '/characters/second', { id: 1 })
-    const rejected = expect(prepared).rejects.toThrow('destroyed')
+    broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })
+    await prepared
+    const committed = broker.commit(1, { id: 1, cues: [] })
+    const rejected = expect(committed).rejects.toThrow('destroyed')
 
-    dev.destroy()
+    overlay.destroy()
 
     await rejected
-    expect(overlay.sent.at(-1)).toEqual({ channel: 'character:cancel', value: 1 })
+  })
+
+  it('rolls back when the body reports a tentative commit exception', async () => {
+    const body = new Body('overlay')
+    const assets = new CharacterAssetState('/characters/first')
+    const broker = new CharacterLoadBroker(assets, () => body, 30_000)
+    const prepared = broker.prepare(1, '/characters/second', { id: 1 })
+    broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })
+    await prepared
+    const committed = broker.commit(1, { id: 1, cues: [] })
+
+    expect(
+      broker.receiveCommit('overlay', { id: 1, ok: false, error: 'driver refresh failed' })
+    ).toBe(true)
+    await expect(committed).rejects.toThrow('driver refresh failed')
+    expect(body.sent.at(-1)).toEqual({ channel: 'character:rollback', value: 1 })
+    expect(assets.resolve('lares://candidate/1/model')).toBeNull()
+  })
+
+  it('cleans commit state before best-effort rollback when commit delivery throws', async () => {
+    const body = new Body('overlay')
+    const assets = new CharacterAssetState('/characters/first')
+    const broker = new CharacterLoadBroker(assets, () => body, 30_000)
+    const prepared = broker.prepare(1, '/characters/second', { id: 1 })
+    broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })
+    await prepared
+    body.throwOnChannel = 'character:commit'
+
+    await expect(broker.commit(1, { id: 1, cues: [] })).rejects.toThrow('commit send failed')
+    expect(assets.resolve('lares://candidate/1/model')).toBeNull()
+    expect(broker.receiveCommit('overlay', { id: 1, ok: true })).toBe(false)
+  })
+
+  it('keeps the old root when main rolls an acknowledged commit back', async () => {
+    const body = new Body('overlay')
+    const assets = new CharacterAssetState('/characters/first')
+    const broker = new CharacterLoadBroker(assets, () => body, 30_000)
+    const prepared = broker.prepare(1, '/characters/second', { id: 1 })
+    broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })
+    await prepared
+    const committed = broker.commit(1, { id: 1, cues: [] })
+    broker.receiveCommit('overlay', { id: 1, ok: true })
+    await committed
+
+    expect(broker.rollback(1, 'main publication failed')).toBe(true)
+    expect(body.sent.at(-1)).toEqual({ channel: 'character:rollback', value: 1 })
+    expect(assets.resolve('lares://characters/model')?.root).toBe('/characters/first')
+    expect(assets.resolve('lares://candidate/1/model')).toBeNull()
   })
 
   it('rolls back immediately when prepare delivery fails', async () => {
     const body = new Body('overlay')
     body.throwOnChannel = 'character:prepare'
     const assets = new CharacterAssetState('/characters/first')
-    const broker = new CharacterLoadBroker(assets, () => [body], 30_000)
+    const broker = new CharacterLoadBroker(assets, () => body, 30_000)
 
     await expect(broker.prepare(1, '/characters/second', { id: 1 })).rejects.toThrow(
       'prepare send failed'
     )
     expect(assets.resolve('lares://candidate/1/model')).toBeNull()
-    expect(broker.commit(1)).toBe(false)
+    await expect(broker.commit(1)).rejects.toThrow('not prepared')
+  })
+
+  it('cleans pending state before best-effort cancel delivery', async () => {
+    const body = new Body('overlay')
+    const assets = new CharacterAssetState('/characters/first')
+    const broker = new CharacterLoadBroker(assets, () => body, 30_000)
+    const prepared = broker.prepare(1, '/characters/second', { id: 1 })
+    body.throwOnChannel = 'character:cancel'
+
+    expect(() => broker.receive('overlay', { id: 1, ok: false, error: 'body failed' })).not.toThrow()
+    await expect(prepared).rejects.toThrow('body failed')
+    expect(assets.resolve('lares://candidate/1/model')).toBeNull()
+  })
+
+  it('cleans prepared state before best-effort cancel delivery', async () => {
+    const body = new Body('overlay')
+    const assets = new CharacterAssetState('/characters/first')
+    const broker = new CharacterLoadBroker(assets, () => body, 30_000)
+    const prepared = broker.prepare(1, '/characters/second', { id: 1 })
+    broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })
+    await prepared
+    body.throwOnChannel = 'character:cancel'
+
+    expect(() => broker.cancel(1)).not.toThrow()
+    expect(assets.resolve('lares://candidate/1/model')).toBeNull()
+    await expect(broker.commit(1)).rejects.toThrow('not prepared')
   })
 
   it('cancels a prepared predecessor when superseded', async () => {
     const body = new Body('overlay')
     const broker = new CharacterLoadBroker(
       new CharacterAssetState('/characters/first'),
-      () => [body],
+      () => body,
       1000
     )
     const first = broker.prepare(1, '/characters/second', { id: 1 })
@@ -152,6 +243,6 @@ describe('main character load broker', () => {
 
     expect(broker.cancel(1, 'character switch was superseded')).toBe(true)
     expect(body.sent.at(-1)).toEqual({ channel: 'character:cancel', value: 1 })
-    expect(broker.commit(1)).toBe(false)
+    await expect(broker.commit(1)).rejects.toThrow('not prepared')
   })
 })

@@ -34,8 +34,8 @@ export interface AffectDriver {
    * affect layer has taken so the model's own idle motion owns them again.
    * Leaves the trace buffer alone — the overlay is history, not state. */
   reset(): void
-  /** A model swap also refreshes the cached parameter defaults. */
-  characterChanged(): void
+  /** Tentatively refresh model defaults; returned closure restores driver state. */
+  characterChanged(): () => void
 }
 
 /** What a stage's synth reads, plus the expression stack the compositor
@@ -416,8 +416,43 @@ export function createAffectDriver(
     reset(): void {
       reset()
     },
-    characterChanged(): void {
-      reset(true)
+    characterChanged(): () => void {
+      const st = stages.A!
+      const before = {
+        preview,
+        authoringPreview,
+        defaults: st.defaults,
+        driven: st.driven,
+        feed: st.feed,
+        fade: st.fade,
+        latest: st.latest,
+        motionCue: st.motionCue
+      }
+      const rollback = (): void => {
+        preview = before.preview
+        authoringPreview = before.authoringPreview
+        st.defaults = before.defaults
+        st.driven = before.driven
+        st.feed = before.feed
+        st.fade = before.fade
+        st.latest = before.latest
+        st.motionCue = before.motionCue
+      }
+      try {
+        preview = null
+        authoringPreview = null
+        st.defaults = Object.fromEntries(st.runtime.parameters().map((p) => [p.id, p.default]))
+        st.latest = null
+        st.feed = restFeed()
+        st.fade = initialFade()
+        st.driven = new Set()
+        st.motionCue = null
+        st.runtime.resetParams()
+        return rollback
+      } catch (error) {
+        rollback()
+        throw error
+      }
     },
     preview(cue: string, durationMs = PREVIEW_MS): void {
       if (!cues[cue]) {

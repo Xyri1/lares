@@ -4,7 +4,7 @@ const boundary = vi.hoisted(() => {
   const models = new Map<string, ReturnType<typeof model>>()
   const applications: Array<{ stage: { children: unknown[]; addChild(value: unknown): void } }> = []
 
-  function model(path: string, valid = true) {
+  function model(path: string, valid = true, fitFails = false) {
     const listeners = new Map<string, () => void>()
     return {
       path,
@@ -13,7 +13,11 @@ const boundary = vi.hoisted(() => {
       visible: true,
       x: 0,
       y: 0,
-      scale: { set: vi.fn() },
+      scale: {
+        set: vi.fn(() => {
+          if (fitFails) throw new Error('candidate fit failed')
+        })
+      },
       destroy: vi.fn(),
       hitTest: vi.fn(() => []),
       motion: vi.fn(async () => true),
@@ -98,7 +102,7 @@ describe('Live2DRuntime character transaction', () => {
     boundary.applications.length = 0
   })
 
-  it('keeps the old model visible through prepare, then cleans it on commit', async () => {
+  it('keeps the old model through tentative commit, then cleans it on finalize', async () => {
     const initial = boundary.model('initial')
     const candidate = boundary.model('candidate')
     boundary.models.set('initial', initial)
@@ -114,7 +118,47 @@ describe('Live2DRuntime character transaction', () => {
 
     expect(runtime.commitLoad(1)).toBe(true)
     expect(boundary.applications[0].stage.children).toEqual([initial, candidate])
+    expect(initial.visible).toBe(false)
+    expect(initial.destroy).not.toHaveBeenCalled()
+
+    expect(runtime.finalizeLoad(1)).toBe(true)
     expect(initial.destroy).toHaveBeenCalledWith(cleanup)
+  })
+
+  it('rolls a tentative commit back to the prior model', async () => {
+    const initial = boundary.model('initial')
+    const candidate = boundary.model('candidate')
+    boundary.models.set('initial', initial)
+    boundary.models.set('candidate', candidate)
+    const runtime = new Live2DRuntime({ parentElement: null } as HTMLCanvasElement)
+    await runtime.load('initial')
+
+    await runtime.prepareLoad(1, 'candidate')
+    expect(runtime.commitLoad(1)).toBe(true)
+    expect(runtime.rollbackLoad(1)).toBe(true)
+
+    expect(initial.visible).toBe(true)
+    expect(initial.destroy).not.toHaveBeenCalled()
+    expect(candidate.destroy).toHaveBeenCalledWith(cleanup)
+    expect(runtime.parameters()).toEqual([
+      { id: 'Param', name: 'Param', min: -1, max: 1, default: 0 }
+    ])
+  })
+
+  it('rolls back internally when tentative fitting throws after insertion', async () => {
+    const initial = boundary.model('initial')
+    const candidate = boundary.model('candidate', true, true)
+    boundary.models.set('initial', initial)
+    boundary.models.set('candidate', candidate)
+    const runtime = new Live2DRuntime({ parentElement: null } as HTMLCanvasElement)
+    await runtime.load('initial')
+
+    await runtime.prepareLoad(1, 'candidate')
+    expect(runtime.commitLoad(1)).toBe(false)
+
+    expect(initial.visible).toBe(true)
+    expect(initial.destroy).not.toHaveBeenCalled()
+    expect(candidate.destroy).toHaveBeenCalledWith(cleanup)
   })
 
   it('cancels, supersedes, and rejects post-load preparation without replacing the old model', async () => {

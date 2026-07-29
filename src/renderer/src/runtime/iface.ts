@@ -12,6 +12,8 @@ export interface IRuntime {
   load(modelPath: string): Promise<void>
   prepareLoad(id: number, modelPath: string): Promise<ParamInfo[]>
   commitLoad(id: number): boolean
+  rollbackLoad(id: number): boolean
+  finalizeLoad(id: number): boolean
   cancelLoad(id: number): boolean
   parameters(): ParamInfo[]
   setParams(batch: Record<string, number>, weight?: number): void

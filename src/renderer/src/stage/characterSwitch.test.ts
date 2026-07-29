@@ -12,11 +12,22 @@ const failure = JSON.parse(
 ) as { error: string }
 
 class FixtureRuntime
-  implements Pick<IRuntime, 'prepareLoad' | 'commitLoad' | 'cancelLoad' | 'parameters'>
+  implements
+    Pick<
+      IRuntime,
+      | 'prepareLoad'
+      | 'commitLoad'
+      | 'rollbackLoad'
+      | 'finalizeLoad'
+      | 'cancelLoad'
+      | 'parameters'
+    >
 {
   visible = 'first'
   prepared: { id: number; model: string } | null = null
+  tentative: { id: number; previous: string } | null = null
   cancelled: number[] = []
+  finalized: number[] = []
   private inventory: ParamInfo[] = [
     { id: 'ParamFirst', name: 'ParamFirst', min: -1, max: 1, default: 0 }
   ]
@@ -24,16 +35,36 @@ class FixtureRuntime
   async prepareLoad(id: number, modelPath: string): Promise<ParamInfo[]> {
     if (modelPath.endsWith('/failure.model3.json')) throw new Error(failure.error)
     this.prepared = { id, model: modelPath }
-    this.inventory = [
+    return [
       { id: 'ParamSecond', name: 'ParamSecond', min: -1, max: 1, default: 0 }
     ]
-    return this.inventory
   }
 
   commitLoad(id: number): boolean {
     if (this.prepared?.id !== id) return false
+    this.tentative = { id, previous: this.visible }
     this.visible = this.prepared.model
     this.prepared = null
+    this.inventory = [
+      { id: 'ParamSecond', name: 'ParamSecond', min: -1, max: 1, default: 0 }
+    ]
+    return true
+  }
+
+  rollbackLoad(id: number): boolean {
+    if (this.tentative?.id !== id) return false
+    this.visible = this.tentative.previous
+    this.tentative = null
+    this.inventory = [
+      { id: 'ParamFirst', name: 'ParamFirst', min: -1, max: 1, default: 0 }
+    ]
+    return true
+  }
+
+  finalizeLoad(id: number): boolean {
+    if (this.tentative?.id !== id) return false
+    this.tentative = null
+    this.finalized.push(id)
     return true
   }
 
@@ -87,12 +118,21 @@ describe('body character load handshake', () => {
     const cueMotions = { Wave: 'Idle:0' }
     let resets = 0
     const results: unknown[] = []
+    const commits: unknown[] = []
     const handler = createCharacterLoadHandler(
-      () => [runtime],
-      { characterChanged: () => resets++ },
+      runtime,
+      {
+        characterChanged: () => {
+          resets++
+        }
+      },
       cueParams,
       cueMotions,
-      (result) => results.push(result)
+      (result) => results.push(result),
+      (result) => commits.push(result),
+      () => {
+        throw new Error('window fit failed after finalization')
+      }
     )
 
     await handler.prepare({
@@ -136,8 +176,7 @@ describe('body character load handshake', () => {
       inventory: [{ id: 'ParamSecond', name: 'ParamSecond', min: -1, max: 1, default: 0 }]
     })
 
-    expect(
-      handler.commit({
+    handler.commit({
         id: 2,
         cues: [
           { name: 'Second', params: { ParamSecond: 1 } },
@@ -148,7 +187,7 @@ describe('body character load handshake', () => {
           }
         ]
       })
-    ).toBe(true)
+    expect(commits).toEqual([{ id: 2, ok: true }])
     expect(runtime.visible).toBe('lares://candidate/2/runtime/second.model3.json')
     expect(cueParams).toEqual({
       Second: { ParamSecond: 1 },
@@ -158,18 +197,27 @@ describe('body character load handshake', () => {
       Motion: 'lares://candidate/2/runtime/wave.motion3.json'
     })
     expect(resets).toBe(1)
+    expect(runtime.finalized).toEqual([])
+    expect(() => handler.finalize(2)).not.toThrow()
+    expect(runtime.finalized).toEqual([2])
   })
 
-  it('prepares and commits every registered feed-consuming runtime together', async () => {
-    const a = new FixtureRuntime()
-    const b = new FixtureRuntime()
-    const results: unknown[] = []
+  it('rolls back the tentative model and cue tables when main rejects publication', async () => {
+    const runtime = new FixtureRuntime()
+    const cueParams = { First: { ParamFirst: 1 } }
+    const cueMotions = { Wave: 'Idle:0' }
+    let driverRollbacks = 0
     const handler = createCharacterLoadHandler(
-      () => [a, b],
-      { characterChanged: () => {} },
-      {},
-      {},
-      (result) => results.push(result)
+      runtime,
+      {
+        characterChanged: () => () => {
+          driverRollbacks++
+        }
+      },
+      cueParams,
+      cueMotions,
+      () => {},
+      () => {}
     )
     const request = {
       id: 3,
@@ -182,24 +230,27 @@ describe('body character load handshake', () => {
     }
 
     await handler.prepare(request)
-    expect([a.visible, b.visible]).toEqual(['first', 'first'])
-    expect(results.at(-1)).toMatchObject({ id: 3, ok: true })
-    expect(handler.commit({ id: 3, cues: request.cues })).toBe(true)
-    expect([a.visible, b.visible]).toEqual([
-      'lares://candidate/3/runtime/second.model3.json',
-      'lares://candidate/3/runtime/second.model3.json'
-    ])
+    handler.commit({ id: 3, cues: request.cues })
+    expect(runtime.visible).toBe('lares://candidate/3/runtime/second.model3.json')
+    expect(cueParams).toEqual({ Second: { ParamSecond: 1 } })
+
+    expect(handler.rollback(3)).toBe(true)
+    expect(runtime.visible).toBe('first')
+    expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
+    expect(cueMotions).toEqual({ Wave: 'Idle:0' })
+    expect(driverRollbacks).toBe(1)
   })
 
   it('cancels prepared runtimes when post-load cue preparation fails', async () => {
     const runtime = new FixtureRuntime()
     const results: unknown[] = []
     const handler = createCharacterLoadHandler(
-      () => [runtime],
+      runtime,
       { characterChanged: () => {} },
       { First: { ParamFirst: 1 } },
       {},
-      (result) => results.push(result)
+      (result) => results.push(result),
+      () => {}
     )
 
     await handler.prepare({
@@ -221,32 +272,24 @@ describe('body character load handshake', () => {
     })
   })
 
-  it('waits for and discards every candidate when one runtime fails early', async () => {
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const delayed = new FixtureRuntime()
-    let delayedFinished!: Promise<ParamInfo[]>
-    const originalPrepare = delayed.prepareLoad.bind(delayed)
-    delayed.prepareLoad = (_id, model) => {
-      delayedFinished = gate.then(() => originalPrepare(5, model))
-      return delayedFinished
-    }
-    const failed = new FixtureRuntime()
-    failed.prepareLoad = async () => {
-      throw new Error('stage A rejected candidate')
-    }
-    const results: unknown[] = []
+  it('reports commit failure and restores old state when body work throws after swap', async () => {
+    const runtime = new FixtureRuntime()
+    const cueParams = { First: { ParamFirst: 1 } }
+    const commits: unknown[] = []
     const handler = createCharacterLoadHandler(
-      () => [failed, delayed],
-      { characterChanged: () => {} },
+      runtime,
+      {
+        characterChanged: () => {
+          throw new Error('driver refresh failed')
+        }
+      },
+      cueParams,
       {},
-      {},
-      (result) => results.push(result)
+      () => {},
+      (result) => commits.push(result)
     )
 
-    const preparation = handler.prepare({
+    await handler.prepare({
       id: 5,
       character: {
         ok: true,
@@ -255,17 +298,13 @@ describe('body character load handshake', () => {
       },
       cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
     })
-    await Promise.resolve()
-    release()
-    await preparation
-    await delayedFinished
-
-    expect(delayed.prepared).toBeNull()
-    expect(delayed.cancelled).toEqual([5])
-    expect(results.at(-1)).toEqual({
+    handler.commit({
       id: 5,
-      ok: false,
-      error: 'stage A rejected candidate'
+      cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
     })
+
+    expect(commits).toEqual([{ id: 5, ok: false, error: 'driver refresh failed' }])
+    expect(runtime.visible).toBe('first')
+    expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
   })
 })

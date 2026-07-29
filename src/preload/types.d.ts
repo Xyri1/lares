@@ -17,6 +17,10 @@ type CharacterPrepareResult =
   | { id: number; ok: true; inventory: unknown[] }
   | { id: number; ok: false; error: string }
 
+type CharacterCommitResult =
+  | { id: number; ok: true }
+  | { id: number; ok: false; error: string }
+
 /**
  * Performance feed (root SPEC §4, slice SPEC §5), brain→body over
  * `affect:update`. Renderer-neutral: cue names and numbers only (P6).
@@ -71,6 +75,9 @@ interface LaresBridge {
   onCharacterPrepare(cb: (request: CharacterPrepareRequest) => void): void
   reportCharacterPrepared(result: CharacterPrepareResult): void
   onCharacterCommit(cb: (request: CharacterCommitRequest) => void): void
+  reportCharacterCommitted(result: CharacterCommitResult): void
+  onCharacterRollback(cb: (id: number) => void): void
+  onCharacterFinalize(cb: (id: number) => void): void
   onCharacterCancel(cb: (id: number) => void): void
   playScenario(
     name: string,

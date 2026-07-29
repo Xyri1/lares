@@ -14,6 +14,15 @@ const lares = {
   onCharacterCommit: (cb: (request: CharacterCommitRequest) => void): void => {
     ipcRenderer.on('character:commit', (_event, request: CharacterCommitRequest) => cb(request))
   },
+  reportCharacterCommitted: (result: CharacterCommitResult): void => {
+    ipcRenderer.send('character:commit-result', result)
+  },
+  onCharacterRollback: (cb: (id: number) => void): void => {
+    ipcRenderer.on('character:rollback', (_event, id: number) => cb(id))
+  },
+  onCharacterFinalize: (cb: (id: number) => void): void => {
+    ipcRenderer.on('character:finalize', (_event, id: number) => cb(id))
+  },
   onCharacterCancel: (cb: (id: number) => void): void => {
     ipcRenderer.on('character:cancel', (_event, id: number) => cb(id))
   },
