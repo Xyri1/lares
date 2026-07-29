@@ -2,13 +2,18 @@ type CharacterPayload =
   | { ok: true; name: string; live2d: { model: string } & Record<string, unknown> }
   | { ok: false; error: string }
 
-interface CharacterLoadRequest {
+interface CharacterPrepareRequest {
   id: number
   character: Extract<CharacterPayload, { ok: true }>
   cues: CueListEntry[]
 }
 
-type CharacterLoadResult =
+interface CharacterCommitRequest {
+  id: number
+  cues: CueListEntry[]
+}
+
+type CharacterPrepareResult =
   | { id: number; ok: true; inventory: unknown[] }
   | { id: number; ok: false; error: string }
 
@@ -63,8 +68,10 @@ interface CueListEntry {
 interface LaresBridge {
   getCharacter(): Promise<CharacterPayload>
   reportInventory(params: unknown[]): void
-  onCharacterLoad(cb: (request: CharacterLoadRequest) => void): void
-  reportCharacterLoad(result: CharacterLoadResult): void
+  onCharacterPrepare(cb: (request: CharacterPrepareRequest) => void): void
+  reportCharacterPrepared(result: CharacterPrepareResult): void
+  onCharacterCommit(cb: (request: CharacterCommitRequest) => void): void
+  onCharacterCancel(cb: (id: number) => void): void
   playScenario(
     name: string,
     seed: number,

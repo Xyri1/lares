@@ -44,6 +44,15 @@ export interface NervesOptions {
   revertPreview?(): void
 }
 
+export interface PreparedNervesCharacter {
+  character: string
+  cues: Record<string, CueCoordinates>
+  sources: Record<string, CueInfo['source']>
+  inventory: Map<string, ParamInfo>
+  resolvedCues: Map<string, CuePlayback>
+  cueErrors: string[]
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -77,6 +86,40 @@ function finite(value: unknown, name: string, fallback: number): number {
   if (value === undefined) return fallback
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${name} must be a number`)
   return value
+}
+
+function prepareResolvedCues(
+  cues: Readonly<Record<string, CueCoordinates>>,
+  inventory: ReadonlyMap<string, ParamInfo>,
+  resolver: NervesOptions['resolveCue']
+): { resolvedCues: Map<string, CuePlayback>; cueErrors: string[] } {
+  const resolvedCues = new Map<string, CuePlayback>()
+  const cueErrors: string[] = []
+  if (!resolver) return { resolvedCues, cueErrors }
+  const defaults = Object.fromEntries([...inventory].map(([id, info]) => [id, info.default]))
+  for (const cue of Object.keys(cues)) {
+    let resolved: CuePlayback | undefined
+    try {
+      resolved = resolver(cue, defaults, inventory)
+    } catch (error) {
+      cueErrors.push(error instanceof Error ? error.message : String(error))
+      continue
+    }
+    if (!resolved) continue
+    if ('motion' in resolved) {
+      resolvedCues.set(cue, resolved)
+      continue
+    }
+    const params: Record<string, number> = {}
+    for (const [id, value] of Object.entries(resolved.params)) {
+      const info = inventory.get(id)
+      if (info && Number.isFinite(value)) {
+        params[id] = Math.min(info.max, Math.max(info.min, value))
+      }
+    }
+    if (Object.keys(params).length > 0) resolvedCues.set(cue, { params })
+  }
+  return { resolvedCues, cueErrors }
 }
 
 export class Nerves {
@@ -175,13 +218,43 @@ export class Nerves {
     sources: Readonly<Record<string, CueInfo['source']>>,
     inventory: readonly ParamInfo[]
   ): void {
-    this.character = character
-    this.inventory = new Map(inventory.map((param) => [param.id, { ...param }]))
-    this.reloadCues(cues, sources)
-    this.engine.clearExpressions()
+    this.commitCharacter(this.prepareCharacter(character, cues, sources, inventory))
+  }
+
+  prepareCharacter(
+    character: string,
+    cues: Record<string, CueCoordinates>,
+    sources: Readonly<Record<string, CueInfo['source']>>,
+    inventory: readonly ParamInfo[],
+    resolver: NervesOptions['resolveCue'] = this.options.resolveCue
+  ): PreparedNervesCharacter {
+    const preparedInventory = new Map(inventory.map((param) => [param.id, { ...param }]))
+    return {
+      character,
+      cues: { ...cues },
+      sources: { ...sources },
+      inventory: preparedInventory,
+      ...prepareResolvedCues(cues, preparedInventory, resolver)
+    }
+  }
+
+  commitCharacter(prepared: PreparedNervesCharacter): void {
+    this.character = prepared.character
+    this.inventory = prepared.inventory
+    for (const cue of Object.keys(this.cues)) delete this.cues[cue]
+    Object.assign(this.cues, prepared.cues)
+    this.cueSources = prepared.sources
+    this.resolvedCues.clear()
+    for (const [cue, playback] of prepared.resolvedCues) this.resolvedCues.set(cue, playback)
+    this.cueErrors = prepared.cueErrors
+    this.engine.clearCharacterHistory()
     this.lastPlayedAt.clear()
     this.previewExpiresAt = null
-    this.options.revertPreview?.()
+    try {
+      this.options.revertPreview?.()
+    } catch {
+      // Commit is intentionally nonthrow after the body becomes visible.
+    }
   }
 
   cueValidationErrors(): string[] {
@@ -189,34 +262,12 @@ export class Nerves {
   }
 
   private resolveCues(): void {
+    const prepared = this.inventory
+      ? prepareResolvedCues(this.cues, this.inventory, this.options.resolveCue)
+      : { resolvedCues: new Map<string, CuePlayback>(), cueErrors: [] }
     this.resolvedCues.clear()
-    this.cueErrors = []
-    if (!this.options.resolveCue || !this.inventory) return
-    const defaults = Object.fromEntries(
-      [...this.inventory].map(([id, info]) => [id, info.default])
-    )
-    for (const cue of Object.keys(this.cues)) {
-      let resolved: CuePlayback | undefined
-      try {
-        resolved = this.options.resolveCue(cue, defaults, this.inventory)
-      } catch (error) {
-        this.cueErrors.push(error instanceof Error ? error.message : String(error))
-        continue
-      }
-      if (!resolved) continue
-      if ('motion' in resolved) {
-        this.resolvedCues.set(cue, resolved)
-        continue
-      }
-      const params: Record<string, number> = {}
-      for (const [id, value] of Object.entries(resolved.params)) {
-        const info = this.inventory.get(id)
-        if (info && Number.isFinite(value)) {
-          params[id] = Math.min(info.max, Math.max(info.min, value))
-        }
-      }
-      if (Object.keys(params).length > 0) this.resolvedCues.set(cue, { params })
-    }
+    for (const [cue, playback] of prepared.resolvedCues) this.resolvedCues.set(cue, playback)
+    this.cueErrors = prepared.cueErrors
   }
 
   listParameters(): Array<{

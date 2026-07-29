@@ -137,6 +137,12 @@ export class AffectEngine {
     this.queue = []
   }
 
+  clearCharacterHistory(): void {
+    this.queue = []
+    this.saturation.clear()
+    this.selectedCue = null
+  }
+
   selectCue(): string | null {
     let best: string | null = null
     let bestDist = Infinity

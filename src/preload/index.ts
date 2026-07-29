@@ -5,11 +5,17 @@ const lares = {
   reportInventory: (params: unknown[]): void => {
     ipcRenderer.send('body:inventory', params)
   },
-  onCharacterLoad: (cb: (request: CharacterLoadRequest) => void): void => {
-    ipcRenderer.on('character:load', (_event, request: CharacterLoadRequest) => cb(request))
+  onCharacterPrepare: (cb: (request: CharacterPrepareRequest) => void): void => {
+    ipcRenderer.on('character:prepare', (_event, request: CharacterPrepareRequest) => cb(request))
   },
-  reportCharacterLoad: (result: CharacterLoadResult): void => {
-    ipcRenderer.send('character:load-result', result)
+  reportCharacterPrepared: (result: CharacterPrepareResult): void => {
+    ipcRenderer.send('character:prepared', result)
+  },
+  onCharacterCommit: (cb: (request: CharacterCommitRequest) => void): void => {
+    ipcRenderer.on('character:commit', (_event, request: CharacterCommitRequest) => cb(request))
+  },
+  onCharacterCancel: (cb: (id: number) => void): void => {
+    ipcRenderer.on('character:cancel', (_event, id: number) => cb(id))
   },
   playScenario: (
     name: string,

@@ -14,7 +14,12 @@ import icon from '../../resources/icon.png?asset'
 import { syncClaudeCode } from './adapters/claude-code/writer'
 import { syncCodexHooks } from './adapters/codex/hooks'
 import { writeCodexShim } from './adapters/codex/shim'
-import { applyExp3, parseExp3File, parseModelCdi3File } from './characters/exp3'
+import {
+  applyExp3,
+  parseExp3File,
+  parseModelCdi3File,
+  type Exp3Parameter
+} from './characters/exp3'
 import {
   saveExpression as saveCharacterExpression,
   updateExpression as updateCharacterExpression
@@ -26,14 +31,18 @@ import {
 } from './characters/manifest'
 import { bundledPackageRoot, ensureManagedCharacterLibrary, listCharacterPackages } from './characters/library'
 import {
+  CharacterAssetState,
+  CharacterLoadBroker,
+  type CharacterBody
+} from './characters/broker'
+import {
   createCharacterSwitcher,
-  type CharacterLoadRequest,
   type CharacterPackage,
   type CharacterSwitcher,
   type CharacterSwitchResult
 } from './characters/switch'
 import { DensityLog } from './densityLog'
-import { Nerves, parseInventory, type ParamInfo } from './nerves'
+import { Nerves, type ParamInfo, type PreparedNervesCharacter } from './nerves'
 import {
   clampToWorkArea,
   loadPosition,
@@ -83,8 +92,8 @@ let selectedCharacter:
   | { ok: false; error: string }
   | null = null
 let characterSwitcher: CharacterSwitcher | null = null
-let activeCandidateId: number | null = null
-const candidateAssetRoots = new Map<number, string>()
+let characterAssets: CharacterAssetState | null = null
+let characterLoadBroker: CharacterLoadBroker | null = null
 
 function broadcastFeed(feed: AffectFeedMessage): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -170,6 +179,82 @@ function cuePayload(selected: CharacterPackage, candidateId?: number) {
     }
     return base
   })
+}
+
+interface PreparedCharacterFiles {
+  cueDefinitions: Record<string, CueDefinition>
+  names: ReadonlyMap<string, string>
+  sources: Record<string, 'bundled' | 'authored' | 'raw'>
+  expressions: ReadonlyMap<string, Exp3Parameter[]>
+}
+
+function prepareCharacterFiles(candidate: CharacterPackage): PreparedCharacterFiles {
+  const cueDefinitions = candidate.character.live2d.cues ?? {}
+  const names = parseModelCdi3File(
+    candidate.character.live2d.model,
+    dirname(candidate.manifestPath)
+  )
+  const expressions = new Map<string, Exp3Parameter[]>()
+  for (const [cue, definition] of Object.entries(cueDefinitions)) {
+    if (!('expression' in definition)) continue
+    const result = parseExp3File(resolve(dirname(candidate.manifestPath), definition.expression), names)
+    if (!result.ok) {
+      throw new Error(`Cannot prepare cue ${JSON.stringify(cue)}: ${result.error}`)
+    }
+    expressions.set(cue, result.parameters)
+  }
+  return {
+    cueDefinitions,
+    names,
+    sources: cueSources(cueDefinitions),
+    expressions
+  }
+}
+
+function bodyPreparePayload(candidate: CharacterPackage, id: number) {
+  return {
+    id,
+    character: {
+      ok: true as const,
+      name: candidate.character.name,
+      live2d: {
+        model: assetUrl(
+          relative(dirname(candidate.manifestPath), candidate.character.live2d.model),
+          id
+        )
+      }
+    },
+    cues: cuePayload(candidate, id).filter(
+      (cue) => 'params' in cue || 'motion' in cue
+    )
+  }
+}
+
+function bodyCommitPayload(
+  candidate: CharacterPackage,
+  id: number,
+  prepared: PreparedNervesCharacter
+) {
+  const motionUrls = new Map(
+    cuePayload(candidate, id).flatMap((cue) =>
+      'motion' in cue && typeof cue.motion === 'string' ? [[cue.name, cue.motion]] : []
+    )
+  )
+  const cues: Array<
+    { name: string; params: Record<string, number> } | { name: string; motion: string }
+  > = []
+  for (const [name, playback] of prepared.resolvedCues) {
+    if ('params' in playback) {
+      cues.push({ name, params: playback.params })
+      continue
+    }
+    const motion = motionUrls.get(name)
+    if (motion) cues.push({ name, motion })
+  }
+  return {
+    id,
+    cues
+  }
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -258,6 +343,21 @@ async function syncAdapters(port: number): Promise<void> {
   ])
 }
 
+function liveCharacterBodies(): CharacterBody[] {
+  return BrowserWindow.getAllWindows().map((window) => {
+    const contents = window.webContents
+    return {
+      id: String(contents.id),
+      isDestroyed: () => contents.isDestroyed(),
+      send: (channel, value) => contents.send(channel, value),
+      onDestroyed: (listener) => {
+        contents.once('destroyed', listener)
+        return () => contents.removeListener('destroyed', listener)
+      }
+    }
+  })
+}
+
 async function startNerves(): Promise<void> {
   densityLog = process.env.LARES_DENSITY_LOG
     ? new DensityLog(resolve(process.env.LARES_DENSITY_LOG))
@@ -310,32 +410,72 @@ async function startNerves(): Promise<void> {
     return fresh
   }
   if (currentSelection) {
+    characterAssets = new CharacterAssetState(dirname(currentSelection.manifestPath))
+    characterLoadBroker = new CharacterLoadBroker(characterAssets, liveCharacterBodies, 30_000)
     characterSwitcher = createCharacterSwitcher(
       charactersRoot(),
       currentSelection,
-      requestCharacterLoad,
-      (candidate, inventory, id) => {
-        const previousCandidateId = activeCandidateId
-        selectedCharacter = candidate
-        currentSelection = candidate
-        cueDefinitions = candidate.character.live2d.cues ?? {}
-        names = parseModelCdi3File(
-          candidate.character.live2d.model,
-          dirname(candidate.manifestPath)
-        )
-        characterInventoryErrorShown = false
-        liveNerves!.switchCharacter(
-          candidate.character.name,
-          candidate.character.expressions,
-          cueSources(cueDefinitions),
-          inventory.map((param) => ({
+      {
+        precompute: prepareCharacterFiles,
+        prepare: ({ id, candidate }) =>
+          characterLoadBroker!.prepare(
+            id,
+            dirname(candidate.manifestPath),
+            bodyPreparePayload(candidate, id)
+          ),
+        prepareCommit: (candidate, inventory, files, id) => {
+          const namedInventory = inventory.map((param) => ({
             ...param,
-            name: names.get(param.id) ?? param.name
+            name: files.names.get(param.id) ?? param.name
           }))
-        )
-        activeCandidateId = id
-        if (previousCandidateId !== null) candidateAssetRoots.delete(previousCandidateId)
-        reportCharacterInventoryIssues()
+          const prepared = liveNerves!.prepareCharacter(
+            candidate.character.name,
+            candidate.character.expressions,
+            files.sources,
+            namedInventory,
+            (cue, defaults, bodyInventory) => {
+              const definition = files.cueDefinitions[cue]
+              if (!definition) return undefined
+              if ('params' in definition) {
+                rejectUnknownParams(cue, definition.params, bodyInventory)
+                return { params: definition.params }
+              }
+              if ('motion' in definition) return { motion: definition.motion }
+              const parameters = files.expressions.get(cue)
+              if (!parameters) return undefined
+              rejectUnknownParams(
+                cue,
+                Object.fromEntries(parameters.map((parameter) => [parameter.id, parameter.value])),
+                bodyInventory
+              )
+              return { params: applyExp3(parameters, defaults) }
+            }
+          )
+          if (prepared.cueErrors.length) throw new Error(prepared.cueErrors.join('\n'))
+          return {
+            files,
+            nerves: prepared,
+            body: bodyCommitPayload(candidate, id, prepared)
+          }
+        },
+        commit: (id, state) => characterLoadBroker!.commit(id, state.body),
+        cancel: (id, reason) => characterLoadBroker!.cancel(id, reason),
+        publish: (
+          candidate,
+          state: {
+            files: PreparedCharacterFiles
+            nerves: PreparedNervesCharacter
+            body: ReturnType<typeof bodyCommitPayload>
+          }
+        ) => {
+          selectedCharacter = candidate
+          currentSelection = candidate
+          cueDefinitions = state.files.cueDefinitions
+          names = state.files.names
+          characterInventoryErrorShown = false
+          liveNerves!.commitCharacter(state.nerves)
+          reportCharacterInventoryIssues()
+        }
       }
     )
   }
@@ -423,70 +563,12 @@ function stopNerves(): void {
   if (server) void server.stop().catch((error) => console.error('[lares] server stop failed', error))
 }
 
-const pendingCharacterLoads = new Map<
-  number,
-  {
-    sender: Electron.WebContents
-    resolve(value: unknown): void
-    reject(error: Error): void
-  }
->()
-
-function requestCharacterLoad({ id, candidate }: CharacterLoadRequest): Promise<unknown> {
-  const sender = overlayWindow?.webContents
-  if (!sender || sender.isDestroyed()) return Promise.reject(new Error('character body is unavailable'))
-  for (const candidateId of candidateAssetRoots.keys()) {
-    if (candidateId !== activeCandidateId) candidateAssetRoots.delete(candidateId)
-  }
-  candidateAssetRoots.set(id, dirname(candidate.manifestPath))
-  return new Promise((resolveLoad, rejectLoad) => {
-    const reject = (error: Error): void => {
-      pendingCharacterLoads.delete(id)
-      candidateAssetRoots.delete(id)
-      rejectLoad(error)
-    }
-    const timer = setTimeout(() => reject(new Error('character body load timed out')), 30_000)
-    pendingCharacterLoads.set(id, {
-      sender,
-      resolve: (value) => {
-        clearTimeout(timer)
-        pendingCharacterLoads.delete(id)
-        resolveLoad(value)
-      },
-      reject: (error) => {
-        clearTimeout(timer)
-        reject(error)
-      }
-    })
-    sender.send('character:load', {
-      id,
-      character: characterPayload(candidate, id),
-      cues: cuePayload(candidate, id)
-    })
-  })
-}
-
 function registerAssetProtocol(): void {
   protocol.handle('lares', (request) => {
-    const url = new URL(request.url)
     try {
-      let root: string
-      let path: string
-      if (url.host === 'characters') {
-        const selected = activeCharacter()
-        if ('error' in selected) return new Response('not found', { status: 404 })
-        root = dirname(selected.manifestPath)
-        path = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
-      } else if (url.host === 'candidate') {
-        const [rawId, ...parts] = url.pathname.split('/').filter(Boolean)
-        const id = Number(rawId)
-        const candidateRoot = Number.isSafeInteger(id) ? candidateAssetRoots.get(id) : undefined
-        if (!candidateRoot) return new Response('not found', { status: 404 })
-        root = candidateRoot
-        path = decodeURIComponent(parts.join('/'))
-      } else {
-        return new Response('not found', { status: 404 })
-      }
+      const resolvedAsset = characterAssets?.resolve(request.url)
+      if (!resolvedAsset) return new Response('not found', { status: 404 })
+      const { root, path } = resolvedAsset
       const target = resolve(root, path)
       if (!target.startsWith(root + sep)) return new Response('forbidden', { status: 403 })
       const realTarget = realpathSync(target)
@@ -527,21 +609,8 @@ function registerCharacterIpc(): void {
     if (accepted) reportCharacterInventoryIssues()
   })
 
-  ipcMain.on('character:load-result', (event, raw: unknown) => {
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return
-    const result = raw as Record<string, unknown>
-    if (!Number.isSafeInteger(result.id)) return
-    const pending = pendingCharacterLoads.get(result.id as number)
-    if (!pending || pending.sender !== event.sender) return
-    if (result.ok === true) {
-      const inventory = parseInventory(result.inventory)
-      if (inventory) pending.resolve(inventory)
-      else pending.reject(new Error('renderer returned an invalid body inventory'))
-      return
-    }
-    if (result.ok === false && typeof result.error === 'string') {
-      pending.reject(new Error(result.error))
-    }
+  ipcMain.on('character:prepared', (event, raw: unknown) => {
+    characterLoadBroker?.receive(String(event.sender.id), raw)
   })
 
   ipcMain.handle('cues:list', () => {

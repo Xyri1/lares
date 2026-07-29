@@ -245,6 +245,25 @@ describe('Nerves emote ingress', () => {
     expect(reverts).toBe(1)
   })
 
+  it('prepares a character without mutation, then commits the prepared state', () => {
+    const nerves = new Nerves('First', CUES, 0)
+    nerves.setInventory(INVENTORY)
+
+    const prepared = nerves.prepareCharacter(
+      'Second',
+      { same: { valence: 0.3, arousal: 0.2 } },
+      { same: 'raw' },
+      [{ id: 'ParamSecond', name: 'Second', min: -1, max: 1, default: 0 }],
+      () => ({ params: { ParamSecond: 1 } })
+    )
+
+    expect(nerves.status(0).active_character).toBe('First')
+    expect(nerves.listCues().map((cue) => cue.name)).toEqual(['pleased', 'frustrated'])
+    expect(() => nerves.commitCharacter(prepared)).not.toThrow()
+    expect(nerves.status(0).active_character).toBe('Second')
+    expect(nerves.snapshot().expressionStack).toEqual([])
+  })
+
   it('round-trips the real MCP server into the performance snapshot', async () => {
     const nowMs = Date.now()
     const nerves = new Nerves('Hiyori', CUES, nowMs)

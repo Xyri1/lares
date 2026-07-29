@@ -57,19 +57,21 @@ async function boot(): Promise<void> {
 
   const driver = createAffectDriver(runtime, presetJson as SynthPreset, cueParams, cueMotions)
   let currentCharacter = character
-  window.lares.onCharacterLoad(
-    createCharacterLoadHandler(
-      runtime,
-      driver,
-      cueParams,
-      cueMotions,
-      (result) => window.lares.reportCharacterLoad(result as CharacterLoadResult),
-      (request) => {
-        currentCharacter = request.character
-        if (OVERLAY) void window.lares.fitToModel(runtime.larSize())
-      }
-    )
+  const runtimes = [runtime]
+  const characterLoads = createCharacterLoadHandler(
+    () => runtimes,
+    driver,
+    cueParams,
+    cueMotions,
+    (result) => window.lares.reportCharacterPrepared(result as CharacterPrepareResult),
+    (request) => {
+      currentCharacter = request.character
+      if (OVERLAY) void window.lares.fitToModel(runtime.larSize())
+    }
   )
+  window.lares.onCharacterPrepare(characterLoads.prepare)
+  window.lares.onCharacterCommit(characterLoads.commit)
+  window.lares.onCharacterCancel(characterLoads.cancel)
 
   if (OVERLAY) {
     // Tight fit last, once the model can report its own footprint (003-D5) —
@@ -90,9 +92,11 @@ async function boot(): Promise<void> {
     let stageB: Promise<Live2DRuntime> | null = null
     const setStageB = (on: boolean): Promise<void> => {
       if (!on) return Promise.resolve(stageB?.then((rb) => rb.setActive(false)) ?? undefined)
+      if (characterLoads.busy()) return Promise.reject(new Error('character switch in progress'))
       stageB ??= (async () => {
         const rb = new Live2DRuntime(runtime)
         await rb.load(currentCharacter.live2d.model)
+        runtimes.push(rb)
         window.__runtimeB = rb
         driver.addStage('B', rb)
         return rb

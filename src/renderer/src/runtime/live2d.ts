@@ -8,7 +8,6 @@ import {
   LARES_MOTION_GROUP,
   registerLooseMotion
 } from './looseMotion'
-import { commitLatestLoad } from './transaction'
 
 // PixiJS 6 builds shaders with new Function(); this swaps in precompiled
 // versions so the strict CSP (script-src 'self', no unsafe-eval) can stay.
@@ -20,6 +19,7 @@ Live2DModel.registerTicker(Ticker)
 // the normative judging size for all of M2b. autoDensity keeps it crisp on
 // HiDPI. Smaller windows still fit-to-window rather than crop.
 const DEFAULT_LAR_HEIGHT = 400
+const DESTROY_MODEL = { children: true, texture: true, baseTexture: true } as const
 
 // Raw Cubism Core parameter struct, reached through documented internals
 // (001-D2 spike). Parallel arrays indexed 0..count-1.
@@ -61,6 +61,7 @@ export class Live2DRuntime implements IRuntime {
   private peers: Live2DRuntime[]
   private active = true
   private loadGeneration = 0
+  private prepared?: { id: number; model: Live2DModel; inventory: ParamInfo[] }
 
   constructor(target: HTMLCanvasElement | Live2DRuntime) {
     if (target instanceof Live2DRuntime) {
@@ -119,53 +120,77 @@ export class Live2DRuntime implements IRuntime {
   }
 
   async load(modelPath: string): Promise<void> {
+    await this.prepareLoad(0, modelPath)
+    this.commitLoad(0)
+  }
+
+  async prepareLoad(id: number, modelPath: string): Promise<ParamInfo[]> {
     const generation = ++this.loadGeneration
-    const committed = await commitLatestLoad(
-      Live2DModel.from(modelPath, { autoUpdate: false, autoInteract: false }).then((model) => {
-        try {
-          // Synth owns breath/blink/sway (slice 002 step 4): disable the
-          // library's versions so per-frame setParams isn't fighting them.
-          const internal = model.internalModel as unknown as {
-            breath?: unknown
-            eyeBlink?: unknown
-            on(event: string, fn: () => void): void
-            coreModel: CoreModel
-          }
-          internal.breath = undefined
-          internal.eyeBlink = undefined
-          // Writes land inside Cubism's update pass, above motion and below
-          // physics/pose. The listener is safe before activation: candidates
-          // are not ticked or rendered until the transaction commits.
-          internal.on('afterMotionUpdate', () => this.writeParams())
-          const params = internal.coreModel._model.parameters
-          const inventory = Array.from({ length: params.count }, (_, i) => ({
-            id: params.ids[i],
-            name: params.ids[i],
-            min: params.minimumValues[i],
-            max: params.maximumValues[i],
-            default: params.defaultValues[i]
-          }))
-          return { model, inventory }
-        } catch (error) {
-          model.destroy()
-          throw error
-        }
-      }),
-      () => generation === this.loadGeneration,
-      ({ model, inventory }) => {
-        const previous = this.model
-        this.model = model
-        this.inventory = inventory
-        this.paramIndex = new Map(inventory.map((param, index) => [param.id, index]))
-        this.overrides.clear()
-        this.expression = undefined
-        this.app.stage.addChild(model)
-        previous?.destroy()
-        for (const peer of this.peers) peer.fit()
-      },
-      ({ model }) => model.destroy()
-    )
-    if (!committed) throw new Error('character load was superseded')
+    if (this.prepared) {
+      this.prepared.model.destroy(DESTROY_MODEL)
+      this.prepared = undefined
+    }
+    const model = await Live2DModel.from(modelPath, { autoUpdate: false, autoInteract: false })
+    try {
+      if (generation !== this.loadGeneration) throw new Error('character load was superseded')
+      const internal = model.internalModel as unknown as {
+        breath?: unknown
+        eyeBlink?: unknown
+        on(event: string, fn: () => void): void
+        coreModel: CoreModel
+      }
+      internal.breath = undefined
+      internal.eyeBlink = undefined
+      internal.on('afterMotionUpdate', () => this.writeParams())
+      const params = internal.coreModel._model.parameters
+      const inventory = Array.from({ length: params.count }, (_, i) => ({
+        id: params.ids[i],
+        name: params.ids[i],
+        min: params.minimumValues[i],
+        max: params.maximumValues[i],
+        default: params.defaultValues[i]
+      }))
+      if (
+        inventory.some(
+          (param) =>
+            !param.id ||
+            !Number.isFinite(param.min) ||
+            !Number.isFinite(param.max) ||
+            param.min > param.max ||
+            !Number.isFinite(param.default)
+        )
+      ) {
+        throw new Error('renderer returned an invalid body inventory')
+      }
+      this.prepared = { id, model, inventory }
+      return inventory.map((param) => ({ ...param }))
+    } catch (error) {
+      model.destroy(DESTROY_MODEL)
+      throw error
+    }
+  }
+
+  commitLoad(id: number): boolean {
+    if (this.prepared?.id !== id) return false
+    const { model, inventory } = this.prepared
+    this.prepared = undefined
+    const previous = this.model
+    this.model = model
+    this.inventory = inventory
+    this.paramIndex = new Map(inventory.map((param, index) => [param.id, index]))
+    this.overrides.clear()
+    this.expression = undefined
+    this.app.stage.addChild(model)
+    previous?.destroy(DESTROY_MODEL)
+    for (const peer of this.peers) peer.fit()
+    return true
+  }
+
+  cancelLoad(id: number): boolean {
+    if (this.prepared?.id !== id) return false
+    this.prepared.model.destroy(DESTROY_MODEL)
+    this.prepared = undefined
+    return true
   }
 
   parameters(): ParamInfo[] {

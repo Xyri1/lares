@@ -14,6 +14,20 @@ export interface CharacterLoadRequest {
   candidate: CharacterPackage
 }
 
+export interface CharacterSwitchOperations<Precomputed, CommitState> {
+  precompute(candidate: CharacterPackage): Precomputed
+  prepare(request: CharacterLoadRequest, precomputed: Precomputed): Promise<unknown>
+  prepareCommit(
+    candidate: CharacterPackage,
+    inventory: ParamInfo[],
+    precomputed: Precomputed,
+    id: number
+  ): CommitState
+  commit(id: number, state: CommitState): boolean
+  cancel(id: number, reason: string): boolean
+  publish(candidate: CharacterPackage, state: CommitState, id: number): void
+}
+
 export type CharacterSwitchResult =
   | { ok: true; manifestPath: string }
   | { ok: false; error: string }
@@ -23,14 +37,14 @@ export interface CharacterSwitcher {
   switchTo(manifestPath: string): Promise<CharacterSwitchResult>
 }
 
-export function createCharacterSwitcher(
+export function createCharacterSwitcher<Precomputed, CommitState>(
   root: string,
   initial: CharacterPackage,
-  load: (request: CharacterLoadRequest) => Promise<unknown>,
-  commit: (candidate: CharacterPackage, inventory: ParamInfo[], id: number) => void
+  operations: CharacterSwitchOperations<Precomputed, CommitState>
 ): CharacterSwitcher {
   let active = initial
   let latestId = 0
+  let pendingId: number | null = null
 
   return {
     active: () => active,
@@ -39,19 +53,44 @@ export function createCharacterSwitcher(
         (entry) => resolve(entry.manifestPath) === resolve(manifestPath)
       )
       if (!candidate) return { ok: false, error: 'character is not a valid managed package' }
-      const id = ++latestId
+      let precomputed: Precomputed
       try {
-        const inventory = parseInventory(await load({ id, candidate }))
-        if (id !== latestId) return { ok: false, error: 'character switch was superseded' }
-        if (!inventory) return { ok: false, error: 'renderer returned an invalid body inventory' }
-        commit(candidate, inventory, id)
-        active = candidate
-        return { ok: true, manifestPath: candidate.manifestPath }
+        precomputed = operations.precompute(candidate)
       } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+      const id = ++latestId
+      if (pendingId !== null) {
+        operations.cancel(pendingId, 'character switch was superseded')
+      }
+      pendingId = id
+      let inventory: ParamInfo[]
+      let state: CommitState
+      try {
+        const parsed = parseInventory(await operations.prepare({ id, candidate }, precomputed))
+        if (id !== latestId) {
+          operations.cancel(id, 'character switch was superseded')
+          return { ok: false, error: 'character switch was superseded' }
+        }
+        if (!parsed) throw new Error('renderer returned an invalid body inventory')
+        inventory = parsed
+        state = operations.prepareCommit(candidate, inventory, precomputed, id)
+      } catch (error) {
+        operations.cancel(id, 'character switch preparation failed')
+        if (pendingId === id) pendingId = null
         return id !== latestId
           ? { ok: false, error: 'character switch was superseded' }
           : { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
+      if (!operations.commit(id, state)) {
+        operations.cancel(id, 'character body commit was refused')
+        if (pendingId === id) pendingId = null
+        return { ok: false, error: 'character body commit was refused' }
+      }
+      operations.publish(candidate, state, id)
+      active = candidate
+      if (pendingId === id) pendingId = null
+      return { ok: true, manifestPath: candidate.manifestPath }
     }
   }
 }

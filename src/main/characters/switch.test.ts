@@ -59,21 +59,27 @@ describe('transactional character switching', () => {
     const switcher = createCharacterSwitcher(
       root,
       firstPackage,
-      async ({ candidate }) => inventory(`Param${Object.keys(candidate.character.expressions)[0]}`),
-      (candidate, params) => {
-        const cues = candidate.character.live2d.cues ?? {}
-        nerves.switchCharacter(
-          candidate.character.name,
-          candidate.character.expressions,
-          Object.fromEntries(Object.keys(cues).map((cue) => [cue, 'raw' as const])),
-          params
-        )
-        Object.assign(surfaces, {
-          manifestPath: candidate.manifestPath,
-          assetRoot: dirname(candidate.manifestPath),
-          cues: Object.keys(cues),
-          inventory: params.map((param) => param.id)
-        })
+      {
+        precompute: (candidate) => candidate.character.live2d.cues ?? {},
+        prepare: async ({ candidate }) =>
+          inventory(`Param${Object.keys(candidate.character.expressions)[0]}`),
+        prepareCommit: (_candidate, params, cues) => ({ params, cues }),
+        commit: () => true,
+        cancel: () => false,
+        publish: (candidate, { params, cues }) => {
+          nerves.switchCharacter(
+            candidate.character.name,
+            candidate.character.expressions,
+            Object.fromEntries(Object.keys(cues).map((cue) => [cue, 'raw' as const])),
+            params
+          )
+          Object.assign(surfaces, {
+            manifestPath: candidate.manifestPath,
+            assetRoot: dirname(candidate.manifestPath),
+            cues: Object.keys(cues),
+            inventory: params.map((param) => param.id)
+          })
+        }
       }
     )
 
@@ -97,10 +103,16 @@ describe('transactional character switching', () => {
     const switcher = createCharacterSwitcher(
       root,
       packages[0],
-      async () => {
-        throw new Error('renderer fixture refused model')
-      },
-      () => commits++
+      {
+        precompute: () => null,
+        prepare: async () => {
+          throw new Error('renderer fixture refused model')
+        },
+        prepareCommit: () => null,
+        commit: () => true,
+        cancel: () => true,
+        publish: () => commits++
+      }
     )
 
     await expect(switcher.switchTo(packages[1].manifestPath)).resolves.toEqual({
@@ -109,6 +121,34 @@ describe('transactional character switching', () => {
     })
     expect(switcher.active()).toEqual(packages[0])
     expect(commits).toBe(0)
+  })
+
+  it('cancels prepared bodies without publishing when main-side preparation fails', async () => {
+    const { root, packages } = managedPackages()
+    const events: string[] = []
+    const switcher = createCharacterSwitcher(root, packages[0], {
+      precompute: () => null,
+      prepare: async () => inventory('ParamSecond'),
+      prepareCommit: () => {
+        throw new Error('expression fixture is invalid')
+      },
+      commit: () => {
+        events.push('commit')
+        return true
+      },
+      cancel: () => {
+        events.push('cancel')
+        return true
+      },
+      publish: () => events.push('publish')
+    })
+
+    await expect(switcher.switchTo(packages[1].manifestPath)).resolves.toEqual({
+      ok: false,
+      error: 'expression fixture is invalid'
+    })
+    expect(switcher.active()).toEqual(packages[0])
+    expect(events).toEqual(['cancel'])
   })
 
   it('rejects a stale out-of-order renderer result', async () => {
@@ -122,8 +162,14 @@ describe('transactional character switching', () => {
     const switcher = createCharacterSwitcher(
       root,
       all[0],
-      ({ id }) => new Promise((resolve) => pending.set(id, resolve)),
-      (candidate) => commits.push(candidate.manifestPath)
+      {
+        precompute: () => null,
+        prepare: ({ id }) => new Promise((resolve) => pending.set(id, resolve)),
+        prepareCommit: (_candidate, params) => params,
+        commit: () => true,
+        cancel: () => true,
+        publish: (candidate) => commits.push(candidate.manifestPath)
+      }
     )
 
     const older = switcher.switchTo(all[1].manifestPath)
@@ -134,5 +180,39 @@ describe('transactional character switching', () => {
     await expect(older).resolves.toEqual({ ok: false, error: 'character switch was superseded' })
     expect(switcher.active().manifestPath).toBe(all[2].manifestPath)
     expect(commits).toEqual([all[2].manifestPath])
+  })
+
+  it('precomputes fallible state before prepare and publishes only after body commit', async () => {
+    const { root, packages } = managedPackages()
+    const events: string[] = []
+    const switcher = createCharacterSwitcher(root, packages[0], {
+      precompute: () => {
+        events.push('precompute')
+        return 'files-ready'
+      },
+      prepare: async () => {
+        events.push('prepare-bodies')
+        return inventory('Param')
+      },
+      prepareCommit: (_candidate, params, files) => {
+        events.push('prepare-main')
+        return { files, params }
+      },
+      commit: () => {
+        events.push('commit-bodies')
+        return true
+      },
+      cancel: () => false,
+      publish: () => events.push('publish-main')
+    })
+
+    await expect(switcher.switchTo(packages[1].manifestPath)).resolves.toMatchObject({ ok: true })
+    expect(events).toEqual([
+      'precompute',
+      'prepare-bodies',
+      'prepare-main',
+      'commit-bodies',
+      'publish-main'
+    ])
   })
 })
