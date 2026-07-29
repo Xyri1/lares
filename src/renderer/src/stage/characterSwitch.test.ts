@@ -308,11 +308,12 @@ describe('body character load handshake', () => {
     expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
   })
 
-  it('rolls a tentative body back when finalize and rollback are both lost', async () => {
+  it('finalizes a tentative body when the finalize fast path is lost but main committed', async () => {
     vi.useFakeTimers()
     try {
       const runtime = new FixtureRuntime()
       const cueParams = { First: { ParamFirst: 1 } }
+      const getDecision = vi.fn(async () => 'commit')
       const handler = createCharacterLoadHandler(
         runtime,
         { characterChanged: () => () => {} },
@@ -321,6 +322,7 @@ describe('body character load handshake', () => {
         () => {},
         () => {},
         undefined,
+        getDecision,
         50
       )
       await handler.prepare({
@@ -340,9 +342,93 @@ describe('body character load handshake', () => {
 
       await vi.advanceTimersByTimeAsync(50)
 
+      expect(getDecision).toHaveBeenCalledWith(6)
+      expect(runtime.visible).toBe('lares://candidate/6/runtime/second.model3.json')
+      expect(cueParams).toEqual({ Second: { ParamSecond: 1 } })
+      expect(runtime.finalized).toEqual([6])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('restores a tentative body when rollback delivery is lost and main rolled back', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new FixtureRuntime()
+      const cueParams = { First: { ParamFirst: 1 } }
+      const getDecision = vi.fn(async () => 'rollback')
+      const handler = createCharacterLoadHandler(
+        runtime,
+        { characterChanged: () => () => {} },
+        cueParams,
+        {},
+        () => {},
+        () => {},
+        undefined,
+        getDecision,
+        50
+      )
+      await handler.prepare({
+        id: 7,
+        character: {
+          ok: true,
+          name: 'Second',
+          live2d: { model: 'lares://candidate/7/runtime/second.model3.json' }
+        },
+        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      })
+      handler.commit({ id: 7, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+
+      await vi.advanceTimersByTimeAsync(50)
+
+      expect(getDecision).toHaveBeenCalledWith(7)
       expect(runtime.visible).toBe('first')
       expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
     } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries a transient decision rejection without an unhandled promise', async () => {
+    vi.useFakeTimers()
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      const runtime = new FixtureRuntime()
+      const getDecision = vi
+        .fn<(id: number) => Promise<unknown>>()
+        .mockRejectedValueOnce(new Error('main frame changed'))
+        .mockResolvedValue('commit')
+      const handler = createCharacterLoadHandler(
+        runtime,
+        { characterChanged: () => () => {} },
+        { First: { ParamFirst: 1 } },
+        {},
+        () => {},
+        () => {},
+        undefined,
+        getDecision,
+        50
+      )
+      await handler.prepare({
+        id: 8,
+        character: {
+          ok: true,
+          name: 'Second',
+          live2d: { model: 'lares://candidate/8/runtime/second.model3.json' }
+        },
+        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      })
+      handler.commit({ id: 8, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+
+      await vi.advanceTimersByTimeAsync(100)
+
+      expect(getDecision).toHaveBeenCalledTimes(2)
+      expect(unhandled).not.toHaveBeenCalled()
+      expect(runtime.visible).toBe('lares://candidate/8/runtime/second.model3.json')
+      expect(runtime.finalized).toEqual([8])
+    } finally {
+      process.off('unhandledRejection', unhandled)
       vi.useRealTimers()
     }
   })
@@ -370,6 +456,7 @@ describe('body character load handshake', () => {
         () => {},
         () => {},
         undefined,
+        async () => null,
         50
       )
       await handler.prepare({
@@ -385,6 +472,7 @@ describe('body character load handshake', () => {
 
       expect(() => handler.finalize(7)).not.toThrow()
       expect(handler.finalize(7)).toBe(false)
+      expect(handler.rollback(7)).toBe(false)
       expect(finalizedDriver).toBe(1)
       await vi.advanceTimersByTimeAsync(50)
       expect(runtime.visible).toBe('lares://candidate/7/runtime/second.model3.json')
@@ -406,6 +494,7 @@ describe('body character load handshake', () => {
         () => {},
         () => {},
         undefined,
+        async () => null,
         50
       )
       await handler.prepare({
@@ -420,6 +509,7 @@ describe('body character load handshake', () => {
       handler.commit({ id: 8, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
 
       expect(handler.rollback(8)).toBe(true)
+      expect(handler.finalize(8)).toBe(false)
       await vi.advanceTimersByTimeAsync(50)
       expect(rollback).toHaveBeenCalledTimes(1)
       expect(runtime.visible).toBe('first')

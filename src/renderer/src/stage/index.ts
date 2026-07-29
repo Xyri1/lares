@@ -68,7 +68,8 @@ async function boot(): Promise<void> {
       (request) => {
         currentCharacter = request.character
         void window.lares.fitToModel(runtime.larSize())
-      }
+      },
+      window.lares.getCharacterDecision
     )
     window.lares.onCharacterPrepare(characterLoads.prepare)
     window.lares.onCharacterCommit(characterLoads.commit)

@@ -67,7 +67,6 @@ describe('transactional character switching', () => {
         commit: async () => {},
         cancel: () => false,
         rollback: () => false,
-        rollbackPublish: () => {},
         finalize: () => {},
         publish: (candidate, { params, cues }) => {
           nerves.switchCharacter(
@@ -115,7 +114,6 @@ describe('transactional character switching', () => {
         commit: async () => {},
         cancel: () => true,
         rollback: () => true,
-        rollbackPublish: () => {},
         finalize: () => {},
         publish: () => commits++
       }
@@ -149,7 +147,6 @@ describe('transactional character switching', () => {
         events.push('rollback')
         return true
       },
-      rollbackPublish: () => {},
       finalize: () => events.push('finalize'),
       publish: () => events.push('publish')
     })
@@ -180,7 +177,6 @@ describe('transactional character switching', () => {
         commit: async () => {},
         cancel: () => true,
         rollback: () => true,
-        rollbackPublish: () => {},
         finalize: () => {},
         publish: (candidate) => commits.push(candidate.manifestPath)
       }
@@ -217,7 +213,6 @@ describe('transactional character switching', () => {
       },
       cancel: () => false,
       rollback: () => false,
-      rollbackPublish: () => {},
       finalize: () => events.push('finalize-body'),
       publish: () => events.push('publish-main')
     })
@@ -228,74 +223,56 @@ describe('transactional character switching', () => {
       'prepare-bodies',
       'prepare-main',
       'commit-bodies',
-      'publish-main',
-      'finalize-body'
+      'finalize-body',
+      'publish-main'
     ])
   })
 
-  it('rolls the acknowledged body back when main publication throws', async () => {
+  it('keeps main, Nerves, body, and root state old when finalize handoff fails', async () => {
     const { root, packages } = managedPackages()
     const events: string[] = []
     let mainCharacter = 'first'
-    const switcher = createCharacterSwitcher(root, packages[0], {
-      precompute: () => null,
-      prepare: async () => inventory('ParamSecond'),
-      prepareCommit: () => null,
-      commit: async () => {
-        events.push('commit')
-      },
-      cancel: () => false,
-      rollback: () => {
-        events.push('rollback')
-        return true
-      },
-      rollbackPublish: () => {
-        mainCharacter = 'first'
-        events.push('rollback-main')
-      },
-      finalize: () => events.push('finalize'),
-      publish: () => {
-        mainCharacter = 'second'
-        events.push('publish')
-        throw new Error('main publication failed')
+    let bodyCharacter = 'first'
+    let assetRoot = 'first'
+    let previewReverts = 0
+    const nerves = new Nerves('first', { First: { valence: 0.2, arousal: 0.3 } }, 0, undefined, {
+      cueSources: { First: 'raw' },
+      revertPreview: () => {
+        previewReverts++
       }
     })
-
-    await expect(switcher.switchTo(packages[1].manifestPath)).resolves.toEqual({
-      ok: false,
-      error: 'main publication failed'
-    })
-    expect(switcher.active()).toEqual(packages[0])
-    expect(mainCharacter).toBe('first')
-    expect(events).toEqual(['commit', 'publish', 'rollback-main', 'rollback'])
-  })
-
-  it('rolls published main and tentative body state back when finalize handoff fails', async () => {
-    const { root, packages } = managedPackages()
-    const events: string[] = []
-    let mainCharacter = 'first'
+    expect(nerves.setInventory(inventory('ParamFirst'))).toBe(true)
+    nerves.emote({ cue: 'First', duration_s: 30 }, 'test', 1)
+    nerves.previewExpression({ params: { ParamFirst: 0.5 } }, 2)
+    const oldHistory = nerves.snapshot().expressionStack
     const switcher = createCharacterSwitcher(root, packages[0], {
       precompute: () => null,
       prepare: async () => inventory('ParamSecond'),
-      prepareCommit: () => null,
+      prepareCommit: () =>
+        nerves.prepareCharacter(
+          'second',
+          { Second: { valence: -0.2, arousal: 0.7 } },
+          { Second: 'raw' },
+          inventory('ParamSecond')
+        ),
       commit: async () => {
+        bodyCharacter = 'second'
         events.push('commit')
       },
       cancel: () => false,
       rollback: () => {
+        bodyCharacter = 'first'
         events.push('rollback-body')
         return true
-      },
-      rollbackPublish: () => {
-        mainCharacter = 'first'
-        events.push('rollback-main')
       },
       finalize: () => {
         events.push('finalize')
         throw new Error('finalize send failed')
       },
-      publish: () => {
+      publish: (_candidate, prepared) => {
         mainCharacter = 'second'
+        assetRoot = 'second'
+        nerves.commitCharacter(prepared)
         events.push('publish')
       }
     })
@@ -306,12 +283,58 @@ describe('transactional character switching', () => {
     })
     expect(switcher.active()).toEqual(packages[0])
     expect(mainCharacter).toBe('first')
-    expect(events).toEqual([
-      'commit',
-      'publish',
-      'finalize',
-      'rollback-main',
-      'rollback-body'
-    ])
+    expect(bodyCharacter).toBe('first')
+    expect(assetRoot).toBe('first')
+    expect(nerves.status(2).active_character).toBe('first')
+    expect(nerves.listCues().map((cue) => cue.name)).toEqual(['First'])
+    expect(nerves.listParameters().map((param) => param.id)).toEqual(['ParamFirst'])
+    expect(nerves.snapshot().expressionStack).toEqual(oldHistory)
+    expect(previewReverts).toBe(0)
+    expect(events).toEqual(['commit', 'finalize', 'rollback-body'])
+  })
+
+  it('stops main scenario replay before a successful switch resolves', async () => {
+    const { root, packages } = managedPackages()
+    let replayActive = true
+    const switcher = createCharacterSwitcher(root, packages[0], {
+      precompute: () => null,
+      prepare: async () => inventory('ParamSecond'),
+      prepareCommit: () => null,
+      commit: async () => {},
+      cancel: () => false,
+      rollback: () => false,
+      finalize: () => {},
+      publish: () => {
+        replayActive = false
+      }
+    })
+
+    await expect(switcher.switchTo(packages[1].manifestPath)).resolves.toMatchObject({ ok: true })
+    expect(replayActive).toBe(false)
+  })
+
+  it('keeps main scenario replay active when finalization rolls back', async () => {
+    const { root, packages } = managedPackages()
+    let replayActive = true
+    const switcher = createCharacterSwitcher(root, packages[0], {
+      precompute: () => null,
+      prepare: async () => inventory('ParamSecond'),
+      prepareCommit: () => null,
+      commit: async () => {},
+      cancel: () => false,
+      rollback: () => true,
+      finalize: () => {
+        throw new Error('finalize send failed')
+      },
+      publish: () => {
+        replayActive = false
+      }
+    })
+
+    await expect(switcher.switchTo(packages[1].manifestPath)).resolves.toEqual({
+      ok: false,
+      error: 'finalize send failed'
+    })
+    expect(replayActive).toBe(true)
   })
 })

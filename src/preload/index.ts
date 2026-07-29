@@ -23,6 +23,8 @@ const lares = {
   onCharacterFinalize: (cb: (id: number) => void): void => {
     ipcRenderer.on('character:finalize', (_event, id: number) => cb(id))
   },
+  getCharacterDecision: (id: number): Promise<CharacterDecision> =>
+    ipcRenderer.invoke('character:decision', id),
   onCharacterCancel: (cb: (id: number) => void): void => {
     ipcRenderer.on('character:cancel', (_event, id: number) => cb(id))
   },

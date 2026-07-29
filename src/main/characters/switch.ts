@@ -26,7 +26,6 @@ export interface CharacterSwitchOperations<Precomputed, CommitState> {
   commit(id: number, state: CommitState): Promise<void>
   cancel(id: number, reason: string): boolean
   rollback(id: number, reason: string): boolean
-  rollbackPublish(candidate: CharacterPackage, state: CommitState, id: number): void
   finalize(id: number): void
   publish(candidate: CharacterPackage, state: CommitState, id: number): void
 }
@@ -95,20 +94,8 @@ export function createCharacterSwitcher<Precomputed, CommitState>(
           : { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
       try {
-        operations.publish(candidate, state, id)
-      } catch (error) {
-        operations.rollbackPublish(candidate, state, id)
-        operations.rollback(id, 'main character publication failed')
-        if (pendingId === id) pendingId = null
-        return {
-          ok: false,
-          error: error instanceof Error ? error.message : String(error)
-        }
-      }
-      try {
         operations.finalize(id)
       } catch (error) {
-        operations.rollbackPublish(candidate, state, id)
         operations.rollback(id, 'character finalization handoff failed')
         if (pendingId === id) pendingId = null
         return {
@@ -116,6 +103,9 @@ export function createCharacterSwitcher<Precomputed, CommitState>(
           error: error instanceof Error ? error.message : String(error)
         }
       }
+      // prepareCommit owns all fallible main work. Publication is synchronous,
+      // precomputed state assignment after main has made the final decision.
+      operations.publish(candidate, state, id)
       active = candidate
       if (pendingId === id) pendingId = null
       return { ok: true, manifestPath: candidate.manifestPath }

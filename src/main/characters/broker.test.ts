@@ -9,6 +9,7 @@ class Body implements CharacterBody {
   readonly sent: Array<{ channel: string; value: unknown }> = []
   destroyed = false
   throwOnChannel: string | null = null
+  dropOnChannel: string | null = null
   private listeners = new Set<() => void>()
 
   constructor(readonly id: string) {}
@@ -19,6 +20,7 @@ class Body implements CharacterBody {
 
   send(channel: string, value: unknown): void {
     if (channel === this.throwOnChannel) throw new Error(`${channel} send failed`)
+    if (channel === this.dropOnChannel) return
     this.sent.push({ channel, value })
   }
 
@@ -81,6 +83,10 @@ describe('main character load broker', () => {
     expect(broker.finalize(1)).toBe(true)
     expect(overlay.sent.at(-1)).toEqual({ channel: 'character:finalize', value: 1 })
     expect(assets.resolve('lares://characters/model')?.root).toBe('/characters/second')
+    expect(broker.decision(1)).toBe('commit')
+    expect(broker.finalize(1)).toBe(false)
+    expect(broker.rollback(1)).toBe(false)
+    expect(broker.decision(1)).toBe('commit')
   })
 
   it('rolls back on commit acknowledgement timeout and ignores a late result', async () => {
@@ -191,6 +197,27 @@ describe('main character load broker', () => {
     expect(assets.resolve('lares://candidate/1/model')).toBeNull()
   })
 
+  it('records rollback when its best-effort renderer message is lost', async () => {
+    const body = new Body('overlay')
+    const assets = new CharacterAssetState('/characters/first')
+    const broker = new CharacterLoadBroker(assets, () => body, 30_000)
+    const prepared = broker.prepare(1, '/characters/second', { id: 1 })
+    broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })
+    await prepared
+    const committed = broker.commit(1, { id: 1, cues: [] })
+    broker.receiveCommit('overlay', { id: 1, ok: true })
+    await committed
+    body.dropOnChannel = 'character:rollback'
+
+    expect(broker.rollback(1, 'main publication failed')).toBe(true)
+    expect(body.sent.some((message) => message.channel === 'character:rollback')).toBe(false)
+    expect(assets.resolve('lares://characters/model')?.root).toBe('/characters/first')
+    expect(broker.decision(1)).toBe('rollback')
+    expect(broker.rollback(1)).toBe(false)
+    expect(broker.finalize(1)).toBe(false)
+    expect(broker.decision(1)).toBe('rollback')
+  })
+
   it('retains rollback state and the old root when finalize delivery throws', async () => {
     const body = new Body('overlay')
     const assets = new CharacterAssetState('/characters/first')
@@ -211,6 +238,7 @@ describe('main character load broker', () => {
     expect(broker.rollback(1, 'finalize handoff failed')).toBe(true)
     expect(body.sent.at(-1)).toEqual({ channel: 'character:rollback', value: 1 })
     expect(assets.resolve('lares://candidate/1/model')).toBeNull()
+    expect(broker.decision(1)).toBe('rollback')
   })
 
   it('rolls back immediately when prepare delivery fails', async () => {

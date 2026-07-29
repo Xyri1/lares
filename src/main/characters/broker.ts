@@ -93,6 +93,13 @@ interface AwaitingCommit extends BodyState {
   timer: ReturnType<typeof setTimeout>
 }
 
+export type CharacterDecision = 'commit' | 'rollback'
+
+interface FinalDecision {
+  value: CharacterDecision
+  timer: ReturnType<typeof setTimeout>
+}
+
 function bestEffortSend(body: CharacterBody, channel: string, value: unknown): void {
   if (body.isDestroyed()) return
   try {
@@ -107,6 +114,7 @@ export class CharacterLoadBroker {
   private readonly prepared = new Map<number, BodyState>()
   private readonly committing = new Map<number, AwaitingCommit>()
   private readonly committed = new Map<number, BodyState>()
+  private readonly decisions = new Map<number, FinalDecision>()
 
   constructor(
     private readonly assets: CharacterAssetState,
@@ -228,6 +236,12 @@ export class CharacterLoadBroker {
     return true
   }
 
+  decision(rawId: unknown): CharacterDecision | null {
+    return Number.isSafeInteger(rawId) && (rawId as number) > 0
+      ? (this.decisions.get(rawId as number)?.value ?? null)
+      : null
+  }
+
   finalize(id: number): boolean {
     const committed = this.committed.get(id)
     if (!committed) return false
@@ -240,6 +254,7 @@ export class CharacterLoadBroker {
     this.committed.delete(id)
     committed.removeDestroyedListener()
     this.assets.commit(id)
+    this.recordDecision(id, 'commit')
     return true
   }
 
@@ -271,6 +286,7 @@ export class CharacterLoadBroker {
       committed.removeDestroyedListener()
     }
     this.assets.cancel(id)
+    if (committing || committed) this.recordDecision(id, 'rollback')
     bestEffortSend(
       body,
       committing || committed ? 'character:rollback' : 'character:cancel',
@@ -293,8 +309,19 @@ export class CharacterLoadBroker {
     if (!committing) return
     this.cleanupCommitting(id)
     this.assets.cancel(id)
+    this.recordDecision(id, 'rollback')
     committing.reject(error)
     bestEffortSend(committing.body, 'character:rollback', id)
+  }
+
+  private recordDecision(id: number, value: CharacterDecision): void {
+    const previous = this.decisions.get(id)
+    if (previous) clearTimeout(previous.timer)
+    // The body asks after one timeout and retries within 1s; four windows keep
+    // the answer available through transient query/frame failures.
+    const timer = setTimeout(() => this.decisions.delete(id), this.timeoutMs * 4)
+    timer.unref?.()
+    this.decisions.set(id, { value, timer })
   }
 
   private cleanupPending(id: number): void {

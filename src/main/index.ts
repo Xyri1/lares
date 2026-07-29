@@ -464,26 +464,12 @@ async function startNerves(): Promise<void> {
           return {
             files,
             nerves: prepared,
-            body: bodyCommitPayload(candidate, id, prepared),
-            previous: {
-              selectedCharacter,
-              currentSelection,
-              cueDefinitions,
-              names,
-              characterInventoryErrorShown
-            }
+            body: bodyCommitPayload(candidate, id, prepared)
           }
         },
         commit: (id, state) => characterLoadBroker!.commit(id, state.body),
         cancel: (id, reason) => characterLoadBroker!.cancel(id, reason),
         rollback: (id, reason) => characterLoadBroker!.rollback(id, reason),
-        rollbackPublish: (_candidate, state) => {
-          selectedCharacter = state.previous.selectedCharacter
-          currentSelection = state.previous.currentSelection
-          cueDefinitions = state.previous.cueDefinitions
-          names = state.previous.names
-          characterInventoryErrorShown = state.previous.characterInventoryErrorShown
-        },
         finalize: (id) => {
           if (!characterLoadBroker!.finalize(id)) {
             throw new Error('character finalization handoff was refused')
@@ -495,13 +481,6 @@ async function startNerves(): Promise<void> {
             files: PreparedCharacterFiles
             nerves: PreparedNervesCharacter
             body: ReturnType<typeof bodyCommitPayload>
-            previous: {
-              selectedCharacter: typeof selectedCharacter
-              currentSelection: typeof currentSelection
-              cueDefinitions: typeof cueDefinitions
-              names: typeof names
-              characterInventoryErrorShown: boolean
-            }
           }
         ) => {
           selectedCharacter = candidate
@@ -510,6 +489,7 @@ async function startNerves(): Promise<void> {
           names = state.files.names
           characterInventoryErrorShown = false
           liveNerves!.commitCharacter(state.nerves)
+          stopScenarioPlayback()
         }
       }
     )
@@ -652,6 +632,13 @@ function registerCharacterIpc(): void {
     characterLoadBroker?.receiveCommit(String(event.sender.id), raw)
   })
 
+  ipcMain.handle('character:decision', (event, rawId: unknown) => {
+    const body = liveCharacterBody()
+    return body?.id === String(event.sender.id)
+      ? (characterLoadBroker?.decision(rawId) ?? null)
+      : null
+  })
+
   ipcMain.handle('cues:list', () => {
     const selected = activeCharacter()
     if ('error' in selected) return []
@@ -669,6 +656,25 @@ let activePlayback: {
   controller: PacedPlayback
   engineLines?: Record<string, string[]>
 } | null = null
+
+function stopScenarioPlayback(): void {
+  const playback = activePlayback
+  activePlayback = null
+  if (!playback) return
+  try {
+    playback.controller.cancel()
+  } catch (error) {
+    console.error('[lares] scenario cancellation failed', error)
+  }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.webContents.isDestroyed()) continue
+    try {
+      win.webContents.send('scenario:stopped')
+    } catch {
+      // Main playback is already stopped; renderer finalization also clears local replay.
+    }
+  }
+}
 
 const GOLDEN_NAMES = new Set([
   'smooth-build',
@@ -817,12 +823,7 @@ function registerScenarioIpc(): void {
   const NO_PLAYBACK = { ok: false as const, error: 'no playback in progress' }
 
   ipcMain.handle('scenario:stop', () => {
-    if (!activePlayback) return { ok: true }
-    activePlayback.controller.cancel()
-    activePlayback = null
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.webContents.isDestroyed()) win.webContents.send('scenario:stopped')
-    }
+    stopScenarioPlayback()
     return { ok: true }
   })
 

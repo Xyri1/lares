@@ -21,6 +21,8 @@ type CharacterCommitResult =
   | { id: number; ok: true }
   | { id: number; ok: false; error: string }
 
+type CharacterDecision = 'commit' | 'rollback' | null
+
 /**
  * Performance feed (root SPEC §4, slice SPEC §5), brain→body over
  * `affect:update`. Renderer-neutral: cue names and numbers only (P6).
@@ -78,6 +80,7 @@ interface LaresBridge {
   reportCharacterCommitted(result: CharacterCommitResult): void
   onCharacterRollback(cb: (id: number) => void): void
   onCharacterFinalize(cb: (id: number) => void): void
+  getCharacterDecision(id: number): Promise<CharacterDecision>
   onCharacterCancel(cb: (id: number) => void): void
   playScenario(
     name: string,

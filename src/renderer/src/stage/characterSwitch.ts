@@ -121,6 +121,7 @@ export function createCharacterLoadHandler(
   reportPrepared: (result: unknown) => void,
   reportCommitted: (result: unknown) => void,
   finalized?: (request: CharacterLoadRequest) => void,
+  getDecision: (id: number) => Promise<unknown> = async () => null,
   tentativeTimeoutMs = 30_000
 ): {
   prepare(request: unknown): Promise<void>
@@ -181,6 +182,58 @@ export function createCharacterLoadHandler(
     const result = runtime.cancelLoad(id)
     if (prepared?.id === id) prepared = undefined
     return result
+  }
+
+  const finalize = (rawId: unknown): boolean => {
+    const transaction = tentative
+    if (
+      !Number.isSafeInteger(rawId) ||
+      transaction === undefined ||
+      transaction.request.id !== rawId
+    ) {
+      return false
+    }
+    const request = transaction.request
+    tentative = undefined
+    if (transaction.watchdog) clearTimeout(transaction.watchdog)
+    try {
+      runtime.finalizeLoad(rawId as number)
+    } catch {
+      // Matching finalization is one-way; cleanup cannot reopen the transaction.
+    }
+    try {
+      transaction.finalizeDriver?.()
+    } catch {
+      // The new body is already final; playback cleanup is best effort here.
+    }
+    try {
+      finalized?.(request)
+    } catch {
+      // Old resources are already final; no failure is reported after this point.
+    }
+    return true
+  }
+
+  const retryMs = Math.min(1000, Math.max(10, Math.floor(tentativeTimeoutMs / 2)))
+  const scheduleDecision = (id: number, delayMs: number): void => {
+    if (tentative?.request.id !== id) return
+    tentative.watchdog = setTimeout(() => {
+      void Promise.resolve()
+        .then(() => getDecision(id))
+        .then((decision) => {
+          if (tentative?.request.id !== id) return
+          if (decision === 'commit') {
+            finalize(id)
+          } else if (decision === 'rollback') {
+            rollback(id)
+          } else {
+            scheduleDecision(id, retryMs)
+          }
+        })
+        .catch(() => {
+          scheduleDecision(id, retryMs)
+        })
+    }, delayMs)
   }
 
   return {
@@ -255,9 +308,7 @@ export function createCharacterLoadHandler(
           tentative.rollbackDriver = () => driverChange.rollback()
           tentative.finalizeDriver = () => driverChange.finalize()
         }
-        tentative.watchdog = setTimeout(() => {
-          rollback(commit.id)
-        }, tentativeTimeoutMs)
+        scheduleDecision(commit.id, tentativeTimeoutMs)
         reportCommitted({ id: commit.id, ok: true })
         return true
       } catch (error) {
@@ -271,35 +322,7 @@ export function createCharacterLoadHandler(
       }
     },
     rollback,
-    finalize(rawId) {
-      const transaction = tentative
-      if (
-        !Number.isSafeInteger(rawId) ||
-        transaction === undefined ||
-        transaction.request.id !== rawId
-      ) {
-        return false
-      }
-      const request = transaction.request
-      tentative = undefined
-      if (transaction.watchdog) clearTimeout(transaction.watchdog)
-      try {
-        runtime.finalizeLoad(rawId as number)
-      } catch {
-        // Matching finalization is one-way; cleanup cannot reopen the transaction.
-      }
-      try {
-        transaction.finalizeDriver?.()
-      } catch {
-        // The new body is already final; playback cleanup is best effort here.
-      }
-      try {
-        finalized?.(request)
-      } catch {
-        // Old resources are already final; no failure is reported after this point.
-      }
-      return true
-    },
+    finalize,
     cancel
   }
 }

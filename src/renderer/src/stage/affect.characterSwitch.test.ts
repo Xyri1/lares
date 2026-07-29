@@ -67,7 +67,7 @@ describe('AffectDriver character switching', () => {
     expect(stopScenario).not.toHaveBeenCalled()
     transaction.finalize()
 
-    expect(stopScenario).toHaveBeenCalledOnce()
+    expect(stopScenario).not.toHaveBeenCalled()
     affectUpdate?.({ ...feed, tick: 2 })
     expect(driver.buffer().engine).toHaveLength(1)
 

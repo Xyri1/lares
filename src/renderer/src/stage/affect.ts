@@ -345,8 +345,12 @@ export function createAffectDriver(
   const previewed = (id: StageId, stack: readonly StackEntry[]): readonly StackEntry[] =>
     preview && id === 'A' ? [preview, ...stack] : stack
 
-  const reset = (refreshDefaults = false): void => {
-    void window.lares.stopScenario()
+  const reset = (refreshDefaults = false, stopMain = true): void => {
+    if (stopMain) {
+      void window.lares.stopScenario().catch((error) => {
+        console.error('[lares] scenario:stop failed', error)
+      })
+    }
     clearPlayback(false)
     preview = null
     authoringPreview = replaceHeldPreview(
@@ -472,7 +476,7 @@ export function createAffectDriver(
         st.runtime.resetParams()
         return {
           rollback,
-          finalize: () => reset(true)
+          finalize: () => reset(true, false)
         }
       } catch (error) {
         rollback()
