@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs'
-import { atomicWrite } from './adapters/claude-code/writer'
+import { atomicWrite } from './fs'
 
 export const SCALES = [0.5, 0.75, 1, 1.25, 1.5] as const
 export type Scale = (typeof SCALES)[number]
+
+export const LANGUAGES = ['system', 'en', 'zh-CN'] as const
+export type Language = (typeof LANGUAGES)[number]
 
 export interface AppConfig {
   activeCharacter?: string
@@ -11,6 +14,7 @@ export interface AppConfig {
   launchAtLogin: boolean
   automaticallyCheckForUpdates: boolean
   calibrationArmed: boolean
+  language: Language
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -18,7 +22,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   doNotDisturb: false,
   launchAtLogin: false,
   automaticallyCheckForUpdates: true,
-  calibrationArmed: false
+  calibrationArmed: false,
+  language: 'system'
 }
 
 export function parseConfig(raw: unknown): AppConfig {
@@ -38,7 +43,10 @@ export function parseConfig(raw: unknown): AppConfig {
     calibrationArmed:
       typeof value.calibrationArmed === 'boolean'
         ? value.calibrationArmed
-        : DEFAULT_CONFIG.calibrationArmed
+        : DEFAULT_CONFIG.calibrationArmed,
+    language: LANGUAGES.includes(value.language as Language)
+      ? (value.language as Language)
+      : DEFAULT_CONFIG.language
   }
 }
 

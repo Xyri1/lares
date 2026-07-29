@@ -17,7 +17,8 @@ describe('persistent config', () => {
       doNotDisturb: true,
       launchAtLogin: true,
       automaticallyCheckForUpdates: false,
-      calibrationArmed: true
+      calibrationArmed: true,
+      language: 'zh-CN' as const
     }
     await saveConfig(file, config)
 
@@ -39,6 +40,7 @@ describe('persistent config', () => {
       launchAtLogin: 'yes',
       automaticallyCheckForUpdates: false,
       calibrationArmed: null,
+      language: 'fr',
       injected: 'ignored'
     }))
     expect(loadConfig(partial)).toEqual({

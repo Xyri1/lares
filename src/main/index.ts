@@ -68,6 +68,8 @@ import {
 } from './calibration'
 import { DEFAULT_CONFIG, loadConfig, saveConfig, type AppConfig, type Scale } from './config'
 import { DensityLog } from './densityLog'
+import { errorMessage } from './errors'
+import { L, resolveLocale, setLocale } from './strings'
 import { Nerves, type ParamInfo, type PreparedNervesCharacter } from './nerves'
 import {
   clampToWorkArea,
@@ -357,7 +359,7 @@ function reportCharacterInventoryIssues(): void {
   console.error(`[lares] character parameter validation failed:\n${message}`)
   if (!characterInventoryErrorShown) {
     characterInventoryErrorShown = true
-    dialog.showErrorBox('Character package invalid', message)
+    dialog.showErrorBox(L.characterPackageInvalid, message)
   }
 }
 
@@ -622,12 +624,20 @@ async function startNerves(): Promise<void> {
   } catch (error) {
     removeRuntimeFile()
     const code = (error as NodeJS.ErrnoException).code
-    const message =
-      code === 'EADDRINUSE'
-        ? `Port ${configuredPort()} is already in use. Lares ingress is disabled.`
-        : `Lares ingress failed to start: ${error instanceof Error ? error.message : String(error)}`
-    console.error(`[lares] ${message}`)
-    dialog.showErrorBox('Lares ingress unavailable', message)
+    const portInUse = code === 'EADDRINUSE'
+    const port = configuredPort()
+    // Log output stays English regardless of locale; only the dialog is localized.
+    console.error(
+      `[lares] ${
+        portInUse
+          ? `Port ${port} is already in use. Lares ingress is disabled.`
+          : `Lares ingress failed to start: ${errorMessage(error)}`
+      }`
+    )
+    dialog.showErrorBox(
+      L.ingressUnavailableTitle,
+      portInUse ? L.ingressPortInUse(port) : L.ingressFailedToStart(errorMessage(error))
+    )
     void nervesServer.stop()
     nervesServer = null
   }
@@ -952,10 +962,7 @@ async function syncCalibrationAfterAuthoring(): Promise<void> {
     try {
       await saveConfig(configFile(), appConfig)
     } catch (error) {
-      dialog.showErrorBox(
-        'Could not save settings',
-        error instanceof Error ? error.message : String(error)
-      )
+      dialog.showErrorBox(L.couldNotSaveSettings, errorMessage(error))
     }
   }
   trayShell?.refresh()
@@ -1183,13 +1190,13 @@ async function uninstallFromTray(): Promise<void> {
 
   const choice = await dialog.showMessageBox({
     type: 'warning',
-    title: 'Uninstall Lares',
-    message: 'Remove Lares and its agent integrations?',
-    detail: 'Imported characters and authored work are retained unless you select the option below.',
-    buttons: ['Cancel', 'Uninstall'],
+    title: L.uninstallConfirmTitle,
+    message: L.uninstallConfirmMessage,
+    detail: L.uninstallConfirmDetail,
+    buttons: [L.uninstallConfirmCancel, L.uninstallConfirmUninstall],
     defaultId: 0,
     cancelId: 0,
-    checkboxLabel: 'Also delete Lares data',
+    checkboxLabel: L.uninstallConfirmDeleteDataCheckbox,
     checkboxChecked: false
   })
   if (choice.response !== 1) return
@@ -1213,10 +1220,7 @@ async function uninstallFromTray(): Promise<void> {
 function createTray(): void {
   if (reconcileActiveCalibration()) {
     void saveConfig(configFile(), appConfig).catch((error) => {
-      dialog.showErrorBox(
-        'Could not save settings',
-        error instanceof Error ? error.message : String(error)
-      )
+      dialog.showErrorBox(L.couldNotSaveSettings, errorMessage(error))
     })
   }
   tray = new Tray(icon)
@@ -1233,8 +1237,8 @@ function createTray(): void {
     notify: ({ tag, url }) => {
       if (!Notification.isSupported()) return
       const notification = new Notification({
-        title: 'Lares update available',
-        body: `${tag} is available on GitHub.`
+        title: L.updateAvailableTitle,
+        body: L.updateAvailableBody(tag)
       })
       notification.on('click', () => {
         if (isLaresReleaseUrl(url)) {
@@ -1248,11 +1252,11 @@ function createTray(): void {
     showInfo: () => {
       void dialog.showMessageBox({
         type: 'info',
-        title: 'Lares is up to date',
-        message: `You are running the latest Lares release (${app.getVersion()}).`
+        title: L.upToDateTitle,
+        message: L.upToDate(app.getVersion())
       })
     },
-    showError: (message) => dialog.showErrorBox('Update check failed', message),
+    showError: (message) => dialog.showErrorBox(L.updateCheckFailed, message),
     log: (message) => console.warn(`[lares] update check failed: ${message}`),
     setInterval: (callback, milliseconds) => setInterval(callback, milliseconds),
     clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>)
@@ -1274,7 +1278,7 @@ function createTray(): void {
       discardManagedCharacter(charactersRoot(), manifestPath),
     pickImportDirectory: async () => {
       const result = await dialog.showOpenDialog({
-        title: 'Import Character',
+        title: L.importCharacterDialogTitle,
         properties: ['openDirectory']
       })
       return result.canceled ? null : (result.filePaths[0] ?? null)
@@ -1320,6 +1324,9 @@ function createTray(): void {
     },
     onAutomaticUpdatesChanged: () => updateChecks?.automaticPreferenceChanged(),
     onCheckForUpdates: () => updateChecks?.manual(),
+    onLanguageChanged: (language) => {
+      setLocale(resolveLocale(language, app.getLocale()))
+    },
     onUninstall: uninstallFromTray,
     quit: () => {
       quitting = true
@@ -1344,16 +1351,19 @@ if (removeAdaptersOnly) {
     console.error('[lares] Lares is already running; use Uninstall Lares… from its tray')
     app.exit(2)
   } else {
-    void app.whenReady().then(uninstallFromTray).then(
-      () => app.exit(0),
-      (error) => {
-        dialog.showErrorBox(
-          'Lares could not be uninstalled',
-          error instanceof Error ? error.message : String(error)
-        )
-        app.exit(1)
-      }
-    )
+    void app
+      .whenReady()
+      .then(() => {
+        setLocale(resolveLocale(loadConfig(configFile()).language, app.getLocale()))
+        return uninstallFromTray()
+      })
+      .then(
+        () => app.exit(0),
+        (error) => {
+          dialog.showErrorBox(L.laresCouldNotBeUninstalled, errorMessage(error))
+          app.exit(1)
+        }
+      )
   }
 // A5: a second launch exits immediately; the running instance is untouched
 // (no focus steal — the spec says unaffected).
@@ -1364,14 +1374,15 @@ if (removeAdaptersOnly) {
     electronApp.setAppUserModelId('io.lares')
     app.dock?.hide()
     appConfig = loadConfig(configFile())
+    setLocale(resolveLocale(appConfig.language, app.getLocale()))
 
     try {
       const seeded = ensureManagedCharacterLibrary(charactersRoot(), defaultCharacterRoot())
       if (seeded.seeded) console.log('[lares] seeded managed character library')
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = errorMessage(error)
       console.error(`[lares] default character unavailable: ${message}`)
-      dialog.showErrorBox('Default character unavailable', message)
+      dialog.showErrorBox(L.defaultCharacterUnavailable, message)
     }
 
     app.on('browser-window-created', (_, window) => {

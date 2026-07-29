@@ -1,5 +1,7 @@
 import { resolve } from 'node:path'
-import { SCALES, type AppConfig, type Scale } from './config'
+import { SCALES, type AppConfig, type Language, type Scale } from './config'
+import { errorMessage } from './errors'
+import { L } from './strings'
 
 export interface ShellCharacter {
   manifestPath: string
@@ -39,6 +41,7 @@ export interface TrayShellDependencies {
   onAutomaticUpdatesChanged?: (enabled: boolean) => void | Promise<void>
   onCheckForUpdates?: () => void | Promise<void>
   onUninstall?: () => void | Promise<void>
+  onLanguageChanged?: (language: Language) => void | Promise<void>
   quit(): void
 }
 
@@ -73,7 +76,7 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     try {
       await deps.persist(config)
     } catch (error) {
-      deps.showError('Could not save settings', error instanceof Error ? error.message : String(error))
+      deps.showError(L.couldNotSaveSettings, errorMessage(error))
     }
   }
 
@@ -82,14 +85,11 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     try {
       result = await deps.switchCharacter(manifestPath)
     } catch (error) {
-      deps.showError(
-        'Character could not be loaded',
-        error instanceof Error ? error.message : String(error)
-      )
+      deps.showError(L.characterCouldNotBeLoaded, errorMessage(error))
       return false
     }
     if (!result.ok) {
-      deps.showError('Character could not be loaded', result.error)
+      deps.showError(L.characterCouldNotBeLoaded, result.error)
       return false
     }
     config.activeCharacter = result.manifestPath
@@ -103,10 +103,7 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     try {
       source = await deps.pickImportDirectory()
     } catch (error) {
-      deps.showError(
-        'Character could not be imported',
-        error instanceof Error ? error.message : String(error)
-      )
+      deps.showError(L.characterCouldNotBeImported, errorMessage(error))
       return
     }
     if (!source) return
@@ -114,24 +111,18 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     try {
       imported = deps.importCharacter(source)
     } catch (error) {
-      deps.showError(
-        'Character could not be imported',
-        error instanceof Error ? error.message : String(error)
-      )
+      deps.showError(L.characterCouldNotBeImported, errorMessage(error))
       return
     }
     if (!imported.ok) {
-      deps.showError('Character could not be imported', imported.error)
+      deps.showError(L.characterCouldNotBeImported, imported.error)
       return
     }
     if (!(await select(imported.manifestPath))) {
       try {
         deps.discardImportedCharacter(imported.manifestPath)
       } catch (error) {
-        deps.showError(
-          'Character import cleanup failed',
-          error instanceof Error ? error.message : String(error)
-        )
+        deps.showError(L.characterImportCleanupFailed, errorMessage(error))
       }
       refresh()
     }
@@ -165,14 +156,18 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     refresh()
   }
 
+  const setLanguage = async (language: Language): Promise<void> => {
+    config.language = language
+    await persist()
+    await deps.onLanguageChanged?.(language)
+    refresh()
+  }
+
   const mapExpressions = async (): Promise<void> => {
     try {
       await deps.onMapExpressions?.()
     } catch (error) {
-      deps.showError(
-        'Expression mapping could not be updated',
-        error instanceof Error ? error.message : String(error)
-      )
+      deps.showError(L.expressionMappingCouldNotBeUpdated, errorMessage(error))
     }
     refresh()
   }
@@ -181,8 +176,7 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     try {
       await deps.onUninstall?.()
     } catch (error) {
-      deps.showError('Lares could not be uninstalled',
-        error instanceof Error ? error.message : String(error))
+      deps.showError(L.laresCouldNotBeUninstalled, errorMessage(error))
     }
   }
 
@@ -190,7 +184,7 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     const active = deps.activeCharacter()
     deps.setMenu([
       {
-        label: 'Characters',
+        label: L.characters,
         submenu: [
           ...deps.characters().map((character): ShellMenuItem => ({
             label: character.label,
@@ -201,11 +195,11 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
             }
           })),
           { type: 'separator' },
-          { label: 'Import Character…', click: importCharacter }
+          { label: L.importCharacter, click: importCharacter }
         ]
       },
       {
-        label: 'Scale',
+        label: L.scale,
         submenu: SCALES.map((scale): ShellMenuItem => ({
           label: `${Math.round(scale * 100)}%`,
           type: 'radio',
@@ -214,22 +208,22 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
         }))
       },
       {
-        label: 'Do Not Disturb',
+        label: L.doNotDisturb,
         type: 'checkbox',
         checked: config.doNotDisturb,
         click: setDoNotDisturb
       },
       {
-        label: 'Launch at Login',
+        label: L.launchAtLogin,
         type: 'checkbox',
         checked: deps.getLaunchAtLogin(),
         click: setLaunchAtLogin
       },
-      { label: 'Reset Position', click: deps.resetPosition },
+      { label: L.resetPosition, click: deps.resetPosition },
       { type: 'separator' },
-      { label: deps.calibrationStatus?.() ?? 'Calibration unavailable', enabled: false },
+      { label: deps.calibrationStatus?.() ?? L.calibrationUnavailable, enabled: false },
       {
-        label: 'Map expressions…',
+        label: L.mapExpressions,
         type: 'checkbox',
         checked: config.calibrationArmed,
         enabled:
@@ -238,23 +232,47 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
       },
       { type: 'separator' },
       {
-        label: 'Automatically Check for Updates',
+        label: L.automaticallyCheckForUpdates,
         type: 'checkbox',
         checked: config.automaticallyCheckForUpdates,
         click: setAutomaticUpdates
       },
       {
-        label: 'Check for Updates…',
+        label: L.checkForUpdates,
         enabled: deps.onCheckForUpdates !== undefined,
         click: () => deps.onCheckForUpdates?.()
       },
       { type: 'separator' },
       {
-        label: 'Uninstall Lares…',
+        label: L.language,
+        submenu: [
+          {
+            label: L.languageSystem,
+            type: 'radio',
+            checked: config.language === 'system',
+            click: () => setLanguage('system')
+          },
+          {
+            label: L.languageEnglish,
+            type: 'radio',
+            checked: config.language === 'en',
+            click: () => setLanguage('en')
+          },
+          {
+            label: L.languageZhCN,
+            type: 'radio',
+            checked: config.language === 'zh-CN',
+            click: () => setLanguage('zh-CN')
+          }
+        ]
+      },
+      { type: 'separator' },
+      {
+        label: L.uninstallLares,
         enabled: deps.onUninstall !== undefined,
         click: uninstall
       },
-      { label: 'Quit', click: deps.quit }
+      { label: L.quit, click: deps.quit }
     ])
   }
 

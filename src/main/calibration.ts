@@ -1,5 +1,6 @@
 import type { ValidationReport } from './characters/manifest'
 import type { AppConfig } from './config'
+import { L } from './strings'
 
 export const CALIBRATION_INVITE =
   'The user has armed Lares expression mapping; offer to map the active character’s uncalibrated cues with them.'
@@ -36,16 +37,16 @@ export interface CalibrationState {
 
 export function calibrationState(report: CalibrationReport): CalibrationState {
   if (report.calibrated === 0) {
-    return { tone: 'red', label: '🔴 Expressions not mapped', complete: false }
+    return { tone: 'red', label: L.calibrationNotMapped, complete: false }
   }
   if (report.uncalibrated > 0) {
     return {
       tone: 'yellow',
-      label: `🟡 ${report.uncalibrated} expression${report.uncalibrated === 1 ? '' : 's'} left`,
+      label: L.calibrationLeft(report.uncalibrated),
       complete: false
     }
   }
-  return { tone: 'complete', label: 'Expressions mapped', complete: true }
+  return { tone: 'complete', label: L.calibrationMapped, complete: true }
 }
 
 export function reconcileCalibrationArmed(
