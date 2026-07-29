@@ -78,9 +78,9 @@ describe('tray shell', () => {
     }
     const state = setup({ config })
 
-    expect(state.effects).toEqual(['scale:1.5', 'visible:false', 'login:true'])
-    expect(item(state.menu, '1. Hiyori').checked).toBe(true)
-    expect(item(state.menu, '2. Hiyori (2)').type).toBe('radio')
+    expect(state.effects).toEqual(['login:true'])
+    expect(item(state.menu, 'Hiyori').checked).toBe(true)
+    expect(item(state.menu, 'Hiyori (2)').type).toBe('radio')
     for (const label of ['Import Character…', '50%', '75%', '100%', '125%', '150%',
       'Do Not Disturb', 'Launch at Login', 'Reset Position', 'Calibration unavailable',
       'Map expressions…', 'Automatically Check for Updates', 'Check for Updates…',
@@ -111,7 +111,7 @@ describe('tray shell', () => {
       automaticallyCheckForUpdates: false
     })
     expect(state.effects).toEqual([
-      'scale:1', 'visible:true', 'login:false',
+      'login:false',
       'scale:1.25', 'persist',
       'visible:false', 'persist',
       'login:true', 'persist',
@@ -125,11 +125,11 @@ describe('tray shell', () => {
       .mockResolvedValueOnce({ ok: true, manifestPath: characters[1].manifestPath })
     const state = setup({ switchCharacter })
 
-    await item(state.menu, '2. Hiyori (2)').click!()
+    await item(state.menu, 'Hiyori (2)').click!()
     expect(state.config.activeCharacter).toBeUndefined()
     expect(state.effects).toContain('error:renderer refused model')
 
-    await item(state.menu, '2. Hiyori (2)').click!()
+    await item(state.menu, 'Hiyori (2)').click!()
     expect(state.config.activeCharacter).toBe(characters[1].manifestPath)
     expect(state.effects.filter((effect) => effect === 'persist')).toHaveLength(1)
   })
@@ -163,6 +163,24 @@ describe('tray shell', () => {
     expect(item(state.menu, 'Map expressions…').enabled).toBe(false)
     expect(item(state.menu, 'Check for Updates…').enabled).toBe(false)
     expect(item(state.menu, 'Uninstall Lares…').enabled).toBe(false)
+  })
+
+  it('shows rejected switch and picker failures instead of leaking menu promises', async () => {
+    const switchState = setup({
+      switchCharacter: async () => {
+        throw new Error('switch IPC failed')
+      }
+    })
+    await item(switchState.menu, 'Hiyori (2)').click!()
+    expect(switchState.effects).toContain('error:switch IPC failed')
+
+    const importState = setup({
+      pickImportDirectory: async () => {
+        throw new Error('picker failed')
+      }
+    })
+    await item(importState.menu, 'Import Character…').click!()
+    expect(importState.effects).toContain('error:picker failed')
   })
 })
 

@@ -75,7 +75,16 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
   }
 
   const select = async (manifestPath: string): Promise<void> => {
-    const result = await deps.switchCharacter(manifestPath)
+    let result: Result
+    try {
+      result = await deps.switchCharacter(manifestPath)
+    } catch (error) {
+      deps.showError(
+        'Character could not be loaded',
+        error instanceof Error ? error.message : String(error)
+      )
+      return
+    }
     if (!result.ok) {
       deps.showError('Character could not be loaded', result.error)
       return
@@ -86,9 +95,27 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
   }
 
   const importCharacter = async (): Promise<void> => {
-    const source = await deps.pickImportDirectory()
+    let source: string | null
+    try {
+      source = await deps.pickImportDirectory()
+    } catch (error) {
+      deps.showError(
+        'Character could not be imported',
+        error instanceof Error ? error.message : String(error)
+      )
+      return
+    }
     if (!source) return
-    const imported = deps.importCharacter(source)
+    let imported: Result
+    try {
+      imported = deps.importCharacter(source)
+    } catch (error) {
+      deps.showError(
+        'Character could not be imported',
+        error instanceof Error ? error.message : String(error)
+      )
+      return
+    }
     if (!imported.ok) {
       deps.showError('Character could not be imported', imported.error)
       return
@@ -129,8 +156,8 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
       {
         label: 'Characters',
         submenu: [
-          ...deps.characters().map((character, index): ShellMenuItem => ({
-            label: `${index + 1}. ${character.label}`,
+          ...deps.characters().map((character): ShellMenuItem => ({
+            label: character.label,
             type: 'radio',
             checked: character.manifestPath === active,
             click: () => select(character.manifestPath)
@@ -192,8 +219,6 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     ])
   }
 
-  deps.setScale(config.scale)
-  deps.setOverlayVisible(!config.doNotDisturb)
   deps.setLaunchAtLogin(config.launchAtLogin)
   config.launchAtLogin = deps.getLaunchAtLogin()
   refresh()

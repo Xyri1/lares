@@ -1083,7 +1083,7 @@ function resetOverlayPosition(): void {
   const [width, height] = overlayWindow.getSize()
   const bounds = overlayBounds(width, height, null)
   overlayWindow.setBounds(bounds)
-  savePosition(positionFile(), bounds)
+  savePosition(positionFile(), { x: bounds.x, y: bounds.y })
 }
 
 function createTray(): void {
@@ -1169,8 +1169,6 @@ if (!app.requestSingleInstanceLock()) {
       else if (!appConfig.doNotDisturb) overlayWindow?.show()
     })
   })
-
-  app.on('window-all-closed', () => {})
 
   app.on('before-quit', () => {
     quitting = true

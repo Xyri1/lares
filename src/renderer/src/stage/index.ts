@@ -34,7 +34,13 @@ async function boot(): Promise<void> {
 
   const canvas = document.getElementById('stage') as HTMLCanvasElement
   const runtime = new Live2DRuntime(canvas)
-  if (OVERLAY) runtime.setDisplayScale(await window.lares.getOverlayScale())
+  if (OVERLAY) {
+    try {
+      runtime.setDisplayScale(await window.lares.getOverlayScale())
+    } catch (error) {
+      console.error('[lares] could not restore overlay scale', error)
+    }
+  }
   try {
     await runtime.load(character.live2d.model)
   } catch (err) {
@@ -82,13 +88,18 @@ async function boot(): Promise<void> {
   }
 
   if (OVERLAY) {
+    const fitOverlay = (): void => {
+      void window.lares.fitToModel(runtime.larSize()).catch((error) => {
+        console.error('[lares] could not fit overlay', error)
+      })
+    }
     window.lares.onOverlayScale((scale) => {
       runtime.setDisplayScale(scale)
-      void window.lares.fitToModel(runtime.larSize())
+      fitOverlay()
     })
     // Tight fit last, once the model can report its own footprint (003-D5) —
     // main owns the padding and where she lands.
-    void window.lares.fitToModel(runtime.larSize())
+    fitOverlay()
     wireOverlayPointer(runtime)
   }
 
