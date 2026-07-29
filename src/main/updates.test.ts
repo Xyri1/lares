@@ -60,7 +60,7 @@ describe('update cache and version trust boundary', () => {
 describe('GitHub latest-release client', () => {
   let server: Server
   let endpoint: string
-  let mode: 'release' | 'not-modified' | 'http-error' | 'malformed' | 'mismatched'
+  let mode: 'release' | 'not-modified' | 'http-error' | 'malformed' | 'mismatched' | 'oversized'
   const requests: Array<Record<string, string | string[] | undefined>> = []
 
   beforeEach(async () => {
@@ -76,6 +76,11 @@ describe('GitHub latest-release client', () => {
       if (mode === 'http-error') {
         res.writeHead(503)
         res.end('offline')
+        return
+      }
+      if (mode === 'oversized') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end('x'.repeat(64 * 1024 + 1))
         return
       }
       res.writeHead(200, {
@@ -158,6 +163,11 @@ describe('GitHub latest-release client', () => {
     await expect(
       checkLatestRelease({ endpoint, currentVersion: '1.0.0', cache: {}, now: () => 1 })
     ).rejects.toThrow('release')
+
+    mode = 'oversized'
+    await expect(
+      checkLatestRelease({ endpoint, currentVersion: '1.0.0', cache: {}, now: () => 1 })
+    ).rejects.toThrow('64 KiB')
   })
 })
 

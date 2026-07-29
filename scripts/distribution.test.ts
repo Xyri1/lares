@@ -20,6 +20,7 @@ async function file(path: string, content: string | Buffer = 'fixture'): Promise
 }
 
 async function defaultCharacter(root: string): Promise<void> {
+  await file(join(root, 'NOTICE'), 'Fixture character notice')
   await file(
     join(root, 'lar.character.json'),
     JSON.stringify({
@@ -75,6 +76,8 @@ describe('distribution inputs', () => {
   it('selects one safe default and fails preflight when runtime inputs are absent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lares-package-inputs-'))
     roots.push(root)
+    expect(() => selectedDefaultCharacter(root, {})).toThrow('build/default-character')
+    await file(join(root, 'build/default-character'), 'hiyori\n')
     expect(selectedDefaultCharacter(root, {})).toBe(join(root, 'characters/hiyori'))
     expect(() => selectedDefaultCharacter(root, { LARES_DEFAULT_CHARACTER: '../icegirl' })).toThrow(
       'character'
@@ -95,6 +98,11 @@ describe('distribution inputs', () => {
     }
     await defaultCharacter(join(root, 'characters/hiyori'))
     expect(() => packagePreflight(root, {})).not.toThrow()
+
+    const characterNotice = join(root, 'characters/hiyori/NOTICE')
+    await unlink(characterNotice)
+    expect(() => packagePreflight(root, {})).toThrow('default-character/NOTICE')
+    await file(characterNotice, 'Fixture character notice')
 
     const texture = join(root, 'characters/hiyori/runtime/texture.png')
     await unlink(texture)

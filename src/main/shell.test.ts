@@ -35,6 +35,7 @@ function setup(overrides: Partial<TrayShellDependencies> = {}) {
     activeCharacter: () => characters[0].manifestPath,
     switchCharacter: async (path) => ({ ok: true, manifestPath: path }),
     importCharacter: () => ({ ok: true, manifestPath: '/managed/new/lar.character.json' }),
+    discardImportedCharacter: () => {},
     pickImportDirectory: async () => '/external/new',
     setMenu: (next) => {
       menu = next
@@ -143,14 +144,16 @@ describe('tray shell', () => {
     const importCharacter = vi.fn()
       .mockReturnValueOnce({ ok: false, error: 'two models found' })
       .mockReturnValue({ ok: true, manifestPath: '/managed/new/lar.character.json' })
+    const discardImportedCharacter = vi.fn()
     const switchCharacter = vi.fn()
       .mockResolvedValueOnce({ ok: false, error: 'body load failed' })
       .mockResolvedValueOnce({ ok: true, manifestPath: '/managed/new/lar.character.json' })
-    const state = setup({ importCharacter, switchCharacter })
+    const state = setup({ importCharacter, discardImportedCharacter, switchCharacter })
 
     await item(state.menu, 'Import Character…').click!()
     await item(state.menu, 'Import Character…').click!()
     expect(state.config.activeCharacter).toBeUndefined()
+    expect(discardImportedCharacter).toHaveBeenCalledWith('/managed/new/lar.character.json')
     await item(state.menu, 'Import Character…').click!()
 
     expect(importCharacter).toHaveBeenCalledWith('/external/new')

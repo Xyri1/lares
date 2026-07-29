@@ -67,7 +67,7 @@ describe('supported uninstall flows', () => {
     expect(events).toEqual(['cleanup', 'data', 'trash', 'quit'])
   })
 
-  it('refuses dev macOS removal and cleans before launching the Windows uninstaller', async () => {
+  it('refuses dev macOS removal and lets the confirmed Windows uninstaller own cleanup', async () => {
     const trash = vi.fn()
     await expect(
       runMacUninstall({
@@ -91,9 +91,6 @@ describe('supported uninstall flows', () => {
       packaged: true,
       platform: 'win32',
       exists: () => true,
-      cleanup: async () => {
-        events.push('cleanup')
-      },
       launch: async (path) => {
         events.push(`launch:${path}`)
         return ''
@@ -103,7 +100,6 @@ describe('supported uninstall flows', () => {
       }
     })
     expect(events).toEqual([
-      'cleanup',
       'launch:C:\\Program Files\\Lares\\Uninstall Lares.exe',
       'quit'
     ])
@@ -115,9 +111,6 @@ describe('supported uninstall flows', () => {
         packaged: true,
         platform: 'win32',
         exists: () => false,
-        cleanup: async () => {
-          events.push('cleanup')
-        },
         launch: async () => '',
         quit: vi.fn()
       })

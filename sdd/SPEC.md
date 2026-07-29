@@ -1,6 +1,6 @@
 # SPEC — Lares (project scope)
 
-**Artifact:** SPEC · **Project:** Lares · **Status:** Living · **Date:** 2026-07-24
+**Artifact:** SPEC · **Project:** Lares · **Status:** Living · **Date:** 2026-07-29
 
 The technical contract for v1. Numeric values marked *(default)* are tunable constants in one config module; changing them is not a contract change. Changing schemas, interfaces, state machines, or scenarios is. Unit-level detail lives in slice SPECs (`sdd/slices/NNN-name/`, attached to ROADMAP milestones); slice SPECs refine this document and never contradict it.
 
@@ -120,7 +120,21 @@ Scenario file: `{ name, timeScale, events: [{ at_ms, envelope | emote }] }`. Pla
 
 **Performance feed — the P6 seam (D31).** The brain↔body channel is the renderer-neutral contract; nothing renderer-specific crosses it (cue names cross, asset references don't). Brain→body: `affect:update` (§4 feed), `authoring:preview`/`authoring:revert` (opaque knob sets), `scenario:*`. Body→brain: `stage:pointer` (hit results → click-through toggling), `body:inventory` (knob list — id, name, min, max, default — reported on model load; the brain validates freeform and authoring traffic against it and never interprets knob meaning — cached per active character so validation survives a DND hide; before any inventory exists, freeform and authoring calls fail with a tool error, per P7). Known limitation, accepted: freeform compositions are body-specific by nature — knob names come from the loaded model; `status()` reports the active body, richer mode feedback deferred (D31). The body never receives raw ingress events.
 
-**IRuntime (body-internal):** `load(modelPath)`, `parameters(): ParamInfo[]`, `setParams(batch, weight?)`, `releaseParams(ids)` (drops selected sticky overrides back to native motion/physics ownership), `resetParams()` (the full inverse of `setParams` — restores all model defaults and drops all driven-param ownership), `applyExpression(ref|params, weight, fadeMs)`, `playMotion(group, index?, priority)`, `hitTest(x, y): area[]`. pixi-live2d-display is the sole v1 implementation; nothing outside `runtime/` imports it. An implementation detail of the v1 body, not a cross-body contract.
+**IRuntime (body-internal):** `load(modelPath)`,
+`prepareLoad(id, modelPath): Promise<ParamInfo[]>`, `commitLoad(id)`,
+`rollbackLoad(id)`, `finalizeLoad(id)`, `cancelLoad(id)`,
+`parameters(): ParamInfo[]`, `setParams(batch, weight?)`,
+`releaseParams(ids)` (drops selected sticky overrides back to native
+motion/physics ownership), `resetParams()` (the full inverse of
+`setParams` — restores all model defaults and drops all driven-param
+ownership), `applyExpression(ref|params, weight, fadeMs)`,
+`playMotion(group, index?, priority)`, `hitTest(x, y): area[]`,
+`alphaAt(x, y)`, `larSize()`. The transactional load methods stage one
+candidate by ID: prepare leaves the active body untouched, commit makes
+the candidate rollback-capable, finalize is the one-way handoff, and
+rollback/cancel retain the previous body. pixi-live2d-display is the
+sole v1 implementation; nothing outside `runtime/` imports it. An
+implementation detail of the v1 body, not a cross-body contract.
 
 ## 9. Acceptance scenarios (GWT)
 

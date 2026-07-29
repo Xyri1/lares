@@ -102,7 +102,6 @@ export async function runWindowsUninstall(options: {
   execPath: string
   packaged: boolean
   platform: NodeJS.Platform
-  cleanup(): Promise<void>
   exists(path: string): boolean
   launch(path: string): Promise<string>
   quit(): void
@@ -113,7 +112,6 @@ export async function runWindowsUninstall(options: {
     options.platform
   )
   if (!options.exists(uninstaller)) throw new Error(`Lares uninstaller not found: ${uninstaller}`)
-  await options.cleanup()
   const error = await options.launch(uninstaller)
   if (error) throw new Error(error)
   options.quit()

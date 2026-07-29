@@ -4,6 +4,7 @@ import { atomicWrite } from './adapters/claude-code/writer'
 export const LATEST_RELEASE_URL =
   'https://api.github.com/repos/Xyri1/lares/releases/latest'
 const DAY_MS = 24 * 60 * 60 * 1000
+const MAX_RELEASE_BODY_BYTES = 64 * 1024
 
 export interface UpdateCache {
   tag?: string
@@ -120,6 +121,38 @@ export async function saveUpdateCache(path: string, cache: UpdateCache): Promise
   await atomicWrite(path, { ...cleanCache(cache) })
 }
 
+async function parseReleaseBody(response: Response): Promise<unknown> {
+  const declared = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > MAX_RELEASE_BODY_BYTES) {
+    throw new Error('GitHub release response exceeds 64 KiB')
+  }
+  if (!response.body) throw new Error('GitHub release response is empty')
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > MAX_RELEASE_BODY_BYTES) {
+        await reader.cancel()
+        throw new Error('GitHub release response exceeds 64 KiB')
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+}
+
 export async function checkLatestRelease(options: {
   endpoint?: string
   currentVersion: string
@@ -134,7 +167,11 @@ export async function checkLatestRelease(options: {
   }
   if (cached.etag) headers['if-none-match'] = cached.etag
 
-  const response = await fetch(options.endpoint ?? LATEST_RELEASE_URL, { headers })
+  const response = await fetch(options.endpoint ?? LATEST_RELEASE_URL, {
+    headers,
+    redirect: 'error',
+    signal: AbortSignal.timeout(15_000)
+  })
   const lastCheckAt = (options.now ?? Date.now)()
   if (response.status === 304) {
     const { tag, url } = cached
@@ -150,7 +187,7 @@ export async function checkLatestRelease(options: {
   }
   if (!response.ok) throw new Error(`GitHub release check failed (${response.status})`)
 
-  const body: unknown = await response.json()
+  const body = await parseReleaseBody(response)
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new Error('GitHub release response is invalid')
   }

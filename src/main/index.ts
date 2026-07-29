@@ -44,6 +44,7 @@ import {
 } from './characters/manifest'
 import {
   bundledPackageRoot,
+  discardManagedCharacter,
   ensureManagedCharacterLibrary,
   importCharacterPackage,
   listCharacterPackages
@@ -1169,7 +1170,6 @@ async function uninstallFromTray(): Promise<void> {
       execPath: process.execPath,
       packaged: app.isPackaged,
       platform: process.platform,
-      cleanup: cleanupOwnedIntegrations,
       exists: existsSync,
       launch: (path) => shell.openPath(path),
       quit: () => {
@@ -1270,6 +1270,8 @@ function createTray(): void {
       return result
     },
     importCharacter: (source) => importCharacterPackage(charactersRoot(), source),
+    discardImportedCharacter: (manifestPath) =>
+      discardManagedCharacter(charactersRoot(), manifestPath),
     pickImportDirectory: async () => {
       const result = await dialog.showOpenDialog({
         title: 'Import Character',

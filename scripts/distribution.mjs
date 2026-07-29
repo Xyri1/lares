@@ -51,12 +51,15 @@ function archivedAppPaths(path) {
 function validateDefaultCharacter(root) {
   const manifestPath = join(root, 'lar.character.json')
   requireFile(manifestPath, 'default-character/lar.character.json')
+  requireFile(join(root, 'NOTICE'), 'default-character/NOTICE')
   const report = validateCharacter(manifestPath)
   if (!report.ok) throw new Error(`Invalid default character: ${report.errors.join('; ')}`)
 }
 
 export function selectedDefaultCharacter(root, env = process.env) {
-  const name = env.LARES_DEFAULT_CHARACTER || 'hiyori'
+  const selection = join(resolve(root), 'build', 'default-character')
+  if (!env.LARES_DEFAULT_CHARACTER) requireFile(selection, 'build/default-character')
+  const name = env.LARES_DEFAULT_CHARACTER || readFileSync(selection, 'utf8').trim()
   if (!/^[A-Za-z0-9._-]+$/.test(name) || name === '.' || name === '..') {
     throw new Error(`Invalid default character name: ${name}`)
   }

@@ -23,6 +23,7 @@ export interface TrayShellDependencies {
   activeCharacter(): string | undefined
   switchCharacter(manifestPath: string): Promise<Result>
   importCharacter(source: string): Result
+  discardImportedCharacter(manifestPath: string): void
   pickImportDirectory(): Promise<string | null>
   setMenu(menu: ShellMenuItem[]): void
   persist(config: AppConfig): Promise<void>
@@ -76,7 +77,7 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     }
   }
 
-  const select = async (manifestPath: string): Promise<void> => {
+  const select = async (manifestPath: string): Promise<boolean> => {
     let result: Result
     try {
       result = await deps.switchCharacter(manifestPath)
@@ -85,15 +86,16 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
         'Character could not be loaded',
         error instanceof Error ? error.message : String(error)
       )
-      return
+      return false
     }
     if (!result.ok) {
       deps.showError('Character could not be loaded', result.error)
-      return
+      return false
     }
     config.activeCharacter = result.manifestPath
     await persist()
     refresh()
+    return true
   }
 
   const importCharacter = async (): Promise<void> => {
@@ -122,7 +124,17 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
       deps.showError('Character could not be imported', imported.error)
       return
     }
-    await select(imported.manifestPath)
+    if (!(await select(imported.manifestPath))) {
+      try {
+        deps.discardImportedCharacter(imported.manifestPath)
+      } catch (error) {
+        deps.showError(
+          'Character import cleanup failed',
+          error instanceof Error ? error.message : String(error)
+        )
+      }
+      refresh()
+    }
   }
 
   const setScale = async (scale: Scale): Promise<void> => {
@@ -184,7 +196,9 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
             label: character.label,
             type: 'radio',
             checked: character.manifestPath === active,
-            click: () => select(character.manifestPath)
+            click: async () => {
+              await select(character.manifestPath)
+            }
           })),
           { type: 'separator' },
           { label: 'Import Character…', click: importCharacter }

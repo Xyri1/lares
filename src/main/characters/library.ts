@@ -1,11 +1,14 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { basename, join } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { createManifestFromRawPackage, hasCharacterManifest } from './import'
 import { loadCharacter, type ManifestResult } from './manifest'
 
 const MANIFEST = 'lar.character.json'
 const STAGING_DIRECTORY = '.staging'
+const MAX_PACKAGE_BYTES = 1024 * 1024 * 1024
+const MAX_PACKAGE_ENTRIES = 20_000
+const MAX_PACKAGE_DEPTH = 32
 
 function isStagingEntry(name: string): boolean {
   return name === STAGING_DIRECTORY
@@ -45,21 +48,55 @@ function copyValidatedCharacter(
   root: string,
   source: string
 ): { manifestPath: string; character: Extract<ManifestResult, { ok: true }> } {
-  const sourceStat = lstatSync(source)
+  const sourceRoot = resolve(source)
+  const sourceStat = lstatSync(sourceRoot)
   if (sourceStat.isSymbolicLink()) throw new Error('Import requires an extracted directory, not a symbolic link')
   if (!sourceStat.isDirectory()) throw new Error('Import requires an extracted directory')
   mkdirSync(root, { recursive: true })
-  const destination = destinationFor(root, source)
+  const destination = destinationFor(root, sourceRoot)
   const stagingRoot = join(root, STAGING_DIRECTORY)
   const staging = join(stagingRoot, randomUUID())
   try {
     mkdirSync(stagingRoot, { recursive: true })
-    cpSync(source, staging, { recursive: true })
-    if (!hasCharacterManifest(staging)) createManifestFromRawPackage(staging, staging, basename(source))
+    let bytes = 0
+    let entries = 0
+    cpSync(sourceRoot, staging, {
+      recursive: true,
+      filter: (path) => {
+        const rel = relative(sourceRoot, path)
+        const stat = lstatSync(path)
+        if (stat.isSymbolicLink()) throw new Error(`Character package contains a symbolic link: ${rel}`)
+        if (rel) {
+          entries++
+          if (entries > MAX_PACKAGE_ENTRIES) {
+            throw new Error(`Character package exceeds ${MAX_PACKAGE_ENTRIES} entries`)
+          }
+          if (rel.split(sep).length > MAX_PACKAGE_DEPTH) {
+            throw new Error(`Character package exceeds ${MAX_PACKAGE_DEPTH} directory levels`)
+          }
+        }
+        if (stat.isFile()) {
+          bytes += stat.size
+          if (bytes > MAX_PACKAGE_BYTES) throw new Error('Character package exceeds 1 GiB')
+        } else if (!stat.isDirectory()) {
+          throw new Error(`Character package contains an unsupported file: ${rel}`)
+        }
+        return true
+      }
+    })
+    if (!hasCharacterManifest(staging)) {
+      createManifestFromRawPackage(staging, staging, basename(sourceRoot))
+    }
     const copiedCharacter = loadCharacter(join(staging, MANIFEST))
     if (!copiedCharacter.ok) throw new Error(copiedCharacter.error)
     renameSync(staging, destination)
-    return { manifestPath: join(destination, MANIFEST), character: copiedCharacter }
+    const manifestPath = join(destination, MANIFEST)
+    const character = loadCharacter(manifestPath)
+    if (!character.ok) {
+      rmSync(destination, { recursive: true, force: true })
+      throw new Error(character.error)
+    }
+    return { manifestPath, character }
   } catch (error) {
     rmSync(staging, { recursive: true, force: true })
     throw error
@@ -86,6 +123,16 @@ export function importCharacterPackage(
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+export function discardManagedCharacter(root: string, manifestPath: string): void {
+  const managedRoot = resolve(root)
+  const manifest = resolve(manifestPath)
+  const packageRoot = dirname(manifest)
+  if (basename(manifest) !== MANIFEST || dirname(packageRoot) !== managedRoot) {
+    throw new Error('Refusing to discard character outside the managed root')
+  }
+  rmSync(packageRoot, { recursive: true, force: true })
 }
 
 /** Lists valid managed packages with deterministic labels for duplicate names. */
