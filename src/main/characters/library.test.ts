@@ -83,15 +83,26 @@ describe('managed character library', () => {
     expect(existsSync(join(managedRoot, 'linked-source'))).toBe(false)
   })
 
-  it('hides and clears stale staging before deciding whether to seed', () => {
+  it('hides and clears the reserved staging namespace before deciding whether to seed', () => {
     const workspace = mkdtempSync(join(tmpdir(), 'lares-library-'))
     const managedRoot = join(workspace, 'managed')
-    const stale = writePackage(managedRoot, 'interrupted.staging-import')
+    writePackage(join(managedRoot, '.staging'), 'interrupted')
     const bundledRoot = writePackage(workspace, 'bundled')
 
     expect(listCharacterPackages(managedRoot)).toEqual([])
     expect(ensureManagedCharacterLibrary(managedRoot, bundledRoot)).toEqual({ seeded: true })
-    expect(existsSync(stale)).toBe(false)
+    expect(existsSync(join(managedRoot, '.staging', 'interrupted'))).toBe(false)
+  })
+
+  it('keeps a valid managed package whose name contains staging', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'lares-library-'))
+    const managedRoot = join(workspace, 'managed')
+    const packageRoot = writePackage(managedRoot, 'foo.staging-bar')
+    const bundledRoot = writePackage(workspace, 'bundled')
+
+    expect(listCharacterPackages(managedRoot).map((entry) => entry.label)).toEqual(['Hiyori'])
+    expect(ensureManagedCharacterLibrary(managedRoot, bundledRoot)).toEqual({ seeded: false })
+    expect(existsSync(packageRoot)).toBe(true)
   })
 
   it('imports one recursive raw model without flattening and harvests indexed plus loose assets', () => {

@@ -8,7 +8,7 @@ const MANIFEST = 'lar.character.json'
 const STAGING_DIRECTORY = '.staging'
 
 function isStagingEntry(name: string): boolean {
-  return name === STAGING_DIRECTORY || name.includes('.staging-')
+  return name === STAGING_DIRECTORY
 }
 
 function clearStaging(root: string): void {
