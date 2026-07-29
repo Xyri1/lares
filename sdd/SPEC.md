@@ -69,29 +69,84 @@ Codex ships no dedicated failure event; the M3b recon looks for a failure signal
 
 **Expression stack:** active expressions are `(cueOrFreeform, weight, expiry)`; queue plays FIFO with cross-fade; a new `awaiting_input`/`error` baseline preempts the queue (current expression fades over 300ms, queue preserved and resumed unless expired). Cue selection when the engine (not the agent) needs an expression: nearest available cue by Euclidean affect distance with 0.1 hysteresis to prevent flapping. The expression queue is a single global resource in v1 — all sessions share it; interleaving is by design (D11).
 
-**Performance feed (brain→body, §8)** (IPC, on-change or ≤10Hz): `{ E, M, baselineState, expressionStack, beats: [motionTriggers] }` — renderer-neutral: expressions ride as cue names or opaque knob sets, never renderer asset references; cue→asset resolution is body-side. A *knob* is a model-declared control (a Live2D parameter today; a blendshape or bone channel in a future body) — the brain carries knob values but never interprets them. The body's `synth/` owns per-frame values: breath rate = `base · (0.7 + 0.6·arousal)`; blink interval = `base / (0.6 + 0.8·arousal)`; idle sway amplitude scaled by arousal; brow/mouth/eye-openness trend curves driven by valence *(all defaults, per-character overridable in `idleModulation`)*. **No inference anywhere in this section's path (P4).**
+**Performance feed (brain→body, §8)** (IPC, on-change or ≤10Hz): `{ E, M, baselineState, expressionStack, beats: [motionTriggers] }` — renderer-neutral: expressions ride as cue names or opaque knob sets, never renderer asset references; cue→asset resolution is body-side. A *knob* is a model-declared control (a Live2D parameter today; a blendshape or bone channel in a future body) — the brain carries knob values but never interprets them. The body's `synth/` owns per-frame values: breath rate = `base · (0.7 + 0.6·arousal)`; blink interval = `base / (0.6 + 0.8·arousal)`; idle sway amplitude scaled by arousal; brow/mouth/eye-openness trend curves driven by valence *(bindings and tuning are character-owned `renderers.live2d.performance` data; global presets are dev-panel overrides)*. **No inference anywhere in this section's path (P4).**
 
 ## 5. Character package
 
-`lar.character.json`, `format: "lares/1"`:
+`lar.character.json`, `format: "lares/1"`. The Live2D renderer block
+uses package-relative asset paths:
 
 ```jsonc
 {
   "format": "lares/1",
-  "identity": { "name", "author", "license", "persona" },
-  "expressions": { "<cue>": { "valence": n, "arousal": n } },
+  "identity": {
+    "name": "Haru",
+    "author": "Live2D Inc.; Lares package by ...",
+    "license": "required notice and terms reference",
+    "persona": "optional"
+  },
+  "expressions": {
+    "focused": { "valence": 0.2, "arousal": 0.45 },
+    "alert": { "valence": 0.05, "arousal": 0.7 },
+    "pleased": { "valence": 0.55, "arousal": 0.45 },
+    "weary": { "valence": -0.15, "arousal": 0.15 }
+  },
   "renderers": {
     "live2d": {
-      "model": "<path to .model3.json>",
-      "cues": { "<cue>": { "expression": "<exp3 name>" } | { "motion": "<group[:index]>" } | { "params": {…} } },
-      "idleModulation": { "breath"?: paramId, "blink"?: …, "swayScale"?: n },
-      "hitAreas"?: ["Body", "Head"]
+      "model": "runtime/haru.model3.json",
+      "cues": {
+        "pleased": {
+          "expression": "runtime/expressions/Smile.exp3.json"
+        },
+        "focused": {
+          "motion": "runtime/motion/haru_m_01.motion3.json"
+        },
+        "alert": {
+          "motion": "runtime/motion/haru_m_03.motion3.json"
+        },
+        "weary": {
+          "params": { "PARAM_EYE_L_OPEN": 0.35 }
+        }
+      },
+      "performance": {
+        "params": [
+          {
+            "id": "PARAM_MOUTH_FORM",
+            "source": "valence",
+            "gain": 1,
+            "offset": 0
+          }
+        ],
+        "idle": {
+          "breath": {
+            "id": "PARAM_BREATH",
+            "basePeriodMs": 4000,
+            "amplitude": 1
+          },
+          "blink": {
+            "ids": ["PARAM_EYE_L_OPEN", "PARAM_EYE_R_OPEN"],
+            "baseIntervalMs": 3500,
+            "durationMs": 160,
+            "valenceGain": 0.15
+          },
+          "sway": {
+            "id": "PARAM_BODY_ANGLE_X",
+            "baseAmplitude": 6,
+            "periodMs": 5000
+          }
+        }
+      },
+      "hitAreas": []
     }
   }
 }
 ```
 
 Identity and `expressions` are renderer-neutral (P5). The manifest is a mapping layer: cue entries reference expression/motion files by package-relative path and never copy their contents; cue keys default to the artist's names verbatim (CJK included — agents read them natively; renaming is optional polish). Auto-import (D25 rung 1, dev script — slice 007) harvests by directory scan; the model index is advisory only (VTube-Studio-convention models index nothing). Affect coords start null: null-coord cues are legal and emote-able with a zero nudge, invisible only to the engine's affect-distance selection until calibrated (`list_cues` marks them; `status()` counts them). Expression application is one brain-side path for bundled and authored alike: Lares parses the exp3 (Add/Multiply/Overwrite against model defaults, display names via `cdi3.json`) and drives sliders through the standard pipeline — artist files and the model index are never modified. Agent-authored expressions (rung 2) are real `.exp3.json` files under `authored/`, written by `save_expression` after conversational user acceptance (D32 governs initiation). Import validation is a pure library function — schema; every referenced file exists; coords in range; exp3 parseable; report of cues by source and calibration state — with three callers: the import script, its `--check` flag, and the app at load (loud, P7); params-vs-inventory checks run in-app once the body loads the model (§8).
+
+Exactly one of `expression`, `motion`, or `params` appears in each Live2D cue target. Expression and motion values are package-relative file paths. `performance` is the existing synth-preset shape under character ownership.
+
+**VTS compatibility follow-up (slice 010).** The supported runtime range is Cubism SDK 3.0–4.2; Cubism 2.1 and MOC version 5 or later are rejected. `.vtube.json` is ignored metadata: Lares supports the VTS asset-folder convention, not tracking, hotkeys, VFX, or persistent VTS configuration. `FileReferences` remains authoritative for required model resources, while expression and motion discovery stays slice 007's union of registered and recursive loose assets. Discovery creates callable null-coordinate cues, not emotional mappings; calibration assigns affect explicitly. Compatibility validation adds the MOC runtime version, required/optional resources, model parameters and ranges, and explicit degradations to the existing shared report. Haru is the intended bundled default after D19 clearance and must use the generic path; Hiyori remains a regression fixture.
 
 **Installed character library (D33).** Managed packages live under
 `app.getPath("userData")/characters`. If none exist on first run, the
