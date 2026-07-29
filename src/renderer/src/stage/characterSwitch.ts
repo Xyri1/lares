@@ -26,6 +26,10 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 function candidateUrl(value: unknown, id: number): value is string {
   if (typeof value !== 'string') return false
   const prefix = `lares://candidate/${id}/`
@@ -48,17 +52,14 @@ function candidateUrl(value: unknown, id: number): value is string {
   }
 }
 
-export function parseCharacterPrepareRequest(value: unknown): CharacterLoadRequest | null {
-  if (!record(value) || !Number.isSafeInteger(value.id) || (value.id as number) < 1) return null
-  const id = value.id as number
-  if (!record(value.character) || value.character.ok !== true) return null
-  const character = value.character
-  if (typeof character.name !== 'string' || !character.name || !record(character.live2d)) return null
-  if (!candidateUrl(character.live2d.model, id) || !Array.isArray(value.cues)) {
-    return null
-  }
+function validId(id: unknown): id is number {
+  return Number.isSafeInteger(id) && (id as number) >= 1
+}
+
+function parseCues(rawCues: unknown, id: number): CuePayload[] | null {
+  if (!Array.isArray(rawCues)) return null
   const cues: CuePayload[] = []
-  for (const raw of value.cues) {
+  for (const raw of rawCues) {
     if (!record(raw) || typeof raw.name !== 'string' || !raw.name) return null
     const hasParams = raw.params !== undefined
     const hasMotion = raw.motion !== undefined
@@ -79,6 +80,18 @@ export function parseCharacterPrepareRequest(value: unknown): CharacterLoadReque
         : { name: raw.name, motion: raw.motion as string }
     )
   }
+  return cues
+}
+
+export function parseCharacterPrepareRequest(value: unknown): CharacterLoadRequest | null {
+  if (!record(value) || !validId(value.id)) return null
+  const id = value.id
+  if (!record(value.character) || value.character.ok !== true) return null
+  const character = value.character
+  if (typeof character.name !== 'string' || !character.name || !record(character.live2d)) return null
+  if (!candidateUrl(character.live2d.model, id)) return null
+  const cues = parseCues(value.cues, id)
+  if (!cues) return null
   return {
     id,
     character: character as unknown as CharacterLoadRequest['character'],
@@ -87,17 +100,10 @@ export function parseCharacterPrepareRequest(value: unknown): CharacterLoadReque
 }
 
 function parseCharacterCommitRequest(value: unknown): CharacterCommitRequest | null {
-  if (!record(value) || !Number.isSafeInteger(value.id) || !Array.isArray(value.cues)) return null
-  const prepared = parseCharacterPrepareRequest({
-    id: value.id,
-    character: {
-      ok: true,
-      name: 'commit',
-      live2d: { model: `lares://candidate/${String(value.id)}/commit.model3.json` }
-    },
-    cues: value.cues
-  })
-  return prepared ? { id: prepared.id, cues: prepared.cues } : null
+  if (!record(value) || !validId(value.id)) return null
+  const id = value.id
+  const cues = parseCues(value.cues, id)
+  return cues ? { id, cues } : null
 }
 
 function replace<T>(target: Record<string, T>, entries: [string, T][]): void {
@@ -254,7 +260,7 @@ export function createCharacterLoadHandler(
             report(reportPrepared, {
               id: request.id,
               ok: false,
-              error: `previous character switch decision failed: ${error instanceof Error ? error.message : String(error)}`
+              error: `previous character switch decision failed: ${errorMessage(error)}`
             })
             return
           }
@@ -302,7 +308,7 @@ export function createCharacterLoadHandler(
           report(reportPrepared, {
             id: request.id,
             ok: false,
-            error: error instanceof Error ? error.message : String(error)
+            error: errorMessage(error)
           })
         }
       }
@@ -347,7 +353,7 @@ export function createCharacterLoadHandler(
         report(reportCommitted, {
           id: commit.id,
           ok: false,
-          error: error instanceof Error ? error.message : String(error)
+          error: errorMessage(error)
         })
         return false
       }
