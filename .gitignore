@@ -6,6 +6,10 @@ out
 *.log*
 
 AGENTS.local.md
+.agents/
+.claude/
+.vscode/
+.mcp.json
 
 vendor/
 characters/*/runtime/
