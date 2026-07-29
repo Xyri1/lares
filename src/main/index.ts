@@ -8,6 +8,7 @@ import {
   Menu,
   Notification,
   protocol,
+  nativeImage,
   net,
   screen,
   Tray
@@ -1224,7 +1225,20 @@ function createTray(): void {
       dialog.showErrorBox(L.couldNotSaveSettings, errorMessage(error))
     })
   }
-  tray = new Tray(icon)
+  // Tray wants 16pt (+32px @2x); the raw 1024px icon renders full-size on macOS.
+  // ponytail: colored mark, not a monochrome Template image — swap in a white
+  // silhouette asset if it blends into dark menu bars.
+  const fullIcon = nativeImage.createFromPath(icon)
+  const trayImage = nativeImage.createEmpty()
+  trayImage.addRepresentation({
+    scaleFactor: 1,
+    buffer: fullIcon.resize({ width: 16, height: 16 }).toPNG()
+  })
+  trayImage.addRepresentation({
+    scaleFactor: 2,
+    buffer: fullIcon.resize({ width: 32, height: 32 }).toPNG()
+  })
+  tray = new Tray(trayImage)
   tray.setToolTip('Lares')
   updateChecks = createUpdateChecks({
     enabled: () => appConfig.automaticallyCheckForUpdates,
