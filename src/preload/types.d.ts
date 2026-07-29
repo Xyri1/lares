@@ -85,6 +85,7 @@ interface LaresBridge {
     speed: number,
     presets?: StagePresets
   ): Promise<ScenarioPlayResult>
+  stopScenario(): Promise<ControlResult>
   pauseScenario(): Promise<ControlResult>
   resumeScenario(): Promise<ControlResult>
   setScenarioSpeed(speed: number): Promise<ControlResult>
@@ -95,6 +96,7 @@ interface LaresBridge {
   onAuthoringRevert(cb: () => void): void
   onScenarioSeeked(cb: (history: AffectFeed[]) => void): void
   onScenarioEnd(cb: () => void): void
+  onScenarioStopped(cb: () => void): void
   /** Synth trace lines keyed by stage id ('A' | 'B'). */
   sendSynthTrace(linesByStage: Record<string, string[]>): void
   /** Widen the window for side-by-side A/B, restore on exit (002-D2). */

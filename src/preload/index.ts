@@ -32,6 +32,7 @@ const lares = {
     speed: number,
     presets?: StagePresets
   ): Promise<ScenarioPlayResult> => ipcRenderer.invoke('scenario:play', name, seed, speed, presets),
+  stopScenario: (): Promise<ControlResult> => ipcRenderer.invoke('scenario:stop'),
   pauseScenario: (): Promise<ControlResult> => ipcRenderer.invoke('scenario:pause'),
   resumeScenario: (): Promise<ControlResult> => ipcRenderer.invoke('scenario:resume'),
   setScenarioSpeed: (speed: number): Promise<ControlResult> =>
@@ -52,6 +53,9 @@ const lares = {
   },
   onScenarioEnd: (cb: () => void): void => {
     ipcRenderer.on('scenario:end', () => cb())
+  },
+  onScenarioStopped: (cb: () => void): void => {
+    ipcRenderer.on('scenario:stopped', () => cb())
   },
   sendSynthTrace: (linesByStage: Record<string, string[]>): void => {
     ipcRenderer.send('scenario:synthTrace', linesByStage)

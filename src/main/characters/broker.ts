@@ -33,6 +33,10 @@ export class CharacterAssetState {
     return true
   }
 
+  canCommit(id: number): boolean {
+    return this.candidates.has(id)
+  }
+
   resolve(value: string): { root: string; path: string } | null {
     if (value.includes('?') || value.includes('#')) return null
     const active = /^lares:\/\/characters\/(.+)$/.exec(value)
@@ -227,13 +231,15 @@ export class CharacterLoadBroker {
   finalize(id: number): boolean {
     const committed = this.committed.get(id)
     if (!committed) return false
+    if (committed.body.isDestroyed()) throw new Error('character body was destroyed before finalize')
+    if (!this.assets.canCommit(id)) throw new Error('character asset transaction cannot finalize')
+    // Electron preserves FIFO for sends to the same live WebContents. A
+    // successful send is the finalization handoff; a throw leaves rollback
+    // state and the old root intact.
+    committed.body.send('character:finalize', id)
     this.committed.delete(id)
     committed.removeDestroyedListener()
-    if (!this.assets.commit(id)) {
-      bestEffortSend(committed.body, 'character:rollback', id)
-      return false
-    }
-    bestEffortSend(committed.body, 'character:finalize', id)
+    this.assets.commit(id)
     return true
   }
 

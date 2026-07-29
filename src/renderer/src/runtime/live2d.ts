@@ -231,12 +231,11 @@ export class Live2DRuntime implements IRuntime {
     return true
   }
 
-  finalizeLoad(id: number): boolean {
-    if (this.committed?.id !== id) return false
+  finalizeLoad(id: number): void {
+    if (this.committed?.id !== id) return
     const previous = this.committed.previous
     this.committed = undefined
     if (previous) this.destroy(previous.model)
-    return true
   }
 
   cancelLoad(id: number): boolean {

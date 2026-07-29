@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { IRuntime, ParamInfo } from '../runtime/iface'
 import {
   createCharacterLoadHandler,
@@ -306,5 +306,125 @@ describe('body character load handshake', () => {
     expect(commits).toEqual([{ id: 5, ok: false, error: 'driver refresh failed' }])
     expect(runtime.visible).toBe('first')
     expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
+  })
+
+  it('rolls a tentative body back when finalize and rollback are both lost', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new FixtureRuntime()
+      const cueParams = { First: { ParamFirst: 1 } }
+      const handler = createCharacterLoadHandler(
+        runtime,
+        { characterChanged: () => () => {} },
+        cueParams,
+        {},
+        () => {},
+        () => {},
+        undefined,
+        50
+      )
+      await handler.prepare({
+        id: 6,
+        character: {
+          ok: true,
+          name: 'Second',
+          live2d: { model: 'lares://candidate/6/runtime/second.model3.json' }
+        },
+        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      })
+      handler.commit({
+        id: 6,
+        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      })
+      expect(runtime.visible).toBe('lares://candidate/6/runtime/second.model3.json')
+
+      await vi.advanceTimersByTimeAsync(50)
+
+      expect(runtime.visible).toBe('first')
+      expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('makes matching finalize one-way and cancels its rollback watchdog', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new FixtureRuntime()
+      runtime.finalizeLoad = () => {
+        throw new Error('old cleanup failed')
+      }
+      let finalizedDriver = 0
+      const handler = createCharacterLoadHandler(
+        runtime,
+        {
+          characterChanged: () => ({
+            rollback: () => {},
+            finalize: () => {
+              finalizedDriver++
+            }
+          })
+        },
+        { First: { ParamFirst: 1 } },
+        {},
+        () => {},
+        () => {},
+        undefined,
+        50
+      )
+      await handler.prepare({
+        id: 7,
+        character: {
+          ok: true,
+          name: 'Second',
+          live2d: { model: 'lares://candidate/7/runtime/second.model3.json' }
+        },
+        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      })
+      handler.commit({ id: 7, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+
+      expect(() => handler.finalize(7)).not.toThrow()
+      expect(handler.finalize(7)).toBe(false)
+      expect(finalizedDriver).toBe(1)
+      await vi.advanceTimersByTimeAsync(50)
+      expect(runtime.visible).toBe('lares://candidate/7/runtime/second.model3.json')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels the rollback watchdog when main explicitly rolls back', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new FixtureRuntime()
+      const rollback = vi.spyOn(runtime, 'rollbackLoad')
+      const handler = createCharacterLoadHandler(
+        runtime,
+        { characterChanged: () => () => {} },
+        { First: { ParamFirst: 1 } },
+        {},
+        () => {},
+        () => {},
+        undefined,
+        50
+      )
+      await handler.prepare({
+        id: 8,
+        character: {
+          ok: true,
+          name: 'Second',
+          live2d: { model: 'lares://candidate/8/runtime/second.model3.json' }
+        },
+        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      })
+      handler.commit({ id: 8, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+
+      expect(handler.rollback(8)).toBe(true)
+      await vi.advanceTimersByTimeAsync(50)
+      expect(rollback).toHaveBeenCalledTimes(1)
+      expect(runtime.visible).toBe('first')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

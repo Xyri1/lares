@@ -8,6 +8,11 @@ import { createTraceBuffer, pushEngine, resetBuffer, type TraceBuffer } from './
 export type StageId = 'A' | 'B'
 export type CueMotions = Readonly<Record<string, string>>
 
+export interface CharacterChangeTransaction {
+  rollback(): void
+  finalize(): void
+}
+
 /** How long a panel cue preview holds before it fades back out. */
 const PREVIEW_MS = 3000
 
@@ -34,8 +39,8 @@ export interface AffectDriver {
    * affect layer has taken so the model's own idle motion owns them again.
    * Leaves the trace buffer alone — the overlay is history, not state. */
   reset(): void
-  /** Tentatively refresh model defaults; returned closure restores driver state. */
-  characterChanged(): () => void
+  /** Tentatively refresh model defaults; finalize stops package-specific playback. */
+  characterChanged(): CharacterChangeTransaction
 }
 
 /** What a stage's synth reads, plus the expression stack the compositor
@@ -259,19 +264,29 @@ export function createAffectDriver(
     }
   })
 
-  window.lares.onScenarioEnd(() => {
+  const clearPlayback = (writeTrace: boolean): void => {
     const active = replaying()
     if (active.length === 0) return
     const linesByStage: Record<string, string[]> = {}
     for (const [id, st] of active) {
-      console.log(`[lares] replay done (stage ${id}): ${st.replay!.lines.length} synth frames traced`)
-      linesByStage[id] = st.replay!.lines
+      if (writeTrace) {
+        console.log(`[lares] replay done (stage ${id}): ${st.replay!.lines.length} synth frames traced`)
+        linesByStage[id] = st.replay!.lines
+      }
       st.replay = null
       st.latest = null
       st.live = createSynth(idlePreset, Math.random) // fresh idle state after replay
       st.fade = initialFade()
     }
-    window.lares.sendSynthTrace(linesByStage)
+    if (writeTrace) window.lares.sendSynthTrace(linesByStage)
+  }
+
+  window.lares.onScenarioEnd(() => {
+    clearPlayback(true)
+  })
+
+  window.lares.onScenarioStopped(() => {
+    clearPlayback(false)
   })
 
   // IRuntime.setParams is a sticky merge: an id stops being written but keeps
@@ -331,9 +346,15 @@ export function createAffectDriver(
     preview && id === 'A' ? [preview, ...stack] : stack
 
   const reset = (refreshDefaults = false): void => {
-    void window.lares.pauseScenario()
+    void window.lares.stopScenario()
+    clearPlayback(false)
     preview = null
-    authoringPreview = null
+    authoringPreview = replaceHeldPreview(
+      stages.A!.runtime,
+      stages.A!.driven,
+      authoringPreview,
+      null
+    )
     for (const st of Object.values(stages)) {
       if (!st) continue
       if (refreshDefaults) {
@@ -343,6 +364,7 @@ export function createAffectDriver(
       st.feed = restFeed()
       st.fade = initialFade()
       st.driven.clear()
+      st.motionCue = null
       st.runtime.resetParams()
     }
   }
@@ -416,7 +438,7 @@ export function createAffectDriver(
     reset(): void {
       reset()
     },
-    characterChanged(): () => void {
+    characterChanged(): CharacterChangeTransaction {
       const st = stages.A!
       const before = {
         preview,
@@ -448,7 +470,10 @@ export function createAffectDriver(
         st.driven = new Set()
         st.motionCue = null
         st.runtime.resetParams()
-        return rollback
+        return {
+          rollback,
+          finalize: () => reset(true)
+        }
       } catch (error) {
         rollback()
         throw error

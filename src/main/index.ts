@@ -485,7 +485,9 @@ async function startNerves(): Promise<void> {
           characterInventoryErrorShown = state.previous.characterInventoryErrorShown
         },
         finalize: (id) => {
-          characterLoadBroker!.finalize(id)
+          if (!characterLoadBroker!.finalize(id)) {
+            throw new Error('character finalization handoff was refused')
+          }
         },
         publish: (
           candidate,
@@ -813,6 +815,16 @@ function registerScenarioIpc(): void {
   })
 
   const NO_PLAYBACK = { ok: false as const, error: 'no playback in progress' }
+
+  ipcMain.handle('scenario:stop', () => {
+    if (!activePlayback) return { ok: true }
+    activePlayback.controller.cancel()
+    activePlayback = null
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.webContents.isDestroyed()) win.webContents.send('scenario:stopped')
+    }
+    return { ok: true }
+  })
 
   ipcMain.handle('scenario:pause', () => {
     const c = activeController()

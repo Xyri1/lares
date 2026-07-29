@@ -13,7 +13,8 @@ export interface IRuntime {
   prepareLoad(id: number, modelPath: string): Promise<ParamInfo[]>
   commitLoad(id: number): boolean
   rollbackLoad(id: number): boolean
-  finalizeLoad(id: number): boolean
+  /** One-way finalization. Matching callers already own the new body; cleanup is best effort. */
+  finalizeLoad(id: number): void
   cancelLoad(id: number): boolean
   parameters(): ParamInfo[]
   setParams(batch: Record<string, number>, weight?: number): void

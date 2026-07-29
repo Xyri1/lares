@@ -4,7 +4,7 @@ const boundary = vi.hoisted(() => {
   const models = new Map<string, ReturnType<typeof model>>()
   const applications: Array<{ stage: { children: unknown[]; addChild(value: unknown): void } }> = []
 
-  function model(path: string, valid = true, fitFails = false) {
+  function model(path: string, valid = true, fitFails = false, destroyFails = false) {
     const listeners = new Map<string, () => void>()
     return {
       path,
@@ -18,7 +18,9 @@ const boundary = vi.hoisted(() => {
           if (fitFails) throw new Error('candidate fit failed')
         })
       },
-      destroy: vi.fn(),
+      destroy: vi.fn(() => {
+        if (destroyFails) throw new Error('old cleanup failed')
+      }),
       hitTest: vi.fn(() => []),
       motion: vi.fn(async () => true),
       update: vi.fn(),
@@ -121,8 +123,27 @@ describe('Live2DRuntime character transaction', () => {
     expect(initial.visible).toBe(false)
     expect(initial.destroy).not.toHaveBeenCalled()
 
-    expect(runtime.finalizeLoad(1)).toBe(true)
+    expect(() => runtime.finalizeLoad(1)).not.toThrow()
     expect(initial.destroy).toHaveBeenCalledWith(cleanup)
+  })
+
+  it('keeps the new model final when old cleanup throws and a later prepare is cancelled', async () => {
+    const initial = boundary.model('initial', true, false, true)
+    const candidate = boundary.model('candidate')
+    const later = boundary.model('later')
+    for (const model of [initial, candidate, later]) boundary.models.set(model.path, model)
+    const runtime = new Live2DRuntime({ parentElement: null } as HTMLCanvasElement)
+    await runtime.load('initial')
+
+    await runtime.prepareLoad(1, 'candidate')
+    expect(runtime.commitLoad(1)).toBe(true)
+    expect(() => runtime.finalizeLoad(1)).not.toThrow()
+
+    await runtime.prepareLoad(2, 'later')
+    expect(runtime.cancelLoad(2)).toBe(true)
+    expect(runtime.rollbackLoad(1)).toBe(false)
+    expect(candidate.visible).toBe(true)
+    expect(candidate.destroy).not.toHaveBeenCalled()
   })
 
   it('rolls a tentative commit back to the prior model', async () => {

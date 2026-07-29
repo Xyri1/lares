@@ -269,4 +269,49 @@ describe('transactional character switching', () => {
     expect(mainCharacter).toBe('first')
     expect(events).toEqual(['commit', 'publish', 'rollback-main', 'rollback'])
   })
+
+  it('rolls published main and tentative body state back when finalize handoff fails', async () => {
+    const { root, packages } = managedPackages()
+    const events: string[] = []
+    let mainCharacter = 'first'
+    const switcher = createCharacterSwitcher(root, packages[0], {
+      precompute: () => null,
+      prepare: async () => inventory('ParamSecond'),
+      prepareCommit: () => null,
+      commit: async () => {
+        events.push('commit')
+      },
+      cancel: () => false,
+      rollback: () => {
+        events.push('rollback-body')
+        return true
+      },
+      rollbackPublish: () => {
+        mainCharacter = 'first'
+        events.push('rollback-main')
+      },
+      finalize: () => {
+        events.push('finalize')
+        throw new Error('finalize send failed')
+      },
+      publish: () => {
+        mainCharacter = 'second'
+        events.push('publish')
+      }
+    })
+
+    await expect(switcher.switchTo(packages[1].manifestPath)).resolves.toEqual({
+      ok: false,
+      error: 'finalize send failed'
+    })
+    expect(switcher.active()).toEqual(packages[0])
+    expect(mainCharacter).toBe('first')
+    expect(events).toEqual([
+      'commit',
+      'publish',
+      'finalize',
+      'rollback-main',
+      'rollback-body'
+    ])
+  })
 })

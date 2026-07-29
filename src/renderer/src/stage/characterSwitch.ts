@@ -17,6 +17,11 @@ interface CharacterCommitRequest {
   cues: CuePayload[]
 }
 
+interface DriverCharacterChange {
+  rollback(): void
+  finalize(): void
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -110,12 +115,13 @@ export function createCharacterLoadHandler(
     | 'cancelLoad'
     | 'parameters'
   >,
-  driver: { characterChanged(): void | (() => void) },
+  driver: { characterChanged(): void | (() => void) | DriverCharacterChange },
   cueParams: Record<string, Record<string, number>>,
   cueMotions: Record<string, string>,
   reportPrepared: (result: unknown) => void,
   reportCommitted: (result: unknown) => void,
-  finalized?: (request: CharacterLoadRequest) => void
+  finalized?: (request: CharacterLoadRequest) => void,
+  tentativeTimeoutMs = 30_000
 ): {
   prepare(request: unknown): Promise<void>
   commit(request: unknown): boolean
@@ -132,6 +138,8 @@ export function createCharacterLoadHandler(
         params: [string, Record<string, number>][]
         motions: [string, string][]
         rollbackDriver?: () => void
+        finalizeDriver?: () => void
+        watchdog?: ReturnType<typeof setTimeout>
       }
     | undefined
 
@@ -153,6 +161,7 @@ export function createCharacterLoadHandler(
       return false
     }
     tentative = undefined
+    if (transaction.watchdog) clearTimeout(transaction.watchdog)
     runtime.rollbackLoad(rawId as number)
     replace(cueParams, transaction.params)
     replace(cueMotions, transaction.motions)
@@ -239,7 +248,16 @@ export function createCharacterLoadHandler(
             cue.motion === undefined ? [] : [[cue.name, cue.motion]]
           )
         )
-        tentative.rollbackDriver = driver.characterChanged() ?? undefined
+        const driverChange = driver.characterChanged()
+        if (typeof driverChange === 'function') {
+          tentative.rollbackDriver = driverChange
+        } else if (driverChange) {
+          tentative.rollbackDriver = () => driverChange.rollback()
+          tentative.finalizeDriver = () => driverChange.finalize()
+        }
+        tentative.watchdog = setTimeout(() => {
+          rollback(commit.id)
+        }, tentativeTimeoutMs)
         reportCommitted({ id: commit.id, ok: true })
         return true
       } catch (error) {
@@ -264,15 +282,23 @@ export function createCharacterLoadHandler(
       }
       const request = transaction.request
       tentative = undefined
-      const result = runtime.finalizeLoad(rawId as number)
-      if (result) {
-        try {
-          finalized?.(request)
-        } catch {
-          // Old resources are already final; no failure is reported after this point.
-        }
+      if (transaction.watchdog) clearTimeout(transaction.watchdog)
+      try {
+        runtime.finalizeLoad(rawId as number)
+      } catch {
+        // Matching finalization is one-way; cleanup cannot reopen the transaction.
       }
-      return result
+      try {
+        transaction.finalizeDriver?.()
+      } catch {
+        // The new body is already final; playback cleanup is best effort here.
+      }
+      try {
+        finalized?.(request)
+      } catch {
+        // Old resources are already final; no failure is reported after this point.
+      }
+      return true
     },
     cancel
   }

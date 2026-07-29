@@ -191,6 +191,28 @@ describe('main character load broker', () => {
     expect(assets.resolve('lares://candidate/1/model')).toBeNull()
   })
 
+  it('retains rollback state and the old root when finalize delivery throws', async () => {
+    const body = new Body('overlay')
+    const assets = new CharacterAssetState('/characters/first')
+    const broker = new CharacterLoadBroker(assets, () => body, 30_000)
+    const prepared = broker.prepare(1, '/characters/second', { id: 1 })
+    broker.receive('overlay', { id: 1, ok: true, inventory: INVENTORY })
+    await prepared
+    const committed = broker.commit(1, { id: 1, cues: [] })
+    broker.receiveCommit('overlay', { id: 1, ok: true })
+    await committed
+    body.throwOnChannel = 'character:finalize'
+
+    expect(() => broker.finalize(1)).toThrow('finalize send failed')
+    expect(assets.resolve('lares://characters/model')?.root).toBe('/characters/first')
+    expect(assets.resolve('lares://candidate/1/model')?.root).toBe('/characters/second')
+
+    body.throwOnChannel = null
+    expect(broker.rollback(1, 'finalize handoff failed')).toBe(true)
+    expect(body.sent.at(-1)).toEqual({ channel: 'character:rollback', value: 1 })
+    expect(assets.resolve('lares://candidate/1/model')).toBeNull()
+  })
+
   it('rolls back immediately when prepare delivery fails', async () => {
     const body = new Body('overlay')
     body.throwOnChannel = 'character:prepare'

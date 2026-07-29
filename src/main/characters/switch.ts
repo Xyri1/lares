@@ -105,13 +105,19 @@ export function createCharacterSwitcher<Precomputed, CommitState>(
           error: error instanceof Error ? error.message : String(error)
         }
       }
-      active = candidate
-      if (pendingId === id) pendingId = null
       try {
         operations.finalize(id)
-      } catch {
-        // Publication is irreversible; finalization is best-effort cleanup.
+      } catch (error) {
+        operations.rollbackPublish(candidate, state, id)
+        operations.rollback(id, 'character finalization handoff failed')
+        if (pendingId === id) pendingId = null
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error)
+        }
       }
+      active = candidate
+      if (pendingId === id) pendingId = null
       return { ok: true, manifestPath: candidate.manifestPath }
     }
   }
