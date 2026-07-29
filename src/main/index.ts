@@ -25,6 +25,7 @@ import {
   type CueDefinition,
   type ManifestResult
 } from './characters/manifest'
+import { bundledPackageRoot, ensureManagedCharacterLibrary } from './characters/library'
 import { DensityLog } from './densityLog'
 import { Nerves, type ParamInfo } from './nerves'
 import {
@@ -56,7 +57,14 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-const charactersRoot = (): string => join(app.getAppPath(), 'characters')
+const charactersRoot = (): string => join(app.getPath('userData'), 'characters')
+const defaultCharacterRoot = (): string =>
+  bundledPackageRoot(
+    app.getAppPath(),
+    process.resourcesPath,
+    app.isPackaged,
+    process.env.LARES_DEFAULT_CHARACTER || 'hiyori'
+  )
 const runtimeFile = (): string => join(homedir(), '.lares', 'runtime.json')
 
 let liveNerves: Nerves | null = null
@@ -798,6 +806,15 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('io.lares')
+
+    try {
+      const seeded = ensureManagedCharacterLibrary(charactersRoot(), defaultCharacterRoot())
+      if (seeded.seeded) console.log('[lares] seeded managed character library')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[lares] default character unavailable: ${message}`)
+      dialog.showErrorBox('Default character unavailable', message)
+    }
 
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window)

@@ -142,6 +142,36 @@ function pathError(packageRoot: string, path: string, label: string): string | n
     : `${label} escapes character package through a symbolic link: ${path}`
 }
 
+function nestedFileReferences(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(nestedFileReferences)
+  if (typeof value !== 'object' || value === null) return []
+  const record = value as Record<string, unknown>
+  return [
+    ...(typeof record.File === 'string' ? [record.File] : []),
+    ...Object.values(record).flatMap(nestedFileReferences)
+  ]
+}
+
+function modelRuntimeReferences(modelPath: string): string[] | string {
+  let model: { FileReferences?: Record<string, unknown> }
+  try {
+    model = JSON.parse(readFileSync(modelPath, 'utf8'))
+  } catch (error) {
+    return `Model file is not valid JSON (${modelPath}): ${(error as Error).message}`
+  }
+  const references = model.FileReferences
+  if (!references || typeof references !== 'object') return []
+  const direct = ['Moc', 'Physics', 'Pose', 'DisplayInfo', 'UserData']
+    .flatMap((key) => {
+      const value = references[key]
+      return typeof value === 'string' ? [value] : Array.isArray(value) ? value.filter((path): path is string => typeof path === 'string') : []
+    })
+  const textures = Array.isArray(references.Textures)
+    ? references.Textures.filter((path): path is string => typeof path === 'string')
+    : []
+  return [...new Set([...direct, ...textures, ...nestedFileReferences(references.Expressions), ...nestedFileReferences(references.Motions)])]
+}
+
 /** Validates a package without Electron or renderer dependencies. */
 export function validateCharacter(manifestPath: string): ValidationReport {
   const parsed = parseManifest(manifestPath)
@@ -152,6 +182,18 @@ export function validateCharacter(manifestPath: string): ValidationReport {
   if (modelError) errors.push(modelError)
   if (modelError?.includes('not found')) {
     errors[errors.length - 1] += ' — run "pnpm fetch-assets" to download the bundled assets'
+  }
+  if (!modelError) {
+    const modelPath = resolve(packageRoot, parsed.live2d.model)
+    const references = modelRuntimeReferences(modelPath)
+    if (typeof references === 'string') errors.push(references)
+    else {
+      for (const reference of references) {
+        const path = relative(packageRoot, resolve(dirname(modelPath), reference))
+        const referenceError = pathError(packageRoot, path, 'Model runtime reference')
+        if (referenceError) errors.push(referenceError)
+      }
+    }
   }
   const cues = { expression: 0, motion: 0, authored: 0, raw: 0 }
   const definitions = parsed.live2d.cues ?? {}

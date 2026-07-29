@@ -141,6 +141,16 @@ describe('loadCharacter', () => {
     expect(validateCharacter(malformed).errors.join('\n')).toContain('bad.exp3.json')
   })
 
+  it('rejects model runtime references that escape the package', () => {
+    const manifestPath = writePackage(VALID)
+    writeFileSync(
+      join(manifestPath, '..', 'runtime', 'Hiyori.model3.json'),
+      JSON.stringify({ FileReferences: { Moc: '../../outside.moc3' } })
+    )
+
+    expect(validateCharacter(manifestPath).errors.join('\n')).toContain('Model runtime reference escapes character package')
+  })
+
   it('requires every affect cue to have one renderer mapping and vice versa', () => {
     const unmapped = writePackage({
       ...VALID,
