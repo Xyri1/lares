@@ -10,6 +10,8 @@ AGENTS.local.md
 .claude/
 .vscode/
 .mcp.json
+skills-lock.json
+.skill-archive/
 
 vendor/
 characters/*/runtime/
