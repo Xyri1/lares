@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { writeCodexShim } from './shim'
+import { writeForwarderShim } from './shim'
 
 const directories: string[] = []
 
@@ -11,29 +11,30 @@ afterEach(async () => {
 })
 
 async function directory(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), 'lares-codex-shim-'))
+  const value = await mkdtemp(join(tmpdir(), 'lares-shim-'))
   directories.push(value)
   return value
 }
 
-describe('writeCodexShim', () => {
-  it('writes an executable POSIX shim that preserves quoted paths', async () => {
+describe('writeForwarderShim', () => {
+  it('writes an executable POSIX shim that preserves quoted paths and takes a harness argument', async () => {
     const binDir = await directory()
-    const target = await writeCodexShim({
+    await writeForwarderShim({
       binDir,
       appPath: "/Applications/Lares Pet's/Lares",
       forwarderPath: "/Applications/Lares Pet's/scripts/forwarder.js",
       platform: 'darwin'
     })
 
+    const target = join(binDir, 'lares-forwarder')
     expect(await readFile(target, 'utf8')).toBe(
-      "#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec '/Applications/Lares Pet'\\''s/Lares' '/Applications/Lares Pet'\\''s/scripts/forwarder.js' codex\n"
+      '#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec \'/Applications/Lares Pet\'\\\'\'s/Lares\' \'/Applications/Lares Pet\'\\\'\'s/scripts/forwarder.js\' "${1:-codex}"\n'
     )
     if (process.platform !== 'win32') expect((await stat(target)).mode & 0o111).not.toBe(0)
     expect(await readdir(binDir)).toEqual(['lares-forwarder'])
   })
 
-  it('writes a Windows shim and re-stamps the current app path', async () => {
+  it('writes both Windows shims and re-stamps the current app path', async () => {
     const binDir = await directory()
     const options = {
       binDir,
@@ -41,12 +42,15 @@ describe('writeCodexShim', () => {
       forwarderPath: 'C:\\Program Files\\Lares\\scripts\\forwarder.js',
       platform: 'win32' as const
     }
-    const target = await writeCodexShim(options)
-    await writeCodexShim({ ...options, appPath: 'D:\\Current Lares\\lares.exe' })
+    await writeForwarderShim(options)
+    await writeForwarderShim({ ...options, appPath: 'D:\\Current Lares\\lares.exe' })
 
-    expect(await readFile(target, 'utf8')).toBe(
+    expect(await readFile(join(binDir, 'lares-forwarder.cmd'), 'utf8')).toBe(
       '@echo off\r\nset "LARES_HARNESS_PID="\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n"D:\\Current Lares\\lares.exe" "C:\\Program Files\\Lares\\scripts\\forwarder.js" codex\r\n'
     )
-    expect(await readdir(binDir)).toEqual(['lares-forwarder.cmd'])
+    expect(await readFile(join(binDir, 'lares-forwarder'), 'utf8')).toBe(
+      '#!/bin/sh\nLARES_HARNESS_PID= ELECTRON_RUN_AS_NODE=1 exec \'D:\\Current Lares\\lares.exe\' \'C:\\Program Files\\Lares\\scripts\\forwarder.js\' "${1:-codex}"\n'
+    )
+    expect((await readdir(binDir)).sort()).toEqual(['lares-forwarder', 'lares-forwarder.cmd'])
   })
 })

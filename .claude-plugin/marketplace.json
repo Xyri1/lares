@@ -1,0 +1,14 @@
+{
+  "name": "lares",
+  "description": "Lares desktop companion integration for Claude Code.",
+  "owner": {
+    "name": "Lares contributors"
+  },
+  "plugins": [
+    {
+      "name": "lares",
+      "source": "./plugins/claude-code",
+      "description": "Give Claude Code sessions a local Lares companion."
+    }
+  ]
+}

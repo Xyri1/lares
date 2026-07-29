@@ -8,7 +8,7 @@
       "name": "lares",
       "source": {
         "source": "local",
-        "path": "./plugins/lares"
+        "path": "./plugins/codex"
       },
       "policy": {
         "installation": "AVAILABLE",

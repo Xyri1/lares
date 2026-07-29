@@ -1,13 +1,6 @@
 import { rm, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
-import pluginHooks from '../../../../plugins/lares/hooks/hooks.json' with { type: 'json' }
-import {
-  backupOnce,
-  readJson,
-  writeIfDifferent,
-  type FileResult,
-  type JsonObject
-} from '../claude-code/writer.ts'
+import { backupOnce, readJson, type FileResult, type JsonObject } from '../claude-code/writer.ts'
 import { atomicWrite } from '../../fs.ts'
 
 export interface CodexHooksOptions {
@@ -15,8 +8,10 @@ export interface CodexHooksOptions {
   hooksPath: string
 }
 
+// Hooks folded back into the plugin (D15 tripwire fired 2026-07-29: Codex
+// executes plugin-bundled hooks after trust review); only the removal pass
+// remains, cleaning up the user-level file older builds wrote.
 const forwarderPattern = /(?:^|[\\/\s"'])lares-forwarder(?:\.cmd)?(?=$|[\\/\s"';&|()<>])/i
-const sourceHooks = pluginHooks.hooks as JsonObject
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -53,20 +48,6 @@ function withoutLaresHooks(config: JsonObject): JsonObject {
     if (keptGroups.length > 0) hooks[event] = keptGroups
   }
   return { ...config, hooks }
-}
-
-function withLaresHooks(config: JsonObject): JsonObject {
-  const clean = withoutLaresHooks(config)
-  const hooks = { ...(clean.hooks as JsonObject | undefined) }
-  for (const [event, groups] of Object.entries(sourceHooks)) {
-    hooks[event] = [...((hooks[event] as unknown[]) ?? []), ...(groups as unknown[])]
-  }
-  return { ...clean, hooks }
-}
-
-export async function syncCodexHooks(options: CodexHooksOptions): Promise<FileResult> {
-  if (!(await codexDirectoryExists(options.codexDirectory))) return 'skipped'
-  return writeIfDifferent(options.hooksPath, withLaresHooks, true)
 }
 
 export async function removeCodexHooks(options: CodexHooksOptions): Promise<FileResult> {

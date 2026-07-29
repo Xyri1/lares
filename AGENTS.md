@@ -6,7 +6,9 @@ Live2D character (a Lar) expresses the emotional arc of the agent sessions
 it watches through continuously driven animation parameters — first-person
 emotes over MCP/local HTTP, deterministic hooks as the baseline heartbeat.
 State: M5a (Ship) implementation is complete; its clean-machine A8/A9
-gate remains open in sdd/slices/008-ship/. M4 (Format) closed
+gate remains open in sdd/slices/008-ship/ and now also verifies slice
+009 (sdd/slices/009-claude-plugin/ — both harness adapters delivered
+as marketplace plugins under plugins/). M4 (Format) closed
 2026-07-29. M2b (Performance) remains the open human-paced tuning
 track. Stack:
 Electron + TypeScript (electron-vite, pnpm); Live2D via pixi-live2d-display.

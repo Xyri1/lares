@@ -13,52 +13,18 @@ export interface ClaudeCodePaths {
   claudeConfigPath: string
 }
 
-export interface SyncClaudeCodeOptions extends ClaudeCodePaths {
-  appPath: string
-  forwarderPath: string
-  port: number
-  platform: NodeJS.Platform
-  log?: (message: string) => void
-}
-
 export interface ClaudeCodeAdapterResult {
   settings: FileResult
   mcp: FileResult
 }
 
-const hookEvents = [
-  'SessionStart',
-  'UserPromptSubmit',
-  'PreToolUse',
-  'PostToolUse',
-  'PostToolUseFailure',
-  'Notification',
-  'Stop',
-  'SubagentStart',
-  'SubagentStop'
-] as const
-
+// Registration moved into the marketplace plugin (plugins/claude-code, 009);
+// only the removal pass remains, cleaning up what older builds wrote into
+// ~/.claude/settings.json and ~/.claude.json.
 const forwarderPattern = /(?:^|[\\/\s"'])forwarder\.js(?=$|[\\/\s"';&|()<>])/i
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function quotePosix(value: string): string {
-  return `"${value.replace(/["\\$`]/g, '\\$&')}"`
-}
-
-export function claudeCodeCommand(
-  appPath: string,
-  forwarderPath: string,
-  platform: NodeJS.Platform
-): string {
-  // Claude Code runs shell-form hook commands through Git Bash even on
-  // Windows, so the command is POSIX on every platform. Windows clears
-  // LARES_HARNESS_PID instead of exporting $PPID: Git Bash reports MSYS
-  // pids, not Windows pids, and 005-D9 wants truthful-or-absent.
-  const pid = platform === 'win32' ? 'LARES_HARNESS_PID=' : 'LARES_HARNESS_PID=$PPID'
-  return `${pid} ELECTRON_RUN_AS_NODE=1 ${quotePosix(appPath)} ${quotePosix(forwarderPath)} claude-code`
 }
 
 function withoutLaresHooks(settings: JsonObject): JsonObject {
@@ -93,27 +59,6 @@ function withoutLaresHooks(settings: JsonObject): JsonObject {
   return { ...settings, hooks }
 }
 
-function withLaresHooks(settings: JsonObject, command: string): JsonObject {
-  const clean = withoutLaresHooks(settings)
-  const hooks = isObject(clean.hooks) ? { ...clean.hooks } : {}
-
-  for (const event of hookEvents) {
-    const existing = hooks[event]
-    if (existing !== undefined && !Array.isArray(existing)) {
-      throw new Error(`Claude Code settings hook "${event}" must be an array`)
-    }
-    hooks[event] = [
-      ...(existing ?? []),
-      {
-        ...(event === 'Notification' ? { matcher: 'permission_prompt' } : {}),
-        hooks: [{ type: 'command', command }]
-      }
-    ]
-  }
-
-  return { ...clean, hooks }
-}
-
 export async function readJson(path: string): Promise<{ value: JsonObject } | undefined> {
   let bytes: string
   try {
@@ -141,16 +86,15 @@ export async function backupOnce(path: string): Promise<void> {
   }
 }
 
-export async function writeIfDifferent(
+async function writeIfDifferent(
   path: string,
-  transform: (settings: JsonObject) => JsonObject,
-  createIfMissing: boolean
+  transform: (settings: JsonObject) => JsonObject
 ): Promise<FileResult> {
   const current = await readJson(path)
-  if (!current && !createIfMissing) return 'skipped'
-  const next = transform(current?.value ?? {})
-  if (current && isDeepStrictEqual(current.value, next)) return 'unchanged'
-  if (current) await backupOnce(path)
+  if (!current) return 'skipped'
+  const next = transform(current.value)
+  if (isDeepStrictEqual(current.value, next)) return 'unchanged'
+  await backupOnce(path)
   await atomicWrite(path, next)
   return 'updated'
 }
@@ -167,10 +111,7 @@ async function writeMcp(
     log(errorMessage(error))
     return 'skipped'
   }
-  if (!current) {
-    log(`Claude Code config not found at ${path}; skipping MCP registration`)
-    return 'skipped'
-  }
+  if (!current) return 'skipped'
 
   let next: JsonObject
   try {
@@ -194,38 +135,6 @@ async function claudeDirectoryExists(path: string): Promise<boolean> {
   }
 }
 
-export async function syncClaudeCode(
-  options: SyncClaudeCodeOptions
-): Promise<ClaudeCodeAdapterResult> {
-  if (!(await claudeDirectoryExists(options.claudeDirectory))) {
-    return { settings: 'skipped', mcp: 'skipped' }
-  }
-
-  const command = claudeCodeCommand(options.appPath, options.forwarderPath, options.platform)
-  const settings = await writeIfDifferent(
-    options.settingsPath,
-    (value) => withLaresHooks(value, command),
-    true
-  )
-  const mcp = await writeMcp(
-    options.claudeConfigPath,
-    (value) => {
-      if (value.mcpServers !== undefined && !isObject(value.mcpServers)) {
-        throw new Error(`Claude Code config "mcpServers" must be an object`)
-      }
-      return {
-        ...value,
-        mcpServers: {
-          ...(value.mcpServers ?? {}),
-          lares: { type: 'http', url: `http://127.0.0.1:${options.port}/v1/mcp` }
-        }
-      }
-    },
-    options.log ?? console.error
-  )
-  return { settings, mcp }
-}
-
 export async function removeClaudeCode(
   options: ClaudeCodePaths & { log?: (message: string) => void }
 ): Promise<ClaudeCodeAdapterResult> {
@@ -233,7 +142,7 @@ export async function removeClaudeCode(
     return { settings: 'skipped', mcp: 'skipped' }
   }
 
-  const settings = await writeIfDifferent(options.settingsPath, withoutLaresHooks, false)
+  const settings = await writeIfDifferent(options.settingsPath, withoutLaresHooks)
   const mcp = await writeMcp(
     options.claudeConfigPath,
     (value) => {

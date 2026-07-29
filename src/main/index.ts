@@ -24,9 +24,9 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { syncClaudeCode } from './adapters/claude-code/writer'
-import { syncCodexHooks } from './adapters/codex/hooks'
-import { writeCodexShim } from './adapters/codex/shim'
+import { removeClaudeCode } from './adapters/claude-code/writer'
+import { removeCodexHooks } from './adapters/codex/hooks'
+import { writeForwarderShim } from './adapters/shim'
 import {
   applyExp3,
   parseExp3File,
@@ -378,40 +378,41 @@ function configuredPort(): number {
   return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : 21473
 }
 
-async function syncAdapters(port: number): Promise<void> {
+async function syncAdapters(): Promise<void> {
   const home = homedir()
   const forwarderPath = join(app.getAppPath(), 'scripts', 'forwarder.js')
   await Promise.all([
-    syncClaudeCode({
+    // Both harnesses are delivered through their marketplace plugins (009,
+    // D15 fold-back); the app only cleans up registrations older builds
+    // wrote into user files.
+    removeClaudeCode({
       claudeDirectory: join(home, '.claude'),
       settingsPath: join(home, '.claude', 'settings.json'),
       claudeConfigPath: join(home, '.claude.json'),
-      appPath: process.execPath,
-      forwarderPath,
-      port,
-      platform: process.platform,
       log: (message) => console.error(`[lares] Claude Code adapter: ${message}`)
     })
       .then((result) => {
         if (result.settings === 'updated' || result.mcp === 'updated') {
-          console.log('[lares] Claude Code adapter registered; live sessions pick it up next session')
+          console.log('[lares] legacy Claude Code registration removed; install the Lares plugin via /plugin marketplace add Xyri1/lares')
         }
       })
-      .catch((error) => console.error('[lares] Claude Code adapter registration failed', error)),
-    syncCodexHooks({
+      .catch((error) => console.error('[lares] Claude Code legacy cleanup failed', error)),
+    removeCodexHooks({
       codexDirectory: join(home, '.codex'),
       hooksPath: join(home, '.codex', 'hooks.json')
     })
       .then((result) => {
-        if (result === 'updated') console.log('[lares] Codex hooks registered; trust review runs next session')
+        if (result === 'updated') {
+          console.log('[lares] legacy Codex hooks removed; hooks now ship in the Codex plugin')
+        }
       })
-      .catch((error) => console.error('[lares] Codex hooks registration failed', error)),
-    writeCodexShim({
+      .catch((error) => console.error('[lares] Codex legacy cleanup failed', error)),
+    writeForwarderShim({
       binDir: join(home, '.lares', 'bin'),
       appPath: process.execPath,
       forwarderPath,
       platform: process.platform
-    }).catch((error) => console.error('[lares] Codex launcher shim failed', error))
+    }).catch((error) => console.error('[lares] forwarder shim failed', error))
   ])
 }
 
@@ -611,7 +612,7 @@ async function startNerves(): Promise<void> {
     const directory = join(homedir(), '.lares')
     mkdirSync(directory, { recursive: true })
     writeFileSync(runtimeFile(), JSON.stringify({ version: 1, port, pid: process.pid }))
-    await syncAdapters(port)
+    await syncAdapters()
     nervesTick = setInterval(() => {
       const nowMs = Date.now()
       liveNerves!.tick(nowMs)
