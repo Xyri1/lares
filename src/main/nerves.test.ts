@@ -194,6 +194,57 @@ describe('Nerves emote ingress', () => {
     )
   })
 
+  it('switches character state without resetting sessions, affect, mood, or baseline', () => {
+    let reverts = 0
+    const nerves = new Nerves('First', CUES, 0, () => true, {
+      cueSources: { pleased: 'bundled', frustrated: 'bundled' },
+      revertPreview: () => reverts++
+    })
+    nerves.setInventory(INVENTORY)
+    nerves.ingest(
+      {
+        v: 1,
+        harness: 'claude-code',
+        session_id: 'live-session',
+        event: { hook_event_name: 'SessionStart' }
+      },
+      0
+    )
+    nerves.emote({ cue: 'pleased' }, 'agent', 0)
+    nerves.previewExpression({ params: { ParamMouthForm: 1 } }, 0)
+    const before = nerves.snapshot()
+    const sessions = nerves.status(0).sessions
+
+    nerves.switchCharacter(
+      'Second',
+      { curious: { valence: 0.4, arousal: 0.3 } },
+      { curious: 'raw' },
+      [{ id: 'ParamSecond', name: 'Second', min: 0, max: 2, default: 1 }]
+    )
+
+    expect(nerves.snapshot()).toMatchObject({
+      E: before.E,
+      M: before.M,
+      baselineState: before.baselineState,
+      expressionStack: []
+    })
+    expect(nerves.status(0)).toMatchObject({ active_character: 'Second', sessions })
+    expect(nerves.listCues()).toEqual([
+      {
+        name: 'curious',
+        valence: 0.4,
+        arousal: 0.3,
+        calibrated: true,
+        source: 'raw'
+      }
+    ])
+    expect(nerves.listParameters()).toEqual([
+      { id: 'ParamSecond', display_name: 'Second', min: 0, max: 2, default: 1 }
+    ])
+    expect(() => nerves.emote({ cue: 'pleased' }, 'agent-2', 0)).toThrow('unknown cue')
+    expect(reverts).toBe(1)
+  })
+
   it('round-trips the real MCP server into the performance snapshot', async () => {
     const nowMs = Date.now()
     const nerves = new Nerves('Hiyori', CUES, nowMs)

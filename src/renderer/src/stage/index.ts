@@ -2,6 +2,7 @@ import presetJson from '../../../../presets/default.json'
 import { Live2DRuntime } from '../runtime/live2d'
 import type { SynthPreset } from '../synth/synth'
 import { createAffectDriver } from './affect'
+import { createCharacterLoadHandler } from './characterSwitch'
 import { wireOverlayPointer } from './overlayPointer'
 import { mountPanel } from './panel'
 
@@ -55,6 +56,20 @@ async function boot(): Promise<void> {
   )
 
   const driver = createAffectDriver(runtime, presetJson as SynthPreset, cueParams, cueMotions)
+  let currentCharacter = character
+  window.lares.onCharacterLoad(
+    createCharacterLoadHandler(
+      runtime,
+      driver,
+      cueParams,
+      cueMotions,
+      (result) => window.lares.reportCharacterLoad(result as CharacterLoadResult),
+      (request) => {
+        currentCharacter = request.character
+        if (OVERLAY) void window.lares.fitToModel(runtime.larSize())
+      }
+    )
+  )
 
   if (OVERLAY) {
     // Tight fit last, once the model can report its own footprint (003-D5) —
@@ -77,7 +92,7 @@ async function boot(): Promise<void> {
       if (!on) return Promise.resolve(stageB?.then((rb) => rb.setActive(false)) ?? undefined)
       stageB ??= (async () => {
         const rb = new Live2DRuntime(runtime)
-        await rb.load(character.live2d.model)
+        await rb.load(currentCharacter.live2d.model)
         window.__runtimeB = rb
         driver.addStage('B', rb)
         return rb

@@ -2,6 +2,16 @@ type CharacterPayload =
   | { ok: true; name: string; live2d: { model: string } & Record<string, unknown> }
   | { ok: false; error: string }
 
+interface CharacterLoadRequest {
+  id: number
+  character: Extract<CharacterPayload, { ok: true }>
+  cues: CueListEntry[]
+}
+
+type CharacterLoadResult =
+  | { id: number; ok: true; inventory: unknown[] }
+  | { id: number; ok: false; error: string }
+
 /**
  * Performance feed (root SPEC §4, slice SPEC §5), brain→body over
  * `affect:update`. Renderer-neutral: cue names and numbers only (P6).
@@ -53,6 +63,8 @@ interface CueListEntry {
 interface LaresBridge {
   getCharacter(): Promise<CharacterPayload>
   reportInventory(params: unknown[]): void
+  onCharacterLoad(cb: (request: CharacterLoadRequest) => void): void
+  reportCharacterLoad(result: CharacterLoadResult): void
   playScenario(
     name: string,
     seed: number,

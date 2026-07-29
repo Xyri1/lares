@@ -48,6 +48,31 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+export function parseInventory(raw: unknown): ParamInfo[] | null {
+  if (!Array.isArray(raw)) return null
+  const inventory: ParamInfo[] = []
+  for (const value of raw) {
+    if (!record(value)) return null
+    const { id, name, min, max, default: defaultValue } = value
+    if (
+      typeof id !== 'string' ||
+      !id ||
+      typeof name !== 'string' ||
+      typeof min !== 'number' ||
+      !Number.isFinite(min) ||
+      typeof max !== 'number' ||
+      !Number.isFinite(max) ||
+      min > max ||
+      typeof defaultValue !== 'number' ||
+      !Number.isFinite(defaultValue)
+    ) {
+      return null
+    }
+    inventory.push({ id, name, min, max, default: defaultValue })
+  }
+  return inventory
+}
+
 function finite(value: unknown, name: string, fallback: number): number {
   if (value === undefined) return fallback
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${name} must be a number`)
@@ -57,6 +82,7 @@ function finite(value: unknown, name: string, fallback: number): number {
 export class Nerves {
   private readonly engine: AffectEngine
   private readonly sessions: Ingestor
+  private readonly cues: Record<string, CueCoordinates>
   private inventory: Map<string, ParamInfo> | null = null
   private readonly resolvedCues = new Map<string, CuePlayback>()
   private cueErrors: string[] = []
@@ -65,13 +91,14 @@ export class Nerves {
   private previewExpiresAt: number | null = null
 
   constructor(
-    private readonly character: string,
-    private readonly cues: Record<string, CueCoordinates>,
+    private character: string,
+    cues: Record<string, CueCoordinates>,
     nowMs: number,
     pidProbe?: PidProbe,
     private readonly options: NervesOptions = {}
   ) {
-    this.engine = new AffectEngine(cues, nowMs)
+    this.cues = { ...cues }
+    this.engine = new AffectEngine(this.cues, nowMs)
     this.sessions = pidProbe ? new Ingestor(this.engine, pidProbe) : new Ingestor(this.engine)
     this.cueSources = { ...options.cueSources }
   }
@@ -125,28 +152,9 @@ export class Nerves {
   }
 
   setInventory(raw: unknown): boolean {
-    if (!Array.isArray(raw)) return false
-    const next = new Map<string, ParamInfo>()
-    for (const value of raw) {
-      if (!record(value)) return false
-      const { id, name, min, max, default: defaultValue } = value
-      if (
-        typeof id !== 'string' ||
-        !id ||
-        typeof name !== 'string' ||
-        typeof min !== 'number' ||
-        !Number.isFinite(min) ||
-        typeof max !== 'number' ||
-        !Number.isFinite(max) ||
-        min > max ||
-        typeof defaultValue !== 'number' ||
-        !Number.isFinite(defaultValue)
-      ) {
-        return false
-      }
-      next.set(id, { id, name, min, max, default: defaultValue })
-    }
-    this.inventory = next
+    const inventory = parseInventory(raw)
+    if (!inventory) return false
+    this.inventory = new Map(inventory.map((param) => [param.id, param]))
     this.resolveCues()
     return true
   }
@@ -159,6 +167,21 @@ export class Nerves {
     Object.assign(this.cues, cues)
     this.cueSources = { ...sources }
     this.resolveCues()
+  }
+
+  switchCharacter(
+    character: string,
+    cues: Record<string, CueCoordinates>,
+    sources: Readonly<Record<string, CueInfo['source']>>,
+    inventory: readonly ParamInfo[]
+  ): void {
+    this.character = character
+    this.inventory = new Map(inventory.map((param) => [param.id, { ...param }]))
+    this.reloadCues(cues, sources)
+    this.engine.clearExpressions()
+    this.lastPlayedAt.clear()
+    this.previewExpiresAt = null
+    this.options.revertPreview?.()
   }
 
   cueValidationErrors(): string[] {

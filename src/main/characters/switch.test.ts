@@ -1,0 +1,138 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { Nerves, type ParamInfo } from '../nerves'
+import { importCharacterPackage, listCharacterPackages } from './library'
+import { createCharacterSwitcher, type CharacterPackage } from './switch'
+
+function writePackage(root: string, directory: string, cue: string): string {
+  const packageRoot = join(root, directory)
+  mkdirSync(join(packageRoot, 'runtime'), { recursive: true })
+  writeFileSync(
+    join(packageRoot, 'lar.character.json'),
+    JSON.stringify({
+      format: 'lares/1',
+      identity: { name: 'Same Name', license: 'test' },
+      expressions: { [cue]: { valence: 0.2, arousal: 0.3 } },
+      renderers: {
+        live2d: {
+          model: 'runtime/model.model3.json',
+          cues: { [cue]: { params: { [`Param${cue}`]: 1 } } }
+        }
+      }
+    })
+  )
+  writeFileSync(join(packageRoot, 'runtime', 'model.model3.json'), '{}')
+  return packageRoot
+}
+
+const inventory = (id: string): ParamInfo[] => [
+  { id, name: id, min: -1, max: 1, default: 0 }
+]
+
+function managedPackages(): { root: string; packages: CharacterPackage[] } {
+  const workspace = mkdtempSync(join(tmpdir(), 'lares-switch-'))
+  const root = join(workspace, 'managed')
+  importCharacterPackage(root, writePackage(join(workspace, 'one'), 'character', 'First'))
+  importCharacterPackage(root, writePackage(join(workspace, 'two'), 'character', 'Second'))
+  return { root, packages: listCharacterPackages(root) }
+}
+
+describe('transactional character switching', () => {
+  it('selects both duplicate-labelled packages and commits every character surface together', async () => {
+    const { root, packages } = managedPackages()
+    expect(packages.map((entry) => entry.label)).toEqual(['Same Name', 'Same Name (2)'])
+    const firstPackage = packages.find((entry) => 'First' in entry.character.expressions)!
+    const secondPackage = packages.find((entry) => 'Second' in entry.character.expressions)!
+    const nerves = new Nerves(
+      firstPackage.character.name,
+      firstPackage.character.expressions,
+      0
+    )
+    const surfaces = {
+      manifestPath: firstPackage.manifestPath,
+      assetRoot: dirname(firstPackage.manifestPath),
+      cues: Object.keys(firstPackage.character.live2d.cues ?? {}),
+      inventory: [] as string[]
+    }
+    const switcher = createCharacterSwitcher(
+      root,
+      firstPackage,
+      async ({ candidate }) => inventory(`Param${Object.keys(candidate.character.expressions)[0]}`),
+      (candidate, params) => {
+        const cues = candidate.character.live2d.cues ?? {}
+        nerves.switchCharacter(
+          candidate.character.name,
+          candidate.character.expressions,
+          Object.fromEntries(Object.keys(cues).map((cue) => [cue, 'raw' as const])),
+          params
+        )
+        Object.assign(surfaces, {
+          manifestPath: candidate.manifestPath,
+          assetRoot: dirname(candidate.manifestPath),
+          cues: Object.keys(cues),
+          inventory: params.map((param) => param.id)
+        })
+      }
+    )
+
+    await expect(switcher.switchTo(secondPackage.manifestPath)).resolves.toMatchObject({ ok: true })
+    expect(surfaces).toEqual({
+      manifestPath: secondPackage.manifestPath,
+      assetRoot: dirname(secondPackage.manifestPath),
+      cues: ['Second'],
+      inventory: ['ParamSecond']
+    })
+    expect(nerves.listCues().map((cue) => cue.name)).toEqual(['Second'])
+
+    await expect(switcher.switchTo(firstPackage.manifestPath)).resolves.toMatchObject({ ok: true })
+    expect(switcher.active().manifestPath).toBe(firstPackage.manifestPath)
+    expect(nerves.listCues().map((cue) => cue.name)).toEqual(['First'])
+  })
+
+  it('keeps every prior surface when renderer loading fails', async () => {
+    const { root, packages } = managedPackages()
+    let commits = 0
+    const switcher = createCharacterSwitcher(
+      root,
+      packages[0],
+      async () => {
+        throw new Error('renderer fixture refused model')
+      },
+      () => commits++
+    )
+
+    await expect(switcher.switchTo(packages[1].manifestPath)).resolves.toEqual({
+      ok: false,
+      error: 'renderer fixture refused model'
+    })
+    expect(switcher.active()).toEqual(packages[0])
+    expect(commits).toBe(0)
+  })
+
+  it('rejects a stale out-of-order renderer result', async () => {
+    const { root } = managedPackages()
+    const thirdSource = writePackage(dirname(root), 'third', 'Third')
+    const third = importCharacterPackage(root, thirdSource)
+    if (!third.ok) throw new Error(third.error)
+    const all = listCharacterPackages(root)
+    const pending = new Map<number, (value: ParamInfo[]) => void>()
+    const commits: string[] = []
+    const switcher = createCharacterSwitcher(
+      root,
+      all[0],
+      ({ id }) => new Promise((resolve) => pending.set(id, resolve)),
+      (candidate) => commits.push(candidate.manifestPath)
+    )
+
+    const older = switcher.switchTo(all[1].manifestPath)
+    const newer = switcher.switchTo(all[2].manifestPath)
+    pending.get(2)!(inventory('ParamThird'))
+    await expect(newer).resolves.toMatchObject({ ok: true })
+    pending.get(1)!(inventory('ParamSecond'))
+    await expect(older).resolves.toEqual({ ok: false, error: 'character switch was superseded' })
+    expect(switcher.active().manifestPath).toBe(all[2].manifestPath)
+    expect(commits).toEqual([all[2].manifestPath])
+  })
+})

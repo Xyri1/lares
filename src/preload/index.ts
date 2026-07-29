@@ -5,6 +5,12 @@ const lares = {
   reportInventory: (params: unknown[]): void => {
     ipcRenderer.send('body:inventory', params)
   },
+  onCharacterLoad: (cb: (request: CharacterLoadRequest) => void): void => {
+    ipcRenderer.on('character:load', (_event, request: CharacterLoadRequest) => cb(request))
+  },
+  reportCharacterLoad: (result: CharacterLoadResult): void => {
+    ipcRenderer.send('character:load-result', result)
+  },
   playScenario: (
     name: string,
     seed: number,

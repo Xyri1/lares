@@ -8,6 +8,7 @@ import {
   LARES_MOTION_GROUP,
   registerLooseMotion
 } from './looseMotion'
+import { commitLatestLoad } from './transaction'
 
 // PixiJS 6 builds shaders with new Function(); this swaps in precompiled
 // versions so the strict CSP (script-src 'self', no unsafe-eval) can stay.
@@ -59,6 +60,7 @@ export class Live2DRuntime implements IRuntime {
   // split the screen into slots.
   private peers: Live2DRuntime[]
   private active = true
+  private loadGeneration = 0
 
   constructor(target: HTMLCanvasElement | Live2DRuntime) {
     if (target instanceof Live2DRuntime) {
@@ -83,6 +85,10 @@ export class Live2DRuntime implements IRuntime {
       this.peers = [this]
     }
     this.app.ticker.add(this.tick, this, UPDATE_PRIORITY.LOW)
+    window.addEventListener('resize', () => {
+      this.app.resize()
+      this.fit()
+    })
   }
 
   /** Show/hide this stage and re-split the screen between active stages. */
@@ -113,45 +119,53 @@ export class Live2DRuntime implements IRuntime {
   }
 
   async load(modelPath: string): Promise<void> {
-    this.model = await Live2DModel.from(modelPath, { autoUpdate: false, autoInteract: false })
-    // Synth owns breath/blink/sway (slice 002 step 4): disable the library's
-    // autobreath/autoblink so per-frame setParams isn't fighting them. Both
-    // fields are optional-chained in the library's update path.
-    const internal = this.model.internalModel as unknown as {
-      breath?: unknown
-      eyeBlink?: unknown
-      on(event: string, fn: () => void): void
-    }
-    internal.breath = undefined
-    internal.eyeBlink = undefined
-    // Our parameter writes have to land INSIDE the model's own update pass, not
-    // from the pixi ticker around it. Cubism4InternalModel.update() runs at
-    // render time as: motion → [afterMotionUpdate] → physics → pose →
-    // coreModel.update() → draw → loadParameters(). The auto-started Idle
-    // motion group rewrites every parameter it owns at the top of that pass, so
-    // anything written from the ticker (which runs after render) was overwritten
-    // before it was ever drawn. Writing on afterMotionUpdate puts us exactly
-    // where Cubism expects an expression layer: on top of the motion, under
-    // physics and pose.
-    internal.on('afterMotionUpdate', () => this.writeParams())
-    this.app.stage.addChild(this.model)
-    const params = this.core()._model.parameters
-    this.inventory = Array.from({ length: params.count }, (_, i) => ({
-      id: params.ids[i],
-      name: params.ids[i], // display names live in .cdi3.json; the id is enough for M1a
-      min: params.minimumValues[i],
-      max: params.maximumValues[i],
-      default: params.defaultValues[i]
-    }))
-    this.paramIndex = new Map(this.inventory.map((p, i) => [p.id, i]))
-    for (const p of this.peers) p.fit() // a joining stage re-splits the screen
-    // app.resize() forces pixi's measurement NOW (its own listener defers to
-    // the next rAF) so fit() reads the fresh screen size — matters for the
-    // single programmatic resize the A/B toggle produces.
-    window.addEventListener('resize', () => {
-      this.app.resize()
-      this.fit()
-    })
+    const generation = ++this.loadGeneration
+    const committed = await commitLatestLoad(
+      Live2DModel.from(modelPath, { autoUpdate: false, autoInteract: false }).then((model) => {
+        try {
+          // Synth owns breath/blink/sway (slice 002 step 4): disable the
+          // library's versions so per-frame setParams isn't fighting them.
+          const internal = model.internalModel as unknown as {
+            breath?: unknown
+            eyeBlink?: unknown
+            on(event: string, fn: () => void): void
+            coreModel: CoreModel
+          }
+          internal.breath = undefined
+          internal.eyeBlink = undefined
+          // Writes land inside Cubism's update pass, above motion and below
+          // physics/pose. The listener is safe before activation: candidates
+          // are not ticked or rendered until the transaction commits.
+          internal.on('afterMotionUpdate', () => this.writeParams())
+          const params = internal.coreModel._model.parameters
+          const inventory = Array.from({ length: params.count }, (_, i) => ({
+            id: params.ids[i],
+            name: params.ids[i],
+            min: params.minimumValues[i],
+            max: params.maximumValues[i],
+            default: params.defaultValues[i]
+          }))
+          return { model, inventory }
+        } catch (error) {
+          model.destroy()
+          throw error
+        }
+      }),
+      () => generation === this.loadGeneration,
+      ({ model, inventory }) => {
+        const previous = this.model
+        this.model = model
+        this.inventory = inventory
+        this.paramIndex = new Map(inventory.map((param, index) => [param.id, index]))
+        this.overrides.clear()
+        this.expression = undefined
+        this.app.stage.addChild(model)
+        previous?.destroy()
+        for (const peer of this.peers) peer.fit()
+      },
+      ({ model }) => model.destroy()
+    )
+    if (!committed) throw new Error('character load was superseded')
   }
 
   parameters(): ParamInfo[] {
