@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
+import { errorMessage } from '../errors'
 import { parseEnvelope, type EventEnvelope } from '../sessions/mapEvent'
 
 const MAX_BODY_BYTES = 1024 * 1024
@@ -16,6 +17,11 @@ export interface ServerDeps {
   emote(args: unknown, sourceKey: string, nowMs: number): unknown | Promise<unknown>
   listCues(): unknown | Promise<unknown>
   status(nowMs: number): unknown | Promise<unknown>
+  listParameters?(): unknown | Promise<unknown>
+  previewExpression?(args: unknown, nowMs: number): unknown | Promise<unknown>
+  saveExpression?(args: unknown): unknown | Promise<unknown>
+  updateExpression?(args: unknown): unknown | Promise<unknown>
+  sessionInstructions?(): string | undefined
 }
 
 interface McpSession {
@@ -60,10 +66,15 @@ async function toolResult(action: () => unknown | Promise<unknown>) {
     return { content: [{ type: 'text' as const, text: text(await action()) }] }
   } catch (error) {
     return {
-      content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
+      content: [{ type: 'text' as const, text: errorMessage(error) }],
       isError: true
     }
   }
+}
+
+function authoring<T>(action: T | undefined): T {
+  if (!action) throw new Error('character authoring is unavailable')
+  return action
 }
 
 export function createServer(deps: ServerDeps): {
@@ -74,9 +85,10 @@ export function createServer(deps: ServerDeps): {
 
   const createMcpSession = async (): Promise<McpSession> => {
     let session: McpSession
+    const invitation = deps.sessionInstructions?.()?.trim()
     const server = new McpServer(
       { name: 'lares', version: '1.0.0' },
-      { instructions: INSTRUCTIONS }
+      { instructions: invitation ? `${INSTRUCTIONS}\n${invitation}` : INSTRUCTIONS }
     )
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
@@ -115,6 +127,52 @@ export function createServer(deps: ServerDeps): {
       'status',
       { description: 'Read the active character and session summary.' },
       () => toolResult(() => deps.status(Date.now()))
+    )
+    server.registerTool(
+      'list_parameters',
+      {
+        description:
+          'List the active character parameters before previewing or authoring an expression.'
+      },
+      () => toolResult(() => authoring(deps.listParameters)())
+    )
+    server.registerTool(
+      'preview_expression',
+      {
+        description:
+          'Preview exact params or an existing cue on the live character. Pass no fields to revert.',
+        inputSchema: {
+          params: z.record(z.string(), z.number()).optional(),
+          cue: z.string().optional()
+        }
+      },
+      (args) => toolResult(() => authoring(deps.previewExpression)(args, Date.now()))
+    )
+    server.registerTool(
+      'save_expression',
+      {
+        description:
+          'After the user accepts a preview, create a new authored expression. Existing names are refused.',
+        inputSchema: {
+          name: z.string(),
+          params: z.record(z.string(), z.number()),
+          affect: z.object({ valence: z.number(), arousal: z.number() })
+        }
+      },
+      (args) => toolResult(() => authoring(deps.saveExpression)(args))
+    )
+    server.registerTool(
+      'update_expression',
+      {
+        description:
+          'Update affect coordinates for any cue, or params for an authored cue. Unknown names are refused.',
+        inputSchema: {
+          name: z.string(),
+          affect: z.object({ valence: z.number(), arousal: z.number() }).optional(),
+          params: z.record(z.string(), z.number()).optional()
+        }
+      },
+      (args) => toolResult(() => authoring(deps.updateExpression)(args))
     )
     await server.connect(transport)
     return session

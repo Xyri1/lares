@@ -3,6 +3,11 @@ import { Application, Renderer, Ticker, UPDATE_PRIORITY } from 'pixi.js'
 import { install } from '@pixi/unsafe-eval'
 import { Live2DModel, MotionPriority } from 'pixi-live2d-display/cubism4'
 import type { IRuntime, ParamInfo } from './iface'
+import {
+  isCubism4MotionManager,
+  LARES_MOTION_GROUP,
+  registerLooseMotion
+} from './looseMotion'
 
 // PixiJS 6 builds shaders with new Function(); this swaps in precompiled
 // versions so the strict CSP (script-src 'self', no unsafe-eval) can stay.
@@ -14,6 +19,7 @@ Live2DModel.registerTicker(Ticker)
 // the normative judging size for all of M2b. autoDensity keeps it crisp on
 // HiDPI. Smaller windows still fit-to-window rather than crop.
 const DEFAULT_LAR_HEIGHT = 400
+const DESTROY_MODEL = { children: true, texture: true, baseTexture: true } as const
 
 // Raw Cubism Core parameter struct, reached through documented internals
 // (001-D2 spike). Parallel arrays indexed 0..count-1.
@@ -31,6 +37,21 @@ interface CoreModel {
   _model: { parameters: CoreParamStruct }
 }
 
+interface RuntimeExpression {
+  params: Record<string, number>
+  weight: number
+  fadeMs: number
+  startedAt: number
+}
+
+interface RuntimeModelState {
+  model: Live2DModel
+  inventory: ParamInfo[]
+  paramIndex: Map<string, number>
+  overrides: Map<string, { value: number; weight: number }>
+  expression?: RuntimeExpression
+}
+
 export class Live2DRuntime implements IRuntime {
   private app: Application
   private model?: Live2DModel
@@ -40,12 +61,7 @@ export class Live2DRuntime implements IRuntime {
   // motions/physics rewrite parameters each tick, so a one-shot write would
   // flash for a single frame. M2's affect engine replaces this bookkeeping.
   private overrides = new Map<string, { value: number; weight: number }>()
-  private expression?: {
-    params: Record<string, number>
-    weight: number
-    fadeMs: number
-    startedAt: number
-  }
+  private expression?: RuntimeExpression
 
   // Pass a canvas to own a new pixi Application; pass an existing runtime to
   // SHARE its Application, context and ticker (002-D2 A/B). Two WebGL contexts
@@ -54,6 +70,14 @@ export class Live2DRuntime implements IRuntime {
   // split the screen into slots.
   private peers: Live2DRuntime[]
   private active = true
+  private displayScale = 1
+  private loadGeneration = 0
+  private prepared?: { id: number; model: Live2DModel; inventory: ParamInfo[] }
+  private committed?: {
+    id: number
+    candidate: Live2DModel
+    previous?: RuntimeModelState
+  }
 
   constructor(target: HTMLCanvasElement | Live2DRuntime) {
     if (target instanceof Live2DRuntime) {
@@ -78,6 +102,10 @@ export class Live2DRuntime implements IRuntime {
       this.peers = [this]
     }
     this.app.ticker.add(this.tick, this, UPDATE_PRIORITY.LOW)
+    window.addEventListener('resize', () => {
+      this.app.resize()
+      this.fit()
+    })
   }
 
   /** Show/hide this stage and re-split the screen between active stages. */
@@ -85,6 +113,11 @@ export class Live2DRuntime implements IRuntime {
     this.active = on
     if (this.model) this.model.visible = on
     for (const p of this.peers) p.fit()
+  }
+
+  setDisplayScale(scale: number): void {
+    this.displayScale = Number.isFinite(scale) ? Math.min(1.5, Math.max(0.5, scale)) : 1
+    this.fit()
   }
 
   // Measured from processed ticks — pixi's Ticker.FPS reports raw rAF cadence
@@ -108,45 +141,139 @@ export class Live2DRuntime implements IRuntime {
   }
 
   async load(modelPath: string): Promise<void> {
-    this.model = await Live2DModel.from(modelPath, { autoUpdate: false, autoInteract: false })
-    // Synth owns breath/blink/sway (slice 002 step 4): disable the library's
-    // autobreath/autoblink so per-frame setParams isn't fighting them. Both
-    // fields are optional-chained in the library's update path.
-    const internal = this.model.internalModel as unknown as {
-      breath?: unknown
-      eyeBlink?: unknown
-      on(event: string, fn: () => void): void
+    await this.prepareLoad(0, modelPath)
+    if (!this.commitLoad(0)) throw new Error('character load commit failed')
+    this.finalizeLoad(0)
+  }
+
+  async prepareLoad(id: number, modelPath: string): Promise<ParamInfo[]> {
+    const generation = ++this.loadGeneration
+    if (this.prepared) {
+      this.destroy(this.prepared.model)
+      this.prepared = undefined
     }
-    internal.breath = undefined
-    internal.eyeBlink = undefined
-    // Our parameter writes have to land INSIDE the model's own update pass, not
-    // from the pixi ticker around it. Cubism4InternalModel.update() runs at
-    // render time as: motion → [afterMotionUpdate] → physics → pose →
-    // coreModel.update() → draw → loadParameters(). The auto-started Idle
-    // motion group rewrites every parameter it owns at the top of that pass, so
-    // anything written from the ticker (which runs after render) was overwritten
-    // before it was ever drawn. Writing on afterMotionUpdate puts us exactly
-    // where Cubism expects an expression layer: on top of the motion, under
-    // physics and pose.
-    internal.on('afterMotionUpdate', () => this.writeParams())
-    this.app.stage.addChild(this.model)
-    const params = this.core()._model.parameters
-    this.inventory = Array.from({ length: params.count }, (_, i) => ({
-      id: params.ids[i],
-      name: params.ids[i], // display names live in .cdi3.json; the id is enough for M1a
-      min: params.minimumValues[i],
-      max: params.maximumValues[i],
-      default: params.defaultValues[i]
-    }))
-    this.paramIndex = new Map(this.inventory.map((p, i) => [p.id, i]))
-    for (const p of this.peers) p.fit() // a joining stage re-splits the screen
-    // app.resize() forces pixi's measurement NOW (its own listener defers to
-    // the next rAF) so fit() reads the fresh screen size — matters for the
-    // single programmatic resize the A/B toggle produces.
-    window.addEventListener('resize', () => {
-      this.app.resize()
-      this.fit()
-    })
+    const model = await Live2DModel.from(modelPath, { autoUpdate: false, autoInteract: false })
+    try {
+      if (generation !== this.loadGeneration) throw new Error('character load was superseded')
+      const internal = model.internalModel as unknown as {
+        breath?: unknown
+        eyeBlink?: unknown
+        on(event: string, fn: () => void): void
+        coreModel: CoreModel
+      }
+      internal.breath = undefined
+      internal.eyeBlink = undefined
+      internal.on('afterMotionUpdate', () => this.writeParams())
+      const params = internal.coreModel._model.parameters
+      const inventory = Array.from({ length: params.count }, (_, i) => ({
+        id: params.ids[i],
+        name: params.ids[i],
+        min: params.minimumValues[i],
+        max: params.maximumValues[i],
+        default: params.defaultValues[i]
+      }))
+      if (
+        inventory.some(
+          (param) =>
+            !param.id ||
+            !Number.isFinite(param.min) ||
+            !Number.isFinite(param.max) ||
+            param.min > param.max ||
+            !Number.isFinite(param.default)
+        )
+      ) {
+        throw new Error('renderer returned an invalid body inventory')
+      }
+      this.prepared = { id, model, inventory }
+      return inventory.map((param) => ({ ...param }))
+    } catch (error) {
+      this.destroy(model)
+      throw error
+    }
+  }
+
+  commitLoad(id: number): boolean {
+    if (this.committed || this.prepared?.id !== id) return false
+    const { model, inventory } = this.prepared
+    this.prepared = undefined
+    const previous = this.model
+      ? {
+          model: this.model,
+          inventory: this.inventory,
+          paramIndex: this.paramIndex,
+          overrides: this.overrides,
+          expression: this.expression
+        }
+      : undefined
+    this.model = model
+    this.inventory = inventory
+    this.paramIndex = new Map(inventory.map((param, index) => [param.id, index]))
+    this.overrides = new Map()
+    this.expression = undefined
+    try {
+      for (const peer of this.peers) peer.fit()
+      this.app.stage.addChild(model)
+      this.committed = { id, candidate: model, previous }
+      if (previous) previous.model.visible = false
+      return true
+    } catch {
+      this.restore(previous)
+      this.destroy(model)
+      return false
+    }
+  }
+
+  rollbackLoad(id: number): boolean {
+    if (this.committed?.id !== id) return false
+    const { candidate, previous } = this.committed
+    this.committed = undefined
+    this.restore(previous)
+    this.destroy(candidate)
+    try {
+      for (const peer of this.peers) peer.fit()
+    } catch {
+      // The prior model is already restored; layout retry occurs on resize.
+    }
+    return true
+  }
+
+  finalizeLoad(id: number): void {
+    if (this.committed?.id !== id) return
+    const previous = this.committed.previous
+    this.committed = undefined
+    if (previous) this.destroy(previous.model)
+  }
+
+  cancelLoad(id: number): boolean {
+    if (this.prepared?.id !== id) return false
+    this.destroy(this.prepared.model)
+    this.prepared = undefined
+    return true
+  }
+
+  private restore(previous?: RuntimeModelState): void {
+    if (!previous) {
+      this.model = undefined
+      this.inventory = []
+      this.paramIndex = new Map()
+      this.overrides = new Map()
+      this.expression = undefined
+      return
+    }
+    this.model = previous.model
+    this.inventory = previous.inventory
+    this.paramIndex = previous.paramIndex
+    this.overrides = previous.overrides
+    this.expression = previous.expression
+    previous.model.visible = this.active
+  }
+
+  private destroy(model: Live2DModel): void {
+    try {
+      model.destroy(DESTROY_MODEL)
+    } catch {
+      // Resource disposal is finalization and must not break transaction state.
+    }
   }
 
   parameters(): ParamInfo[] {
@@ -159,6 +286,17 @@ export class Live2DRuntime implements IRuntime {
       if (i === undefined) continue // unknown ids dropped, values clamped below (P7)
       const p = this.inventory[i]
       this.overrides.set(id, { value: clamp(value, p.min, p.max), weight })
+    }
+  }
+
+  releaseParams(ids: readonly string[]): void {
+    if (!this.model) return
+    const core = this.core()
+    for (const id of ids) {
+      const index = this.paramIndex.get(id)
+      if (index === undefined) continue
+      this.overrides.delete(id)
+      core.setParameterValueByIndex(index, this.inventory[index].default, 1)
     }
   }
 
@@ -186,6 +324,18 @@ export class Live2DRuntime implements IRuntime {
   }
 
   playMotion(group: string, index?: number, priority = MotionPriority.NORMAL): void {
+    if (/^lares:\/\//i.test(group)) {
+      const manager = this.model?.internalModel.motionManager as unknown
+      if (!isCubism4MotionManager(manager)) {
+        console.warn('[lares] loose motion unsupported by this runtime')
+        return
+      }
+      const motionIndex = registerLooseMotion(manager, group)
+      void manager
+        .startMotion(LARES_MOTION_GROUP, motionIndex, priority)
+        .catch((error: unknown) => console.warn('[lares] loose motion failed', error))
+      return
+    }
     void this.model?.motion(group, index, priority)
   }
 
@@ -215,7 +365,8 @@ export class Live2DRuntime implements IRuntime {
   // whatever fit() last did to it.
   larSize(): { width: number; height: number } {
     const aspect = this.model ? this.model.width / this.model.height : 1
-    return { width: Math.round(DEFAULT_LAR_HEIGHT * aspect), height: DEFAULT_LAR_HEIGHT }
+    const height = DEFAULT_LAR_HEIGHT * this.displayScale
+    return { width: Math.round(height * aspect), height }
   }
 
   private core(): CoreModel {
@@ -265,7 +416,7 @@ export class Live2DRuntime implements IRuntime {
     this.model.scale.set(1)
     const scale = Math.min(
       slotWidth / this.model.width,
-      Math.min(height, DEFAULT_LAR_HEIGHT) / this.model.height
+      Math.min(height, DEFAULT_LAR_HEIGHT * this.displayScale) / this.model.height
     )
     this.model.scale.set(scale)
     this.model.x = slotX + (slotWidth - this.model.width) / 2

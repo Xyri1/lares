@@ -6,6 +6,12 @@ import { driveTick, frameToLine, replayHistory } from './synthReplay'
 import { createTraceBuffer, pushEngine, resetBuffer, type TraceBuffer } from './traceBuffer'
 
 export type StageId = 'A' | 'B'
+export type CueMotions = Readonly<Record<string, string>>
+
+export interface CharacterChangeTransaction {
+  rollback(): void
+  finalize(): void
+}
 
 /** How long a panel cue preview holds before it fades back out. */
 const PREVIEW_MS = 3000
@@ -33,6 +39,8 @@ export interface AffectDriver {
    * affect layer has taken so the model's own idle motion owns them again.
    * Leaves the trace buffer alone — the overlay is history, not state. */
   reset(): void
+  /** Tentatively refresh model defaults; finalize stops package-specific playback. */
+  characterChanged(): CharacterChangeTransaction
 }
 
 /** What a stage's synth reads, plus the expression stack the compositor
@@ -54,6 +62,59 @@ interface StageState {
   replay: { synth: Synth; preset: SynthPreset; seed: number; lines: string[] } | null
   latest: Record<string, number> | null
   trace: TraceBuffer
+  motionCue: string | null
+}
+
+/** Preview values win only for their own knobs; synth keeps driving the rest. */
+export function withHeldPreview(
+  frame: Readonly<Record<string, number>>,
+  preview: Readonly<Record<string, number>> | null
+): Record<string, number> {
+  return preview === null ? { ...frame } : { ...frame, ...preview }
+}
+
+export function replaceHeldPreview(
+  runtime: Pick<IRuntime, 'releaseParams'>,
+  driven: ReadonlySet<string>,
+  previous: Readonly<Record<string, number>> | null,
+  next: Readonly<Record<string, number>> | null
+): Record<string, number> | null {
+  const nextIds = new Set(Object.keys(next ?? {}))
+  const released = Object.keys(previous ?? {}).filter(
+    (id) => !nextIds.has(id) && !driven.has(id)
+  )
+  if (released.length) runtime.releaseParams(released)
+  return next === null ? null : { ...next }
+}
+
+/** Returns a motion only when the resolved front cue changes. */
+export function nextMotionCue(
+  previous: string | null,
+  stack: readonly StackEntry[],
+  motions: CueMotions,
+  tMs: number
+): { next: string | null; play: string | null } {
+  let next: string | null = null
+  for (const entry of stack) {
+    if (typeof entry.expiryMs === 'number' && entry.expiryMs <= tMs) continue
+    if (typeof entry.cueOrFreeform === 'string' && motions[entry.cueOrFreeform] !== undefined) {
+      next = `${entry.cueOrFreeform}:${String(entry.expiryMs)}`
+      return { next, play: next !== previous ? motions[entry.cueOrFreeform] : null }
+    }
+    break
+  }
+  return { next, play: null }
+}
+
+export function playMotionRef(runtime: Pick<IRuntime, 'playMotion'>, ref: string): void {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(ref)) {
+    runtime.playMotion(ref)
+    return
+  }
+  const [group, rawIndex] = ref.split(':', 2)
+  if (!group) return
+  const index = rawIndex === undefined ? undefined : Number(rawIndex)
+  runtime.playMotion(group, Number.isInteger(index) && index! >= 0 ? index : undefined)
 }
 
 // Impure shell around the pure synth: owns the feed subscription, the
@@ -71,7 +132,8 @@ interface StageState {
 export function createAffectDriver(
   runtime: IRuntime,
   preset: SynthPreset,
-  cues: CueParams
+  cues: CueParams,
+  motions: CueMotions = {}
 ): AffectDriver {
   // Rest-point feed so a Lar idles before any brain tick arrives.
   const restFeed = (): StageFeed => ({ E: { valence: 0.1, arousal: 0.25 } })
@@ -86,7 +148,8 @@ export function createAffectDriver(
     fade: initialFade(),
     replay: null,
     latest: null,
-    trace: createTraceBuffer()
+    trace: createTraceBuffer(),
+    motionCue: null
   })
 
   const stages: Partial<Record<StageId, StageState>> = { A: makeStage(runtime) }
@@ -118,11 +181,54 @@ export function createAffectDriver(
   // runs — the replay's composed output must stay a pure function of the feed
   // and tick time (002-D3), and a click is neither.
   let preview: StackEntry | null = null
+  let authoringPreview: Record<string, number> | null = null
 
-  window.lares.onAffectUpdate((f) => {
+  window.lares.onAuthoringPreview((value) => {
+    if ('params' in value) {
+      authoringPreview = replaceHeldPreview(
+        stages.A!.runtime,
+        stages.A!.driven,
+        authoringPreview,
+        value.params
+      )
+      return
+    }
+    authoringPreview = replaceHeldPreview(
+      stages.A!.runtime,
+      stages.A!.driven,
+      authoringPreview,
+      null
+    )
+    const params = cues[value.cue]
+    if (params) {
+      authoringPreview = replaceHeldPreview(
+        stages.A!.runtime,
+        stages.A!.driven,
+        authoringPreview,
+        params
+      )
+      return
+    }
+    const motion = motions[value.cue]
+    if (motion) playMotionRef(stages.A!.runtime, motion)
+  })
+  window.lares.onAuthoringRevert(() => {
+    authoringPreview = replaceHeldPreview(
+      stages.A!.runtime,
+      stages.A!.driven,
+      authoringPreview,
+      null
+    )
+  })
+
+  let tentativeFeeds: AffectFeed[] | null = null
+  const processFeed = (f: AffectFeed): void => {
     const st = stages[f.stageId as StageId]
     if (!st) return
     st.feed = f
+    const motion = nextMotionCue(st.motionCue, f.expressionStack ?? [], motions, f.tick * 100)
+    st.motionCue = motion.next
+    if (motion.play) playMotionRef(st.runtime, motion.play)
     if (!st.replay) return
     pushEngine(st.trace, f)
     for (const frame of driveTick(st.replay.synth, f, f.tick, composer(st))) {
@@ -130,6 +236,14 @@ export function createAffectDriver(
       st.trace.synth.push(frame)
       st.latest = frame.params
     }
+  }
+
+  window.lares.onAffectUpdate((f) => {
+    if (tentativeFeeds !== null && f.stageId === 'A') {
+      tentativeFeeds.push(f)
+      return
+    }
+    processFeed(f)
   })
 
   // Seek lands here as one batch covering scenario time 0..T for every active
@@ -159,19 +273,29 @@ export function createAffectDriver(
     }
   })
 
-  window.lares.onScenarioEnd(() => {
+  const clearPlayback = (writeTrace: boolean): void => {
     const active = replaying()
     if (active.length === 0) return
     const linesByStage: Record<string, string[]> = {}
     for (const [id, st] of active) {
-      console.log(`[lares] replay done (stage ${id}): ${st.replay!.lines.length} synth frames traced`)
-      linesByStage[id] = st.replay!.lines
+      if (writeTrace) {
+        console.log(`[lares] replay done (stage ${id}): ${st.replay!.lines.length} synth frames traced`)
+        linesByStage[id] = st.replay!.lines
+      }
       st.replay = null
       st.latest = null
       st.live = createSynth(idlePreset, Math.random) // fresh idle state after replay
       st.fade = initialFade()
     }
-    window.lares.sendSynthTrace(linesByStage)
+    if (writeTrace) window.lares.sendSynthTrace(linesByStage)
+  }
+
+  window.lares.onScenarioEnd(() => {
+    clearPlayback(true)
+  })
+
+  window.lares.onScenarioStopped(() => {
+    clearPlayback(false)
   })
 
   // IRuntime.setParams is a sticky merge: an id stops being written but keeps
@@ -181,15 +305,34 @@ export function createAffectDriver(
   // so a released param could stay pinned mid-fade. Every id the affect layer
   // has ever driven is therefore refilled with its resting value when the
   // frame omits it. Presentation only: the trace keeps the composed frame.
-  const write = (st: StageState, frame: Record<string, number>): void => {
+  const write = (
+    st: StageState,
+    frame: Record<string, number>,
+    transient: ReadonlySet<string> = new Set()
+  ): void => {
     let out = frame
     for (const id of st.driven) {
       if (id in out) continue
       if (out === frame) out = { ...frame }
       out[id] = st.defaults[id] ?? 0
     }
-    for (const id of Object.keys(out)) st.driven.add(id)
+    for (const id of Object.keys(out)) if (!transient.has(id)) st.driven.add(id)
     st.runtime.setParams(out)
+  }
+
+  const withAuthoring = (
+    id: StageId,
+    st: StageState,
+    frame: Record<string, number>
+  ): void => {
+    if (id !== 'A' || authoringPreview === null) {
+      write(st, frame)
+      return
+    }
+    const transient = new Set(
+      Object.keys(authoringPreview).filter((param) => !(param in frame))
+    )
+    write(st, withHeldPreview(frame, authoringPreview), transient)
   }
 
   const present = (): void => {
@@ -198,10 +341,11 @@ export function createAffectDriver(
       if (!st) continue
       if (st.replay) {
         // Replay frames were composed on tick arrival, on the scenario clock.
-        if (st.latest) write(st, st.latest)
+        if (st.latest) withAuthoring(id, st, st.latest)
       } else {
         const stack = previewed(id, st.feed.expressionStack ?? [])
-        write(st, compose(st, st.live.computeFrame(st.feed, now), stack, now))
+        const frame = compose(st, st.live.computeFrame(st.feed, now), stack, now)
+        withAuthoring(id, st, frame)
       }
     }
     requestAnimationFrame(present)
@@ -209,6 +353,34 @@ export function createAffectDriver(
 
   const previewed = (id: StageId, stack: readonly StackEntry[]): readonly StackEntry[] =>
     preview && id === 'A' ? [preview, ...stack] : stack
+
+  const reset = (refreshDefaults = false, stopMain = true): void => {
+    if (stopMain) {
+      void window.lares.stopScenario().catch((error) => {
+        console.error('[lares] scenario:stop failed', error)
+      })
+    }
+    clearPlayback(false)
+    preview = null
+    authoringPreview = replaceHeldPreview(
+      stages.A!.runtime,
+      stages.A!.driven,
+      authoringPreview,
+      null
+    )
+    for (const st of Object.values(stages)) {
+      if (!st) continue
+      if (refreshDefaults) {
+        st.defaults = Object.fromEntries(st.runtime.parameters().map((p) => [p.id, p.default]))
+      }
+      st.latest = null
+      st.feed = restFeed()
+      st.fade = initialFade()
+      st.driven.clear()
+      st.motionCue = null
+      st.runtime.resetParams()
+    }
+  }
 
   requestAnimationFrame(present)
 
@@ -239,6 +411,12 @@ export function createAffectDriver(
         resetBuffer(st.trace)
       }
       preview = null
+      authoringPreview = replaceHeldPreview(
+        stages.A!.runtime,
+        stages.A!.driven,
+        authoringPreview,
+        null
+      )
       void window.lares.playScenario(name, seed, speed, presets).then((res) => {
         if (!res.ok) {
           console.error(`[lares] scenario:play refused: ${res.error}`)
@@ -271,15 +449,56 @@ export function createAffectDriver(
       if (!stages[id]) stages[id] = makeStage(rt)
     },
     reset(): void {
-      void window.lares.pauseScenario() // no-op (and a refused promise) if idle
-      preview = null
-      for (const st of Object.values(stages)) {
-        if (!st) continue
-        st.latest = null // a paused replay must stop re-driving on every rAF
+      reset()
+    },
+    characterChanged(): CharacterChangeTransaction {
+      const st = stages.A!
+      const bufferedFeeds: AffectFeed[] = []
+      const before = {
+        preview,
+        authoringPreview,
+        defaults: st.defaults,
+        driven: st.driven,
+        feed: st.feed,
+        fade: st.fade,
+        latest: st.latest,
+        motionCue: st.motionCue
+      }
+      const rollback = (): void => {
+        if (tentativeFeeds !== bufferedFeeds) return
+        preview = before.preview
+        authoringPreview = before.authoringPreview
+        st.defaults = before.defaults
+        st.driven = before.driven
+        st.feed = before.feed
+        st.fade = before.fade
+        st.latest = before.latest
+        st.motionCue = before.motionCue
+        tentativeFeeds = null
+        for (const feed of bufferedFeeds) processFeed(feed)
+      }
+      try {
+        tentativeFeeds = bufferedFeeds
+        preview = null
+        authoringPreview = null
+        st.defaults = Object.fromEntries(st.runtime.parameters().map((p) => [p.id, p.default]))
+        st.latest = null
         st.feed = restFeed()
         st.fade = initialFade()
-        st.driven.clear()
+        st.driven = new Set()
+        st.motionCue = null
         st.runtime.resetParams()
+        return {
+          rollback,
+          finalize: () => {
+            if (tentativeFeeds !== bufferedFeeds) return
+            tentativeFeeds = null
+            reset(true, false)
+          }
+        }
+      } catch (error) {
+        rollback()
+        throw error
       }
     },
     preview(cue: string, durationMs = PREVIEW_MS): void {

@@ -2,6 +2,7 @@ import presetJson from '../../../../presets/default.json'
 import { Live2DRuntime } from '../runtime/live2d'
 import type { SynthPreset } from '../synth/synth'
 import { createAffectDriver } from './affect'
+import { createCharacterLoadHandler } from './characterSwitch'
 import { wireOverlayPointer } from './overlayPointer'
 import { mountPanel } from './panel'
 
@@ -33,6 +34,13 @@ async function boot(): Promise<void> {
 
   const canvas = document.getElementById('stage') as HTMLCanvasElement
   const runtime = new Live2DRuntime(canvas)
+  if (OVERLAY) {
+    try {
+      runtime.setDisplayScale(await window.lares.getOverlayScale())
+    } catch (error) {
+      console.error('[lares] could not restore overlay scale', error)
+    }
+  }
   try {
     await runtime.load(character.live2d.model)
   } catch (err) {
@@ -47,14 +55,51 @@ async function boot(): Promise<void> {
   // Cue name → Live2D param set. The feed carries cue NAMES only (root §8);
   // resolving them to parameters is body-side knowledge and stops here (P6).
   const cues = await window.lares.listCues()
-  const cueParams = Object.fromEntries(cues.map((c) => [c.name, c.params]))
+  const cueParams = Object.fromEntries(
+    cues.flatMap((c) => (c.params === undefined ? [] : [[c.name, c.params]]))
+  )
+  const cueMotions = Object.fromEntries(
+    cues.flatMap((c) => (c.motion === undefined ? [] : [[c.name, c.motion]]))
+  )
 
-  const driver = createAffectDriver(runtime, presetJson as SynthPreset, cueParams)
+  const driver = createAffectDriver(runtime, presetJson as SynthPreset, cueParams, cueMotions)
+  let currentCharacter = character
+  if (OVERLAY) {
+    const characterLoads = createCharacterLoadHandler(
+      runtime,
+      driver,
+      cueParams,
+      cueMotions,
+      (result) => window.lares.reportCharacterPrepared(result as CharacterPrepareResult),
+      (result) => window.lares.reportCharacterCommitted(result as CharacterCommitResult),
+      (request) => {
+        currentCharacter = request.character
+        void window.lares.fitToModel(runtime.larSize()).catch((error) => {
+          console.error('[lares] fit after character switch failed', error)
+        })
+      },
+      window.lares.getCharacterDecision
+    )
+    window.lares.onCharacterPrepare(characterLoads.prepare)
+    window.lares.onCharacterCommit(characterLoads.commit)
+    window.lares.onCharacterRollback(characterLoads.rollback)
+    window.lares.onCharacterFinalize(characterLoads.finalize)
+    window.lares.onCharacterCancel(characterLoads.cancel)
+  }
 
   if (OVERLAY) {
+    const fitOverlay = (): void => {
+      void window.lares.fitToModel(runtime.larSize()).catch((error) => {
+        console.error('[lares] could not fit overlay', error)
+      })
+    }
+    window.lares.onOverlayScale((scale) => {
+      runtime.setDisplayScale(scale)
+      fitOverlay()
+    })
     // Tight fit last, once the model can report its own footprint (003-D5) —
     // main owns the padding and where she lands.
-    void window.lares.fitToModel(runtime.larSize())
+    fitOverlay()
     wireOverlayPointer(runtime)
   }
 
@@ -72,7 +117,7 @@ async function boot(): Promise<void> {
       if (!on) return Promise.resolve(stageB?.then((rb) => rb.setActive(false)) ?? undefined)
       stageB ??= (async () => {
         const rb = new Live2DRuntime(runtime)
-        await rb.load(character.live2d.model)
+        await rb.load(currentCharacter.live2d.model)
         window.__runtimeB = rb
         driver.addStage('B', rb)
         return rb

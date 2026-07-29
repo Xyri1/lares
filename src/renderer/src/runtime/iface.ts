@@ -10,13 +10,22 @@ export interface ParamInfo {
 
 export interface IRuntime {
   load(modelPath: string): Promise<void>
+  prepareLoad(id: number, modelPath: string): Promise<ParamInfo[]>
+  commitLoad(id: number): boolean
+  rollbackLoad(id: number): boolean
+  /** One-way finalization. Matching callers already own the new body; cleanup is best effort. */
+  finalizeLoad(id: number): void
+  cancelLoad(id: number): boolean
   parameters(): ParamInfo[]
   setParams(batch: Record<string, number>, weight?: number): void
+  /** Release selected sticky overrides back to motion/physics ownership. */
+  releaseParams(ids: readonly string[]): void
   /** Inverse of setParams: drop every override and any applied expression and
    * put all parameters back at their model defaults, so the model's own
    * motion/physics own them again. Debug affordance (dev-panel reset). */
   resetParams(): void
   applyExpression(ref: string | Record<string, number>, weight: number, fadeMs: number): void
+  /** Indexed group motion, or a package-relative `lares://` loose motion URL. */
   playMotion(group: string, index?: number, priority?: number): void
   hitTest(x: number, y: number): string[]
   /** Alpha (0..255) of the rendered pixel at CSS position (x, y). The overlay

@@ -1,11 +1,7 @@
+Lares
+Copyright 2026 Cyril Tsui
+
 THIRD-PARTY NOTICES
-
-This content uses sample data owned and copyrighted by Live2D Inc. The
-sample data are utilized in accordance with terms and conditions set by
-Live2D Inc. This content itself is created at the author's sole
-discretion.
-
---------------------------------------------------------------------------
 
 Live2D Cubism Core
 
@@ -33,18 +29,5 @@ The Framework reaches this application as part of its Live2D runtime
 dependency. Regardless of that package's own license, the Framework code
 within it remains under Live2D's terms and is not relicensed here.
 
---------------------------------------------------------------------------
-
-Hiyori (Live2D Original Character)
-
-This application uses the "Hiyori" character sample, owned and copyrighted
-by Live2D Inc., licensed under the Live2D Free Material License Agreement:
-https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html
-
-Per Hiyori's per-character supplementary terms, no changes of any kind to
-the design of this character are permitted.
-
-Hiyori's runtime assets are NOT distributed in this repository. They are
-fetched at setup time from Live2D's official CubismWebSamples repository
-by scripts/fetch-assets.mjs. See sdd/clearances/M0-clearances.md (D19) for
-the clearance record.
+The selected bundled character's notice is packaged beside that character
+as default-character/NOTICE.

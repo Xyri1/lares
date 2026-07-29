@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { claudeCodeCommand } from './adapters/claude-code/writer'
-import { writeCodexShim } from './adapters/codex/shim'
+import { writeForwarderShim } from './adapters/shim'
 import { Nerves } from './nerves'
 import { createServer, type ServerDeps } from './server/server'
 
@@ -165,7 +164,7 @@ describe('embedded-Node forwarder', () => {
 
     const profile = join(directory, 'Jane Doe')
     const binDir = join(profile, '.lares', 'bin')
-    await writeCodexShim({
+    await writeForwarderShim({
       binDir,
       appPath: electron,
       forwarderPath: script,
@@ -176,7 +175,7 @@ describe('embedded-Node forwarder', () => {
       JSON.stringify({ version: 1, port, pid: process.pid })
     )
     const hooks = JSON.parse(
-      await readFile(resolve('plugins/lares/hooks/hooks.json'), 'utf8')
+      await readFile(resolve('plugins/codex/hooks/hooks.json'), 'utf8')
     )
     const handler = hooks.hooks.SessionStart[0].hooks[0]
     const command = process.platform === 'win32' ? handler.commandWindows : handler.command
@@ -209,13 +208,21 @@ describe('embedded-Node forwarder', () => {
     const port = await value.start(0)
 
     const profile = join(directory, 'Jane Doe')
-    await mkdir(join(profile, '.lares'), { recursive: true })
+    await writeForwarderShim({
+      binDir: join(profile, '.lares', 'bin'),
+      appPath: electron,
+      forwarderPath: script,
+      platform: process.platform
+    })
     await writeFile(
       join(profile, '.lares', 'runtime.json'),
       JSON.stringify({ version: 1, port, pid: process.pid })
     )
 
-    const command = claudeCodeCommand(electron, script, process.platform)
+    const hooks = JSON.parse(
+      await readFile(resolve('plugins/claude-code/hooks/hooks.json'), 'utf8')
+    )
+    const command = hooks.hooks.SessionStart[0].hooks[0].command
     // Claude Code uses Git Bash on Windows — never System32's WSL bash.
     const shell =
       process.platform === 'win32'

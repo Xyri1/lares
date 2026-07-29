@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -35,6 +35,27 @@ describe('adapter:remove', () => {
       join(home, '.claude.json'),
       JSON.stringify({ mcpServers: { lares: { type: 'http', url: 'old' }, user: {} } })
     )
+    const codexDirectory = join(home, '.codex')
+    await mkdir(codexDirectory)
+    await writeFile(
+      join(codexDirectory, 'hooks.json'),
+      JSON.stringify({
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                { type: 'command', command: '/old/bin/lares-forwarder' },
+                { type: 'command', command: 'keep-me' }
+              ]
+            }
+          ]
+        }
+      })
+    )
+    const binDirectory = join(home, '.lares', 'bin')
+    await mkdir(binDirectory, { recursive: true })
+    await writeFile(join(binDirectory, 'lares-forwarder'), 'old')
+    await writeFile(join(binDirectory, 'lares-forwarder.cmd'), 'old')
 
     const result = await new Promise<{ code: number | null; stdout: string }>((done, reject) => {
       const child = spawn(
@@ -53,11 +74,16 @@ describe('adapter:remove', () => {
 
     expect(result).toMatchObject({ code: 0 })
     expect(result.stdout).toContain('hooks=updated, mcp=updated')
+    expect(result.stdout).toContain('Codex hooks removal: hooks=updated')
     expect(JSON.parse(await readFile(join(claudeDirectory, 'settings.json'), 'utf8'))).toEqual({
       hooks: { Stop: [{ hooks: [{ type: 'command', command: 'keep-me' }] }] }
     })
     expect(JSON.parse(await readFile(join(home, '.claude.json'), 'utf8'))).toEqual({
       mcpServers: { user: {} }
     })
+    expect(JSON.parse(await readFile(join(codexDirectory, 'hooks.json'), 'utf8'))).toEqual({
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'keep-me' }] }] }
+    })
+    expect(await readdir(binDirectory)).toEqual([])
   })
 })

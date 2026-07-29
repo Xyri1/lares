@@ -1,0 +1,95 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
+          }
+        ]
+      }
+    ]
+  }
+}

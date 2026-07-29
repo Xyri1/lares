@@ -6,6 +6,12 @@ out
 *.log*
 
 AGENTS.local.md
+.agents/
+.claude/
+.vscode/
+.mcp.json
+skills-lock.json
+.skill-archive/
 
 vendor/
 characters/*/runtime/

@@ -1,6 +1,6 @@
 # SPEC — Lares (project scope)
 
-**Artifact:** SPEC · **Project:** Lares · **Status:** Living · **Date:** 2026-07-24
+**Artifact:** SPEC · **Project:** Lares · **Status:** Living · **Date:** 2026-07-29
 
 The technical contract for v1. Numeric values marked *(default)* are tunable constants in one config module; changing them is not a contract change. Changing schemas, interfaces, state machines, or scenarios is. Unit-level detail lives in slice SPECs (`sdd/slices/NNN-name/`, attached to ROADMAP milestones); slice SPECs refine this document and never contradict it.
 
@@ -12,6 +12,16 @@ One Electron app, split brain/body (D31). **Main process = the brain** (daemon):
 
 Module map (brain): `server/` (routes, MCP), `sessions/`, `affect/` (pure, zero Electron imports, vitest-covered), `characters/`, `scenario/`, `config/`. Body: `stage/` (window, feed subscription), `synth/` (feed → per-frame parameter synthesis), `runtime/` (pixi-live2d-display adapter).
 
+**Installed shell (M5a).** Lares is tray-only: no settings window and
+no Dock/taskbar presence. The tray owns character import/selection,
+scale (50/75/100/125/150%, 100% default), DND, launch-at-login,
+position reset, calibration, update, uninstall, and quit. Settings
+persist under Electron `userData`; DND hides only the body while the
+brain, sessions, affect, mood, ingress, and cached body inventory keep
+running. Reset Position uses the bottom-right of the current primary
+display. Launch-at-login and DND default off; automatic update checks
+default on.
+
 ## 2. Ingress
 
 **Discovery file** `~/.lares/runtime.json`, written on listen, deleted on clean exit: `{ version, port, pid }`. No auth (D27): the server binds `127.0.0.1` only; port 21473 *(default)*, override in config. Port taken ⇒ fail loudly (no server, no discovery file, visible error) — never scan for a free port: registered MCP URLs bake the port in, so a moved port is a half-broken daemon pretending to be healthy (004-D4). Browser-origin defense instead of tokens: any request carrying an `Origin` header is rejected, and POST routes require `Content-Type: application/json` (forces browsers into a failing CORS preflight). Local processes are outside the threat model — anything running as the user could have read a token file anyway.
@@ -22,9 +32,9 @@ Module map (brain): `server/` (routes, MCP), `sessions/`, `affect/` (pure, zero 
 - `emote(cue?, params?, intensity?, duration_s?, queue?, label?)` — the one expression tool, both branches (004-D2): exactly one of `cue` | `params`, both or neither ⇒ tool error. Cue branch: package cue, affect nudge `(Δv, Δa) · intensity` (§4). Params branch (freeform `{paramId: value}`): drives knobs directly, nudges nothing; `intensity` ignored-with-warning, `label` names the composition for `status()` and the authoring bridge. `queue` defaults true; false clears pending non-preempting expressions and plays this expression next.
 - `list_cues()` → cues with affect coordinates and source (bundled | authored | raw)
 - `status()` → active character, session summary, protocol version
-- Authoring (D25 loop; ships M4, 004-D1): `list_parameters()` (id, name, min, max, default — from the active body's reported inventory, §8), `preview_expression(params)` (renders on the live Lar, auto-reverts after 5s), `save_expression(name, params)` (writes pending; activates only after user acceptance in-app).
+- Authoring (D25 loop; ships M4 — slice 007): `list_parameters()` (id, display name, min, max, default — from the active body's reported inventory, §8), `preview_expression(params | cue)` (exact render via the §8 `authoring:preview` channel, bypassing affect blending and idle drift; holds until replaced or explicitly reverted, 60s *(default)* timeout; a cue reference previews an existing expression or plays its motion), `save_expression(name, params, affect)` (create: writes `authored/<name>.exp3.json` plus the manifest cue entry and affect coords after conversational user acceptance; refuses any existing name), `update_expression(name, affect?, params?)` (update: affect coords for any cue, sliders for authored cues only; refuses unknown names). Calibration is pull-only — instructions never mention authoring (D32).
 
-**Caps (all server-enforced, P7):** intensity ∈ [0,1]; duration ≤ 30s, default 6s; queue depth ≤ 4 (append rejected beyond, `429`-equivalent tool error); freeform ≤ 24 params, each clamped to its range in the body-reported inventory (§8), unknown paramIds dropped; emote rate ≥ 2s spacing *(default)* per source — excess is coalesced, not rejected: the affect nudge still applies (saturation-scaled, §4), no new expression is enqueued, and the tool response says so (004-D6); `save_expression` ≤ 20 pending.
+**Caps (all server-enforced, P7):** intensity ∈ [0,1]; duration ≤ 30s, default 6s; queue depth ≤ 4 (append rejected beyond, `429`-equivalent tool error); freeform ≤ 24 params, each clamped to its range in the body-reported inventory (§8), unknown paramIds dropped; emote rate ≥ 2s spacing *(default)* per source — excess is coalesced, not rejected: the affect nudge still applies (saturation-scaled, §4), no new expression is enqueued, and the tool response says so (004-D6); authored expressions ≤ 50 per package *(default)*.
 
 ## 3. Sessions
 
@@ -132,39 +142,30 @@ uses package-relative asset paths:
 }
 ```
 
-Identity and `expressions` are renderer-neutral (P5). Exactly one of
-`expression`, `motion`, or `params` appears in each Live2D cue target.
-Expressions and motions use direct package-relative paths.
-`performance` is the existing synth-preset shape under character
-ownership.
+Identity and `expressions` are renderer-neutral (P5). The manifest is a mapping layer: cue entries reference expression/motion files by package-relative path and never copy their contents; cue keys default to the artist's names verbatim (CJK included — agents read them natively; renaming is optional polish). Auto-import (D25 rung 1, dev script — slice 007) harvests by directory scan; the model index is advisory only (VTube-Studio-convention models index nothing). Affect coords start null: null-coord cues are legal and emote-able with a zero nudge, invisible only to the engine's affect-distance selection until calibrated (`list_cues` marks them; `status()` counts them). Expression application is one brain-side path for bundled and authored alike: Lares parses the exp3 (Add/Multiply/Overwrite against model defaults, display names via `cdi3.json`) and drives sliders through the standard pipeline — artist files and the model index are never modified. Agent-authored expressions (rung 2) are real `.exp3.json` files under `authored/`, written by `save_expression` after conversational user acceptance (D32 governs initiation). Import validation is a pure library function — schema; every referenced file exists; coords in range; exp3 parseable; report of cues by source and calibration state — with three callers: the import script, its `--check` flag, and the app at load (loud, P7); params-vs-inventory checks run in-app once the body loads the model (§8).
 
-The v1 Live2D import contract is VTube Studio-style model assets
-exported for Cubism SDK 3.0 through 4.2. Cubism 2.1 and MOC version 5
-or later are rejected. `.vtube.json` is optional, ignored metadata:
-Lares supports VTS's asset-folder conventions, not its tracking,
-hotkeys, VFX, or persistent configuration. `FileReferences` remains
-authoritative; the importer also discovers loose `*.exp3.json` and
-`*.motion3.json` recursively. Discovery creates an asset catalog, not
-emotion mappings — the user or package author maps chosen assets to
-renderer-neutral cues.
+Exactly one of `expression`, `motion`, or `params` appears in each Live2D cue target. Expression and motion values are package-relative file paths. `performance` is the existing synth-preset shape under character ownership.
 
-M4 import reports entry-point choice, MOC runtime version, resources,
-capabilities, degradations, parameters, and a draft manifest.
-Validation aggregates schema, path containment/case, resources, cue
-variants, affect ranges, parameter ranges, performance bindings,
-motion groups, and hit areas. Slice 010 carries the proposed
-inspect/install storage boundary and the full gate.
+**VTS compatibility follow-up (slice 010).** The supported runtime range is Cubism SDK 3.0–4.2; Cubism 2.1 and MOC version 5 or later are rejected. `.vtube.json` is ignored metadata: Lares supports the VTS asset-folder convention, not tracking, hotkeys, VFX, or persistent VTS configuration. `FileReferences` remains authoritative for required model resources, while expression and motion discovery stays slice 007's union of registered and recursive loose assets. Discovery creates callable null-coordinate cues, not emotional mappings; calibration assigns affect explicitly. Compatibility validation adds the MOC runtime version, required/optional resources, model parameters and ranges, and explicit degradations to the existing shared report. Haru is the intended bundled default after D19 clearance and must use the generic path; Hiyori remains a regression fixture.
 
-Haru is the bundled default and must pass the same generic import path;
-Hiyori remains a regression fixture. Agent-authored expressions append
-`.exp3.json` files under `authored/` through the established
-preview → conversational acceptance → save/update flow.
+**Installed character library (D33).** Managed packages live under
+`app.getPath("userData")/characters`. If none exist on first run, the
+app copies the build's explicitly selected, redistribution-cleared
+default package; upgrades never overwrite managed files. Import
+always copies an extracted directory: accept a ready Lares package or
+a raw tree containing exactly one recursive `.model3.json`; reject
+zero/multiple without guessing; preserve the tree and union indexed
+with loose `.exp3.json`/`.motion3.json` files. ZIP extraction is out of
+scope. Duplicate names coexist with numbered tray labels and no schema
+change. Validation plus successful body load precedes the active
+selection commit; failure leaves the current Lar running. Switching
+preserves sessions, affect/mood, position, scale, and DND.
 
 ## 6. Harness adapters
 
-**Claude Code:** silent launch-time registration (D29), re-run idempotently on every launch and on port change. Hooks: user-scope `~/.claude/settings.json`, owned by content-recognition — JSON has no comment markers, so a Lares entry is *defined* as any hook whose command references the bundled forwarder (any path variant, which also catches stale entries from moved installs); re-sync removes every recognized entry and appends the current set, preserving all other content byte-for-byte in structure (the field pattern — claude-pet, code-notify; 005-D1). Hooks registered: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Notification (matcher: `permission_prompt`), Stop, SubagentStart, SubagentStop — each runs the app binary with `ELECTRON_RUN_AS_NODE=1`, the bundled forwarder path, and harness tag `claude-code`; POSIX commands also capture `LARES_HARNESS_PID=$PPID`, while Windows commands clear it (005-D9). The full set was verified present in Claude Code 2.1.219 during M2a recon (failure payloads carry `error`, successes `tool_response`); permission `Notification`s do not fire in headless `-p` runs, so M3b's verification needs an interactive session. `idle_prompt` notifications are deliberately not registered — waiting-for-next-prompt is done/idle territory, already covered by Stop + decay. MCP entry: `mcpServers.lares` in `~/.claude.json` — the only file Claude Code reads user-scope MCP servers from — direct-edited, write-only-if-different with atomic rename (the stable port means one write per install, ever); file missing or unparseable ⇒ skip + log, never create or repair it (005-D2). Safety on both files: parse failure ⇒ abort loudly, touch nothing; `~/.claude/` absent ⇒ Claude Code isn't installed, skip silently, re-check next launch; a one-time backup is written before the first-ever modification and never overwritten after. Uninstall is the removal pass alone — a dev script in M3b; tray and installer entry points attach to the same function at M5a (005-D3). Hooks written while a session is live take effect on the next session (Claude Code snapshots hook config at session start); adapter UX says so. Skill file follows in the post-M3b skills pass (reinforcement only, D26).
+**Claude Code:** a Lares plugin — `plugins/claude-code/` with a `.claude-plugin/plugin.json` manifest bundling the hook set and the streamable-HTTP MCP entry (`mcpServers.lares`, `http://127.0.0.1:21473/v1/mcp`, no token — D27), skills deferred beyond M5a — hosted in the Lares GitHub repo as a plugin marketplace (root `.claude-plugin/marketplace.json`); the user adds the marketplace and installs via `/plugin`, Claude Code's own plugin install/trust surface gating (guided — D29 as amended, 009-D1). Unlike Codex, Claude Code *executes* plugin hooks, so the plugin delivers baseline states and emotes both. Hooks registered: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Notification (matcher: `permission_prompt`), Stop, SubagentStart, SubagentStop — POSIX commands on every platform (Claude Code runs hook commands through Git Bash even on Windows), each invoking the launcher shim with harness tag `claude-code` and `LARES_HARNESS_PID=$PPID` capture; the Windows sh shim clears the pid instead (MSYS pids — 005-D9, 009-D5). The full set was verified present in Claude Code 2.1.219 during M2a recon (failure payloads carry `error`, successes `tool_response`); permission `Notification`s do not fire in headless `-p` runs, so verification needs an interactive session. `idle_prompt` notifications are deliberately not registered — waiting-for-next-prompt is done/idle territory, already covered by Stop + decay. Hook and MCP config snapshot at session start; plugin changes take effect next session or after `/reload-plugins`; adapter UX says so. **Legacy cleanup (009-D2):** pre-009 builds wrote hooks into user-scope `~/.claude/settings.json` and `mcpServers.lares` into `~/.claude.json`; every launch now runs the removal pass — content-recognition (any hook command referencing the bundled forwarder), parse-abort, backup-once, never creates files (005-D1/D2) — so an upgraded install never double-fires beside the plugin. The same pass serves uninstall (005-D3); the plugin itself is user-removed via `/plugin uninstall`, documented in its README. Skill-file reinforcement is deferred beyond M5a (D26).
 
-**Codex:** a Lares plugin — a directory with a `.codex-plugin/plugin.json` manifest bundling the hook set (same events plus PermissionRequest) and the streamable-HTTP MCP entry (`http://127.0.0.1:<port>/v1/mcp`, no token — D27), skills slot filled post-M3b — hosted in the Lares GitHub repo as a plugin marketplace; the user adds the marketplace and installs via `/plugins`, passing Codex's own trust flow (guided, never bypassed — D29). The plugin stays thin — hook commands and the baked URL, no logic — so repo-HEAD stays compatible with any installed daemon (the wire contract froze at M3a). Plugin hook commands can't bake a per-machine app path, so they invoke a launcher shim the app maintains at a stable path (`~/.lares/bin/`), re-stamped with the current app binary on every launch (005-D8). No fallback of any kind: push-only sensing (P11, amending D15) — a Codex without the plugin is unsensed, and failure mapping degrades per §3 if recon finds no failure signal. **Known harness gap (D15, 2026-07-28):** current Codex builds trust-review plugin hooks but never execute them (`plugin_hooks` removed-and-off), so the plugin delivers MCP only — emotes work, baseline states don't. The design-around — an app-written user-level `~/.codex/hooks/hooks.json` under the Claude Code writer discipline, Codex's trust review still gating — is post-005 work; tripwire to revert is Codex shipping plugin-hook execution.
+**Codex:** a Lares plugin — a directory with a `.codex-plugin/plugin.json` manifest bundling the hook set (same events plus PermissionRequest) and the streamable-HTTP MCP entry (`http://127.0.0.1:<port>/v1/mcp`, no token — D27), with skills deferred beyond M5a — hosted in the Lares GitHub repo as a plugin marketplace; the user adds the marketplace and installs via `/plugins`, passing Codex's own trust flow (guided, never bypassed — D29). The plugin stays thin — hook commands and the baked URL, no logic — so repo-HEAD stays compatible with any installed daemon (the wire contract froze at M3a). Plugin hook commands can't bake a per-machine app path, so they invoke a launcher shim the app maintains at a stable path (`~/.lares/bin/`), re-stamped with the current app binary on every launch (005-D8); the shim is shared with the Claude Code plugin and takes the harness as its argument, defaulting to `codex` so argument-less entries keep working (009-D5). No fallback of any kind: push-only sensing (P11, amending D15) — a Codex without the plugin is unsensed, and failure mapping degrades per §3 if recon finds no failure signal. Plugin-bundled hooks execute after Codex's trust review (the 2026-07-28 gap closed 2026-07-29, live re-smoke — D15 as amended), so the plugin delivers baseline states and emotes both. **Legacy cleanup:** pre-fold-back builds wrote a user-level `~/.codex/hooks.json`; every launch now runs the removal pass — content-recognition on the shim name, parse-abort, backup-once (006-D1) — deleting the file when only Lares entries remained. The same pass serves uninstall; the plugin itself is user-removed via `/plugins`, documented in its README.
 
 ## 7. Scenario player
 
@@ -174,7 +175,21 @@ Scenario file: `{ name, timeScale, events: [{ at_ms, envelope | emote }] }`. Pla
 
 **Performance feed — the P6 seam (D31).** The brain↔body channel is the renderer-neutral contract; nothing renderer-specific crosses it (cue names cross, asset references don't). Brain→body: `affect:update` (§4 feed), `authoring:preview`/`authoring:revert` (opaque knob sets), `scenario:*`. Body→brain: `stage:pointer` (hit results → click-through toggling), `body:inventory` (knob list — id, name, min, max, default — reported on model load; the brain validates freeform and authoring traffic against it and never interprets knob meaning — cached per active character so validation survives a DND hide; before any inventory exists, freeform and authoring calls fail with a tool error, per P7). Known limitation, accepted: freeform compositions are body-specific by nature — knob names come from the loaded model; `status()` reports the active body, richer mode feedback deferred (D31). The body never receives raw ingress events.
 
-**IRuntime (body-internal):** `load(modelPath)`, `parameters(): ParamInfo[]`, `setParams(batch, weight?)`, `resetParams()` (the inverse of `setParams` — restores model defaults and drops driven-param ownership; `setParams` is a merge and cannot undo itself), `applyExpression(ref|params, weight, fadeMs)`, `playMotion(group, index?, priority)`, `hitTest(x, y): area[]`. pixi-live2d-display is the sole v1 implementation; nothing outside `runtime/` imports it. An implementation detail of the v1 body, not a cross-body contract.
+**IRuntime (body-internal):** `load(modelPath)`,
+`prepareLoad(id, modelPath): Promise<ParamInfo[]>`, `commitLoad(id)`,
+`rollbackLoad(id)`, `finalizeLoad(id)`, `cancelLoad(id)`,
+`parameters(): ParamInfo[]`, `setParams(batch, weight?)`,
+`releaseParams(ids)` (drops selected sticky overrides back to native
+motion/physics ownership), `resetParams()` (the full inverse of
+`setParams` — restores all model defaults and drops all driven-param
+ownership), `applyExpression(ref|params, weight, fadeMs)`,
+`playMotion(group, index?, priority)`, `hitTest(x, y): area[]`,
+`alphaAt(x, y)`, `larSize()`. The transactional load methods stage one
+candidate by ID: prepare leaves the active body untouched, commit makes
+the candidate rollback-capable, finalize is the one-way handoff, and
+rollback/cancel retain the previous body. pixi-live2d-display is the
+sole v1 implementation; nothing outside `runtime/` imports it. An
+implementation detail of the v1 body, not a cross-body contract.
 
 ## 9. Acceptance scenarios (GWT)
 
@@ -200,4 +215,27 @@ Scenario file: `{ name, timeScale, events: [{ at_ms, envelope | emote }] }`. Pla
 
 ## 10. Non-functional budget
 
-Hook fire → visible reaction ≤250ms (forwarder spawn ≤120ms, POST ≤10ms, ingest ≤5ms, IPC ≤16ms, onset ≤100ms) — this budget is load-bearing for legibility and stays hard. Forwarder total ≤500ms hard budget, spawn included; the silent-exit path's ≤50ms binds in-script time only (script entry → exit, self-measured) — process startup alone exceeds 50ms on real machines (bare Node median 51.8ms, Electron-as-Node ~100–118ms; 004-D8), and the harness turn proceeds regardless. Renderer targets 30fps flat (ticker cap). Footprint numbers (idle ~3% of one core, <300MB RSS combined) are soft targets, not milestone gates — optimization is explicitly not a v1 focus; frame-rate governor and occlusion-paused rendering are parked post-v1. Zero network beyond §2 loopback and the disclosed update check.
+Hook fire → visible reaction ≤250ms (forwarder spawn ≤120ms, POST ≤10ms, ingest ≤5ms, IPC ≤16ms, onset ≤100ms) — this budget is load-bearing for legibility and stays hard. Forwarder total ≤500ms hard budget, spawn included; the silent-exit path's ≤50ms binds in-script time only (script entry → exit, self-measured) — process startup alone exceeds 50ms on real machines (bare Node median 51.8ms, Electron-as-Node ~100–118ms; 004-D8), and the harness turn proceeds regardless. Renderer targets 30fps flat (ticker cap). Footprint numbers (idle ~3% of one core, <300MB RSS combined) are soft targets, not milestone gates — optimization is explicitly not a v1 focus; frame-rate governor and occlusion-paused rendering are parked post-v1.
+
+**Network exception (D21).** Beyond §2 loopback, the sole request is
+the disclosed GitHub Releases update check: every app launch and every
+24h while running when enabled, plus a manual action. Requests are
+conditional with a persisted ETag; M5a only notifies and opens the
+release page, never downloads or installs.
+
+## 11. Installation and removal
+
+M5a's local gate is an unsigned macOS 13+ universal DMG and unsigned
+Windows 10/11 x64 NSIS installer, built manually on their native OS.
+Gatekeeper/SmartScreen bypass is documented and expected. Packaging
+explicitly includes the forwarder, fetched Cubism Core, one selected
+cleared default character, and required notices; it never globs the
+local character tree. Signing/notarization, GitHub Actions/public
+Release publication, and production one-line install URLs land at
+M5b (D30).
+
+Supported uninstall always removes the app and Lares-owned adapter
+hooks, MCP entries, and launcher shims. An unchecked-by-default
+**Also delete Lares data** choice additionally removes imported
+characters, authored expressions, calibration, settings, and window
+state.

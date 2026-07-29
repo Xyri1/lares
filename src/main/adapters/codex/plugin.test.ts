@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-const root = resolve('plugins/lares')
+const root = resolve('plugins/codex')
 
 async function json(path: string): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(resolve(root, path), 'utf8')) as Record<string, unknown>
@@ -18,7 +18,7 @@ describe('Codex plugin', () => {
       plugins: [
         {
           name: 'lares',
-          source: { source: 'local', path: './plugins/lares' },
+          source: { source: 'local', path: './plugins/codex' },
           policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
           category: 'Productivity'
         }

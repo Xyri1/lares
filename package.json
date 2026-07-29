@@ -1,10 +1,15 @@
 {
-  "name": "lares-app",
-  "version": "1.0.0",
-  "description": "A minimal Electron application with TypeScript",
+  "name": "lares",
+  "version": "0.5.0-alpha.1",
+  "description": "A desktop companion that gives AI agents a face",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "Cyril Tsui",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/Xyri1/lares",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Xyri1/lares.git"
+  },
   "scripts": {
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
@@ -13,6 +18,11 @@
     "dev": "electron-vite dev",
     "adapter:remove": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/remove-adapters.mjs",
     "fetch-assets": "node scripts/fetch-assets.mjs",
+    "import": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/import-character.mjs",
+    "package:preflight": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/distribution.mjs preflight .",
+    "package:inspect": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/distribution.mjs inspect",
+    "package:mac": "pnpm build && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON node_modules/electron-builder/out/cli/cli.js --config electron-builder.config.mjs --mac --publish never",
+    "package:win": "pnpm build && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON node_modules/electron-builder/out/cli/cli.js --config electron-builder.config.mjs --win --publish never",
     "smoke:nerves": "node scripts/synthetic-session.mjs",
     "build": "pnpm run typecheck && electron-vite build",
     "test": "vitest run"
@@ -29,6 +39,7 @@
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@types/node": "^22.19.1",
     "electron": "^39.2.6",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.2.6",

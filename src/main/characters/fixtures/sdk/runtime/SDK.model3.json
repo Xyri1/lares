@@ -1,0 +1,8 @@
+{
+  "Version": 3,
+  "FileReferences": {
+    "Motions": {
+      "Idle": [{ "File": "motions/idle.motion3.json" }]
+    }
+  }
+}

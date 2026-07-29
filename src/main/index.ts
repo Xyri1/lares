@@ -1,15 +1,76 @@
-import { app, shell, BrowserWindow, dialog, ipcMain, protocol, net, screen } from 'electron'
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  Notification,
+  protocol,
+  net,
+  screen,
+  Tray
+} from 'electron'
+import {
+  existsSync,
+  mkdirSync,
+  realpathSync,
+  unlinkSync,
+  writeFileSync
+} from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { syncClaudeCode } from './adapters/claude-code/writer'
-import { writeCodexShim } from './adapters/codex/shim'
-import { loadCharacter } from './characters/manifest'
+import { removeClaudeCode } from './adapters/claude-code/writer'
+import { removeCodexHooks } from './adapters/codex/hooks'
+import { writeForwarderShim } from './adapters/shim'
+import {
+  applyExp3,
+  parseExp3File,
+  parseModelCdi3File,
+  type Exp3Parameter
+} from './characters/exp3'
+import {
+  saveExpression as saveCharacterExpression,
+  updateExpression as updateCharacterExpression
+} from './characters/authoring'
+import {
+  loadCharacter,
+  type CueDefinition,
+  type ManifestResult
+} from './characters/manifest'
+import {
+  bundledPackageRoot,
+  discardManagedCharacter,
+  ensureManagedCharacterLibrary,
+  importCharacterPackage,
+  listCharacterPackages
+} from './characters/library'
+import {
+  CharacterAssetState,
+  CharacterLoadBroker,
+  type CharacterBody
+} from './characters/broker'
+import {
+  createCharacterSwitcher,
+  type CharacterPackage,
+  type CharacterSwitcher,
+  type CharacterSwitchResult
+} from './characters/switch'
+import {
+  CALIBRATION_INVITE,
+  calibrationState,
+  reconcileCalibrationArmed,
+  toggleCalibration
+} from './calibration'
+import { DEFAULT_CONFIG, loadConfig, saveConfig, type AppConfig, type Scale } from './config'
 import { DensityLog } from './densityLog'
-import { Nerves } from './nerves'
+import { errorMessage } from './errors'
+import { L, resolveLocale, setLocale } from './strings'
+import { Nerves, type ParamInfo, type PreparedNervesCharacter } from './nerves'
 import {
   clampToWorkArea,
   loadPosition,
@@ -18,6 +79,7 @@ import {
   type Point,
   type Rect
 } from './position'
+import { productBodyTargets } from './productBody'
 import { SCENARIO_CUES } from './scenario/cues'
 import { loadScenario } from './scenario/load'
 import {
@@ -29,6 +91,24 @@ import {
 } from './scenario/player'
 import { writeTrace } from './scenario/trace'
 import { createServer } from './server/server'
+import {
+  createTrayShell,
+  hydrateInitialCharacter,
+  type TrayShell
+} from './shell'
+import {
+  checkLatestRelease,
+  createUpdateChecks,
+  isLaresReleaseUrl,
+  loadUpdateCache,
+  saveUpdateCache
+} from './updates'
+import {
+  removeLaresUserData,
+  removeOwnedIntegrations,
+  runMacUninstall,
+  runWindowsUninstall
+} from './uninstall'
 
 // Character assets reach the renderer over lares:// so the load path is
 // identical in dev (http origin) and packaged (file origin) builds.
@@ -39,17 +119,247 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-const charactersRoot = (): string => join(app.getAppPath(), 'characters')
+const charactersRoot = (): string => join(app.getPath('userData'), 'characters')
+const defaultCharacterRoot = (): string =>
+  bundledPackageRoot(
+    app.getAppPath(),
+    process.resourcesPath,
+    app.isPackaged,
+    process.env.LARES_DEFAULT_CHARACTER || 'hiyori'
+  )
 const runtimeFile = (): string => join(homedir(), '.lares', 'runtime.json')
 
 let liveNerves: Nerves | null = null
 let nervesServer: ReturnType<typeof createServer> | null = null
 let nervesTick: ReturnType<typeof setInterval> | null = null
 let densityLog: DensityLog | null = null
+let characterInventoryErrorShown = false
+let selectedCharacter:
+  | CharacterPackage
+  | { ok: false; error: string }
+  | null = null
+let characterSwitcher: CharacterSwitcher | null = null
+let characterAssets: CharacterAssetState | null = null
+let characterLoadBroker: CharacterLoadBroker | null = null
+let appConfig: AppConfig = { ...DEFAULT_CONFIG }
+let tray: Tray | null = null
+let trayShell: TrayShell | null = null
+let updateChecks: ReturnType<typeof createUpdateChecks> | null = null
+let quitting = false
 
-function broadcastFeed(feed: AffectFeedMessage): void {
+// Dev A/B is a scenario harness, not a second product body. Scenario playback
+// still fans out for comparison; the normal live feed below targets only the overlay.
+function broadcastScenarioFeed(feed: AffectFeedMessage): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
+  }
+}
+
+function sendLiveFeed(feed: AffectFeedMessage): void {
+  for (const win of productBodyTargets(overlayWindow, BrowserWindow.getAllWindows())) {
+    if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
+  }
+}
+
+function broadcast(channel: 'authoring:preview' | 'authoring:revert', value?: unknown): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send(channel, value)
+  }
+}
+
+function activeCharacter():
+  | CharacterPackage
+  | { ok: false; error: string } {
+  if (selectedCharacter) return selectedCharacter
+  const packages = listCharacterPackages(charactersRoot())
+  if (packages.length === 0) {
+    selectedCharacter = { ok: false, error: `No valid character package found under ${charactersRoot()}` }
+    return selectedCharacter
+  }
+  const selected = hydrateInitialCharacter(packages, appConfig)!
+  if (packages.length > 1 && appConfig.activeCharacter === undefined) {
+    console.warn(`[lares] Multiple character packages found; using ${selected.manifestPath}`)
+  }
+  selectedCharacter = selected
+  return selectedCharacter
+}
+
+function activeCalibrationReport() {
+  const selected = activeCharacter()
+  return 'error' in selected ? null : selected.character.report
+}
+
+function reconcileActiveCalibration(): boolean {
+  const report = activeCalibrationReport()
+  return report ? reconcileCalibrationArmed(appConfig, report) : false
+}
+
+export async function switchCharacter(manifestPath: string): Promise<CharacterSwitchResult> {
+  return characterSwitcher
+    ? characterSwitcher.switchTo(manifestPath)
+    : { ok: false, error: 'character switching is not ready' }
+}
+
+function displayNames(modelPath: string): ReadonlyMap<string, string> {
+  const selected = activeCharacter()
+  return 'error' in selected
+    ? new Map()
+    : parseModelCdi3File(modelPath, dirname(selected.manifestPath))
+}
+
+function cueSource(cue: CueDefinition): 'bundled' | 'authored' | 'raw' {
+  if ('params' in cue) return 'raw'
+  return 'expression' in cue && cue.expression.startsWith('authored/') ? 'authored' : 'bundled'
+}
+
+function cueSources(
+  cues: Readonly<Record<string, CueDefinition>>
+): Record<string, 'bundled' | 'authored' | 'raw'> {
+  return Object.fromEntries(Object.entries(cues).map(([name, cue]) => [name, cueSource(cue)]))
+}
+
+function assetUrl(path: string, candidateId?: number): string {
+  const encoded = path.split(sep).map(encodeURIComponent).join('/')
+  return candidateId === undefined
+    ? `lares://characters/${encoded}`
+    : `lares://candidate/${candidateId}/${encoded}`
+}
+
+function characterPayload(selected: CharacterPackage, candidateId?: number) {
+  const model = relative(dirname(selected.manifestPath), selected.character.live2d.model)
+  return {
+    ...selected.character,
+    live2d: { ...selected.character.live2d, model: assetUrl(model, candidateId) }
+  }
+}
+
+function cuePayload(selected: CharacterPackage, candidateId?: number) {
+  const { character, manifestPath } = selected
+  return Object.entries(character.live2d.cues ?? {}).map(([name, cue]) => {
+    const coord = character.expressions[name] ?? null
+    const base = {
+      name,
+      valence: coord?.valence ?? null,
+      arousal: coord?.arousal ?? null
+    }
+    if ('params' in cue) return { ...base, params: cue.params }
+    if ('motion' in cue) {
+      return {
+        ...base,
+        motion: assetUrl(relative(dirname(manifestPath), resolve(dirname(manifestPath), cue.motion)), candidateId)
+      }
+    }
+    return base
+  })
+}
+
+interface PreparedCharacterFiles {
+  cueDefinitions: Record<string, CueDefinition>
+  names: ReadonlyMap<string, string>
+  sources: Record<string, 'bundled' | 'authored' | 'raw'>
+  expressions: ReadonlyMap<string, Exp3Parameter[]>
+}
+
+function prepareCharacterFiles(candidate: CharacterPackage): PreparedCharacterFiles {
+  const cueDefinitions = candidate.character.live2d.cues ?? {}
+  const names = parseModelCdi3File(
+    candidate.character.live2d.model,
+    dirname(candidate.manifestPath)
+  )
+  const expressions = new Map<string, Exp3Parameter[]>()
+  for (const [cue, definition] of Object.entries(cueDefinitions)) {
+    if (!('expression' in definition)) continue
+    const result = parseExp3File(resolve(dirname(candidate.manifestPath), definition.expression), names)
+    if (!result.ok) {
+      throw new Error(`Cannot prepare cue ${JSON.stringify(cue)}: ${result.error}`)
+    }
+    expressions.set(cue, result.parameters)
+  }
+  return {
+    cueDefinitions,
+    names,
+    sources: cueSources(cueDefinitions),
+    expressions
+  }
+}
+
+function bodyPreparePayload(candidate: CharacterPackage, id: number) {
+  return {
+    id,
+    character: {
+      ok: true as const,
+      name: candidate.character.name,
+      live2d: {
+        model: assetUrl(
+          relative(dirname(candidate.manifestPath), candidate.character.live2d.model),
+          id
+        )
+      }
+    },
+    cues: cuePayload(candidate, id).filter(
+      (cue) => 'params' in cue || 'motion' in cue
+    )
+  }
+}
+
+function bodyCommitPayload(
+  candidate: CharacterPackage,
+  id: number,
+  prepared: PreparedNervesCharacter
+) {
+  const motionUrls = new Map(
+    cuePayload(candidate, id).flatMap((cue) =>
+      'motion' in cue && typeof cue.motion === 'string' ? [[cue.name, cue.motion]] : []
+    )
+  )
+  const cues: Array<
+    { name: string; params: Record<string, number> } | { name: string; motion: string }
+  > = []
+  for (const [name, playback] of prepared.resolvedCues) {
+    if ('params' in playback) {
+      cues.push({ name, params: playback.params })
+      continue
+    }
+    const motion = motionUrls.get(name)
+    if (motion) cues.push({ name, motion })
+  }
+  return {
+    id,
+    cues
+  }
+}
+
+function object(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} arguments must be an object`)
+  }
+  return value as Record<string, unknown>
+}
+
+// Range overshoot is NOT an error: exp3 files legitimately exceed declared
+// ranges (rigger saturation trick) and every Live2D runtime clamps at set
+// time — so do the engine and the body. Only unknown ids mark a broken package.
+function rejectUnknownParams(
+  cue: string,
+  params: Readonly<Record<string, number>>,
+  inventory: ReadonlyMap<string, ParamInfo>
+): void {
+  const unknown = Object.keys(params).filter((id) => !inventory.has(id))
+  if (unknown.length) {
+    throw new Error(
+      `Cue ${JSON.stringify(cue)}: unknown parameter ${unknown.map((id) => JSON.stringify(id)).join(', ')}`
+    )
+  }
+}
+
+function reportCharacterInventoryIssues(): void {
+  const issues = liveNerves?.cueValidationErrors() ?? []
+  if (!issues.length) return
+  const message = issues.join('\n')
+  console.error(`[lares] character parameter validation failed:\n${message}`)
+  if (!characterInventoryErrorShown) {
+    characterInventoryErrorShown = true
+    dialog.showErrorBox(L.characterPackageInvalid, message)
   }
 }
 
@@ -68,41 +378,186 @@ function configuredPort(): number {
   return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : 21473
 }
 
-async function syncAdapters(port: number): Promise<void> {
+async function syncAdapters(): Promise<void> {
   const home = homedir()
   const forwarderPath = join(app.getAppPath(), 'scripts', 'forwarder.js')
   await Promise.all([
-    syncClaudeCode({
+    // Both harnesses are delivered through their marketplace plugins (009,
+    // D15 fold-back); the app only cleans up registrations older builds
+    // wrote into user files.
+    removeClaudeCode({
       claudeDirectory: join(home, '.claude'),
       settingsPath: join(home, '.claude', 'settings.json'),
       claudeConfigPath: join(home, '.claude.json'),
-      appPath: process.execPath,
-      forwarderPath,
-      port,
-      platform: process.platform,
       log: (message) => console.error(`[lares] Claude Code adapter: ${message}`)
     })
       .then((result) => {
         if (result.settings === 'updated' || result.mcp === 'updated') {
-          console.log('[lares] Claude Code adapter registered; live sessions pick it up next session')
+          console.log('[lares] legacy Claude Code registration removed; install the Lares plugin via /plugin marketplace add Xyri1/lares')
         }
       })
-      .catch((error) => console.error('[lares] Claude Code adapter registration failed', error)),
-    writeCodexShim({
+      .catch((error) => console.error('[lares] Claude Code legacy cleanup failed', error)),
+    removeCodexHooks({
+      codexDirectory: join(home, '.codex'),
+      hooksPath: join(home, '.codex', 'hooks.json')
+    })
+      .then((result) => {
+        if (result === 'updated') {
+          console.log('[lares] legacy Codex hooks removed; hooks now ship in the Codex plugin')
+        }
+      })
+      .catch((error) => console.error('[lares] Codex legacy cleanup failed', error)),
+    writeForwarderShim({
       binDir: join(home, '.lares', 'bin'),
       appPath: process.execPath,
       forwarderPath,
       platform: process.platform
-    }).catch((error) => console.error('[lares] Codex launcher shim failed', error))
+    }).catch((error) => console.error('[lares] forwarder shim failed', error))
   ])
+}
+
+function liveCharacterBody(): CharacterBody | null {
+  const window = productBodyTargets(overlayWindow, BrowserWindow.getAllWindows())[0]
+  if (!window) return null
+  const contents = window.webContents
+  return {
+    id: String(contents.id),
+    isDestroyed: () => contents.isDestroyed(),
+    send: (channel, value) => contents.send(channel, value),
+    onDestroyed: (listener) => {
+      contents.once('destroyed', listener)
+      return () => contents.removeListener('destroyed', listener)
+    }
+  }
 }
 
 async function startNerves(): Promise<void> {
   densityLog = process.env.LARES_DENSITY_LOG
     ? new DensityLog(resolve(process.env.LARES_DENSITY_LOG))
     : null
-  const manifest = loadCharacter(join(charactersRoot(), 'hiyori', 'lar.character.json'))
-  liveNerves = new Nerves('Hiyori', manifest.ok ? manifest.expressions : SCENARIO_CUES, Date.now())
+  const selected = activeCharacter()
+  const character = 'error' in selected ? null : selected.character
+  let currentSelection = 'error' in selected ? null : selected
+  if ('error' in selected) console.error(`[lares] ${selected.error}`)
+  let cueDefinitions = character?.live2d.cues ?? {}
+  let names =
+    character && currentSelection
+      ? parseModelCdi3File(character.live2d.model, dirname(currentSelection.manifestPath))
+      : new Map<string, string>()
+  liveNerves = new Nerves(character?.name ?? 'No character', character?.expressions ?? {}, Date.now(), undefined, {
+    cueSources: cueSources(cueDefinitions),
+    resolveCue: (cue, defaults, inventory) => {
+      const definition = cueDefinitions[cue]
+      if (!definition) return undefined
+      if ('params' in definition) {
+        rejectUnknownParams(cue, definition.params, inventory)
+        return { params: definition.params }
+      }
+      if ('motion' in definition) return { motion: definition.motion }
+      const result = parseExp3File(
+        resolve(dirname(currentSelection?.manifestPath ?? ''), definition.expression),
+        names
+      )
+      if (!result.ok) {
+        console.error(`[lares] cannot resolve cue ${JSON.stringify(cue)}: ${result.error}`)
+        return undefined
+      }
+      rejectUnknownParams(
+        cue,
+        Object.fromEntries(result.parameters.map((parameter) => [parameter.id, parameter.value])),
+        inventory
+      )
+      return { params: applyExp3(result.parameters, defaults) }
+    },
+    preview: (value) => broadcast('authoring:preview', value),
+    revertPreview: () => broadcast('authoring:revert')
+  })
+  const refreshCharacterState = (): Extract<ManifestResult, { ok: true }> => {
+    if (!currentSelection) throw new Error('No active character')
+    const fresh = loadCharacter(currentSelection.manifestPath)
+    if (!fresh.ok) throw new Error(fresh.error)
+    for (const cue of Object.keys(cueDefinitions)) delete cueDefinitions[cue]
+    Object.assign(cueDefinitions, fresh.live2d.cues ?? {})
+    currentSelection.character = fresh
+    liveNerves!.reloadCues(fresh.expressions, cueSources(cueDefinitions))
+    return fresh
+  }
+  if (currentSelection) {
+    characterAssets = new CharacterAssetState(dirname(currentSelection.manifestPath))
+    characterLoadBroker = new CharacterLoadBroker(characterAssets, liveCharacterBody, 30_000)
+    characterSwitcher = createCharacterSwitcher(
+      charactersRoot(),
+      currentSelection,
+      {
+        precompute: prepareCharacterFiles,
+        prepare: ({ id, candidate }) =>
+          characterLoadBroker!.prepare(
+            id,
+            dirname(candidate.manifestPath),
+            bodyPreparePayload(candidate, id)
+          ),
+        prepareCommit: (candidate, inventory, files, id) => {
+          const namedInventory = inventory.map((param) => ({
+            ...param,
+            name: files.names.get(param.id) ?? param.name
+          }))
+          const prepared = liveNerves!.prepareCharacter(
+            candidate.character.name,
+            candidate.character.expressions,
+            files.sources,
+            namedInventory,
+            (cue, defaults, bodyInventory) => {
+              const definition = files.cueDefinitions[cue]
+              if (!definition) return undefined
+              if ('params' in definition) {
+                rejectUnknownParams(cue, definition.params, bodyInventory)
+                return { params: definition.params }
+              }
+              if ('motion' in definition) return { motion: definition.motion }
+              const parameters = files.expressions.get(cue)
+              if (!parameters) return undefined
+              rejectUnknownParams(
+                cue,
+                Object.fromEntries(parameters.map((parameter) => [parameter.id, parameter.value])),
+                bodyInventory
+              )
+              return { params: applyExp3(parameters, defaults) }
+            }
+          )
+          if (prepared.cueErrors.length) throw new Error(prepared.cueErrors.join('\n'))
+          return {
+            files,
+            nerves: prepared,
+            body: bodyCommitPayload(candidate, id, prepared)
+          }
+        },
+        commit: (id, state) => characterLoadBroker!.commit(id, state.body),
+        cancel: (id, reason) => characterLoadBroker!.cancel(id, reason),
+        rollback: (id, reason) => characterLoadBroker!.rollback(id, reason),
+        finalize: (id) => {
+          if (!characterLoadBroker!.finalize(id)) {
+            throw new Error('character finalization handoff was refused')
+          }
+        },
+        publish: (
+          candidate,
+          state: {
+            files: PreparedCharacterFiles
+            nerves: PreparedNervesCharacter
+            body: ReturnType<typeof bodyCommitPayload>
+          }
+        ) => {
+          selectedCharacter = candidate
+          currentSelection = candidate
+          cueDefinitions = state.files.cueDefinitions
+          names = state.files.names
+          characterInventoryErrorShown = false
+          liveNerves!.commitCharacter(state.nerves)
+          stopScenarioPlayback()
+        }
+      }
+    )
+  }
   densityLog?.recordBaseline(liveNerves.status(Date.now()).sessions.baseline, Date.now())
   nervesServer = createServer({
     ingest: (envelope, nowMs) => {
@@ -115,7 +570,41 @@ async function startNerves(): Promise<void> {
       return result
     },
     listCues: () => liveNerves!.listCues(),
-    status: (nowMs) => liveNerves!.status(nowMs)
+    status: (nowMs) => liveNerves!.status(nowMs),
+    listParameters: () => liveNerves!.listParameters(),
+    previewExpression: (args, nowMs) => liveNerves!.previewExpression(args, nowMs),
+    saveExpression: async (raw) => {
+      if (!currentSelection) throw new Error('No active character')
+      const args = object(raw, 'save_expression')
+      const params = liveNerves!.clampParams(args.params)
+      const result = saveCharacterExpression(
+        currentSelection.manifestPath,
+        args.name as string,
+        params,
+        args.affect as { valence: number; arousal: number }
+      )
+      if (!result.ok) throw new Error(result.error)
+      refreshCharacterState()
+      await syncCalibrationAfterAuthoring()
+      return { saved: args.name, report: result.report }
+    },
+    updateExpression: async (raw) => {
+      if (!currentSelection) throw new Error('No active character')
+      const args = object(raw, 'update_expression')
+      const params = args.params === undefined ? undefined : liveNerves!.clampParams(args.params)
+      const result = updateCharacterExpression(currentSelection.manifestPath, args.name as string, {
+        ...(args.affect === undefined
+          ? {}
+          : { affect: args.affect as { valence: number; arousal: number } }),
+        ...(params === undefined ? {} : { params })
+      })
+      if (!result.ok) throw new Error(result.error)
+      refreshCharacterState()
+      await syncCalibrationAfterAuthoring()
+      return { updated: args.name, report: result.report }
+    },
+    sessionInstructions: () =>
+      appConfig.calibrationArmed ? CALIBRATION_INVITE : undefined
   })
 
   try {
@@ -123,25 +612,33 @@ async function startNerves(): Promise<void> {
     const directory = join(homedir(), '.lares')
     mkdirSync(directory, { recursive: true })
     writeFileSync(runtimeFile(), JSON.stringify({ version: 1, port, pid: process.pid }))
-    await syncAdapters(port)
+    await syncAdapters()
     nervesTick = setInterval(() => {
       const nowMs = Date.now()
       liveNerves!.tick(nowMs)
       densityLog?.recordBaseline(liveNerves!.status(nowMs).sessions.baseline, nowMs)
       if (activePlayback === null) {
-        broadcastFeed(feedMessage(liveNerves!.snapshot(), Math.floor(nowMs / 100)))
+        sendLiveFeed(feedMessage(liveNerves!.snapshot(), Math.floor(nowMs / 100)))
       }
     }, 100)
     console.log(`[lares] listening on http://127.0.0.1:${port}`)
   } catch (error) {
     removeRuntimeFile()
     const code = (error as NodeJS.ErrnoException).code
-    const message =
-      code === 'EADDRINUSE'
-        ? `Port ${configuredPort()} is already in use. Lares ingress is disabled.`
-        : `Lares ingress failed to start: ${error instanceof Error ? error.message : String(error)}`
-    console.error(`[lares] ${message}`)
-    dialog.showErrorBox('Lares ingress unavailable', message)
+    const portInUse = code === 'EADDRINUSE'
+    const port = configuredPort()
+    // Log output stays English regardless of locale; only the dialog is localized.
+    console.error(
+      `[lares] ${
+        portInUse
+          ? `Port ${port} is already in use. Lares ingress is disabled.`
+          : `Lares ingress failed to start: ${errorMessage(error)}`
+      }`
+    )
+    dialog.showErrorBox(
+      L.ingressUnavailableTitle,
+      portInUse ? L.ingressPortInUse(port) : L.ingressFailedToStart(errorMessage(error))
+    )
     void nervesServer.stop()
     nervesServer = null
   }
@@ -159,44 +656,69 @@ function stopNerves(): void {
 
 function registerAssetProtocol(): void {
   protocol.handle('lares', (request) => {
-    const url = new URL(request.url)
-    if (url.host !== 'characters') return new Response('not found', { status: 404 })
-    const root = charactersRoot()
-    const target = join(root, decodeURIComponent(url.pathname))
-    if (!target.startsWith(root + sep)) return new Response('forbidden', { status: 403 }) // P7: no traversal
-    return net.fetch(pathToFileURL(target).toString())
+    try {
+      const resolvedAsset = characterAssets?.resolve(request.url)
+      if (!resolvedAsset) return new Response('not found', { status: 404 })
+      const { root, path } = resolvedAsset
+      const target = resolve(root, path)
+      if (!target.startsWith(root + sep)) return new Response('forbidden', { status: 403 })
+      const realTarget = realpathSync(target)
+      if (!realTarget.startsWith(realpathSync(root) + sep)) {
+        return new Response('forbidden', { status: 403 })
+      }
+      return net.fetch(pathToFileURL(realTarget).toString())
+    } catch {
+      return new Response('not found', { status: 404 })
+    }
   })
 }
 
 function registerCharacterIpc(): void {
   ipcMain.handle('character:get', () => {
-    // ponytail: hiyori hardcoded — character selection is out of slice scope
-    const root = charactersRoot()
-    const result = loadCharacter(join(root, 'hiyori', 'lar.character.json'))
-    if (!result.ok) return result
-    const rel = relative(root, result.live2d.model).split(sep).join('/')
-    return { ...result, live2d: { ...result.live2d, model: `lares://characters/${rel}` } }
+    const selected = activeCharacter()
+    if ('error' in selected) return selected
+    return characterPayload(selected)
   })
 
-  ipcMain.on('body:inventory', (_event, params: unknown[]) => {
-    const accepted = liveNerves?.setInventory(params) ?? false
+  ipcMain.on('body:inventory', (event, params: unknown[]) => {
+    if (overlayWindow && BrowserWindow.fromWebContents(event.sender) !== overlayWindow) return
+    const selected = activeCharacter()
+    const names =
+      'error' in selected ? new Map<string, string>() : displayNames(selected.character.live2d.model)
+    const withDisplayNames = Array.isArray(params)
+      ? params.map((value) => {
+          if (typeof value !== 'object' || value === null) return value
+          const id = (value as { id?: unknown }).id
+          const name = typeof id === 'string' ? names.get(id) : undefined
+          return name ? { ...value, name } : value
+        })
+      : params
+    const accepted = liveNerves?.setInventory(withDisplayNames) ?? false
     console.log(
       `[lares] body:inventory — ${accepted && Array.isArray(params) ? params.length : 0} parameters`
     )
+    if (accepted) reportCharacterInventoryIssues()
+  })
+
+  ipcMain.on('character:prepared', (event, raw: unknown) => {
+    characterLoadBroker?.receive(String(event.sender.id), raw)
+  })
+
+  ipcMain.on('character:commit-result', (event, raw: unknown) => {
+    characterLoadBroker?.receiveCommit(String(event.sender.id), raw)
+  })
+
+  ipcMain.handle('character:decision', (event, rawId: unknown) => {
+    const body = liveCharacterBody()
+    return body?.id === String(event.sender.id)
+      ? (characterLoadBroker?.decision(rawId) ?? null)
+      : null
   })
 
   ipcMain.handle('cues:list', () => {
-    // ponytail: hiyori hardcoded, matches character:get above
-    const root = charactersRoot()
-    const result = loadCharacter(join(root, 'hiyori', 'lar.character.json'))
-    if (!result.ok) return []
-    const cuesBlock = (result.live2d.cues ?? {}) as Record<string, { params?: Record<string, number> }>
-    return Object.entries(result.expressions).map(([name, coord]) => ({
-      name,
-      valence: coord.valence,
-      arousal: coord.arousal,
-      params: cuesBlock[name]?.params ?? {}
-    }))
+    const selected = activeCharacter()
+    if ('error' in selected) return []
+    return cuePayload(selected)
   })
 }
 
@@ -210,6 +732,25 @@ let activePlayback: {
   controller: PacedPlayback
   engineLines?: Record<string, string[]>
 } | null = null
+
+function stopScenarioPlayback(): void {
+  const playback = activePlayback
+  activePlayback = null
+  if (!playback) return
+  try {
+    playback.controller.cancel()
+  } catch (error) {
+    console.error('[lares] scenario cancellation failed', error)
+  }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.webContents.isDestroyed()) continue
+    try {
+      win.webContents.send('scenario:stopped')
+    } catch {
+      // Main playback is already stopped; renderer finalization also clears local replay.
+    }
+  }
+}
 
 const GOLDEN_NAMES = new Set([
   'smooth-build',
@@ -296,7 +837,7 @@ function registerScenarioIpc(): void {
         // mirrors playback on the desktop. Everything else below stays aimed
         // at the requester — scenario control and the synth trace are a
         // dev-window affair, and the overlay must not answer for them.
-        onFeed: broadcastFeed,
+        onFeed: broadcastScenarioFeed,
         onSeek: (history) => {
           if (!sender.isDestroyed()) sender.send('scenario:seeked', history)
         },
@@ -357,6 +898,11 @@ function registerScenarioIpc(): void {
 
   const NO_PLAYBACK = { ok: false as const, error: 'no playback in progress' }
 
+  ipcMain.handle('scenario:stop', () => {
+    stopScenarioPlayback()
+    return { ok: true }
+  })
+
   ipcMain.handle('scenario:pause', () => {
     const c = activeController()
     if (!c) return NO_PLAYBACK
@@ -409,11 +955,27 @@ const IS_DEV_RUN = is.dev && !!process.env['ELECTRON_RENDERER_URL']
 let overlayWindow: BrowserWindow | null = null
 
 const positionFile = (): string => join(app.getPath('userData'), 'window.json')
+const configFile = (): string => join(app.getPath('userData'), 'config.json')
+const updateCacheFile = (): string => join(app.getPath('userData'), 'updates.json')
+
+async function syncCalibrationAfterAuthoring(): Promise<void> {
+  if (reconcileActiveCalibration()) {
+    try {
+      await saveConfig(configFile(), appConfig)
+    } catch (error) {
+      dialog.showErrorBox(L.couldNotSaveSettings, errorMessage(error))
+    }
+  }
+  trayShell?.refresh()
+}
 
 /** Where she goes: the remembered spot snapped into a visible work area (A4),
  *  or the bottom-right corner of the primary display on a first run. */
-function overlayBounds(width: number, height: number): Rect {
-  const saved = loadPosition(positionFile())
+function overlayBounds(
+  width: number,
+  height: number,
+  saved: Point | null = loadPosition(positionFile())
+): Rect {
   if (saved) {
     const areas = screen.getAllDisplays().map((d) => d.workArea)
     return { ...clampToWorkArea({ ...saved, width, height }, areas), width, height }
@@ -466,8 +1028,7 @@ function createOverlayWindow(): void {
     resizable: false,
     maximizable: false,
     fullscreenable: false,
-    // 003-D5: the taskbar entry is the only quit path until M5a's tray.
-    skipTaskbar: false,
+    skipTaskbar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -487,6 +1048,11 @@ function createOverlayWindow(): void {
   })
 
   overlayWindow = overlay
+  overlay.on('close', (event) => {
+    if (quitting) return
+    event.preventDefault()
+    overlay.hide()
+  })
   overlay.on('closed', () => {
     overlayWindow = null
   })
@@ -498,7 +1064,7 @@ function createOverlayWindow(): void {
     // a saved position is byte-identical across both calls.
     const [width, height] = overlay.getSize()
     overlay.setBounds(overlayBounds(width, height))
-    overlay.show()
+    if (!appConfig.doNotDisturb) overlay.show()
   })
 
   wireCommon(overlay, 'overlay', { mode: 'overlay' })
@@ -559,6 +1125,10 @@ function registerOverlayIpc(): void {
     return { ok: true }
   })
 
+  ipcMain.handle('overlay:scale:get', (event) =>
+    fromOverlay(event) ? appConfig.scale : DEFAULT_CONFIG.scale
+  )
+
   // Drag in screen coordinates (003-D4). Main holds the origin so a dropped
   // or replayed move can never accumulate drift.
   let drag: { winX: number; winY: number; from: Point } | null = null
@@ -584,13 +1154,237 @@ function registerOverlayIpc(): void {
   })
 }
 
+function resetOverlayPosition(): void {
+  if (!overlayWindow) return
+  const [width, height] = overlayWindow.getSize()
+  const bounds = overlayBounds(width, height, null)
+  overlayWindow.setBounds(bounds)
+  savePosition(positionFile(), { x: bounds.x, y: bounds.y })
+}
+
+async function cleanupOwnedIntegrations(): Promise<void> {
+  const { claude, codex } = await removeOwnedIntegrations(
+    homedir(),
+    (message) => console.error(`[lares] ${message}`)
+  )
+  console.log(
+    `[lares] integrations removed: Claude hooks=${claude.settings}, MCP=${claude.mcp}; Codex hooks=${codex}`
+  )
+}
+
+async function uninstallFromTray(): Promise<void> {
+  if (process.platform === 'win32') {
+    await runWindowsUninstall({
+      execPath: process.execPath,
+      packaged: app.isPackaged,
+      platform: process.platform,
+      exists: existsSync,
+      launch: (path) => shell.openPath(path),
+      quit: () => {
+        quitting = true
+        app.quit()
+      }
+    })
+    return
+  }
+  if (process.platform !== 'darwin') throw new Error('Uninstall is supported on macOS and Windows')
+
+  const choice = await dialog.showMessageBox({
+    type: 'warning',
+    title: L.uninstallConfirmTitle,
+    message: L.uninstallConfirmMessage,
+    detail: L.uninstallConfirmDetail,
+    buttons: [L.uninstallConfirmCancel, L.uninstallConfirmUninstall],
+    defaultId: 0,
+    cancelId: 0,
+    checkboxLabel: L.uninstallConfirmDeleteDataCheckbox,
+    checkboxChecked: false
+  })
+  if (choice.response !== 1) return
+  await runMacUninstall({
+    execPath: process.execPath,
+    packaged: app.isPackaged,
+    platform: process.platform,
+    userData: app.getPath('userData'),
+    appData: app.getPath('appData'),
+    deleteData: choice.checkboxChecked,
+    cleanup: cleanupOwnedIntegrations,
+    removeData: removeLaresUserData,
+    trash: (path) => shell.trashItem(path),
+    quit: () => {
+      quitting = true
+      app.quit()
+    }
+  })
+}
+
+function createTray(): void {
+  if (reconcileActiveCalibration()) {
+    void saveConfig(configFile(), appConfig).catch((error) => {
+      dialog.showErrorBox(L.couldNotSaveSettings, errorMessage(error))
+    })
+  }
+  tray = new Tray(icon)
+  tray.setToolTip('Lares')
+  updateChecks = createUpdateChecks({
+    enabled: () => appConfig.automaticallyCheckForUpdates,
+    cache: loadUpdateCache(updateCacheFile()),
+    check: (cache) =>
+      checkLatestRelease({
+        currentVersion: app.getVersion(),
+        cache
+      }),
+    persist: (cache) => saveUpdateCache(updateCacheFile(), cache),
+    notify: ({ tag, url }) => {
+      if (!Notification.isSupported()) return
+      const notification = new Notification({
+        title: L.updateAvailableTitle,
+        body: L.updateAvailableBody(tag)
+      })
+      notification.on('click', () => {
+        if (isLaresReleaseUrl(url)) {
+          void shell.openExternal(url).catch((error) =>
+            console.error('[lares] release page could not be opened', error)
+          )
+        }
+      })
+      notification.show()
+    },
+    showInfo: () => {
+      void dialog.showMessageBox({
+        type: 'info',
+        title: L.upToDateTitle,
+        message: L.upToDate(app.getVersion())
+      })
+    },
+    showError: (message) => dialog.showErrorBox(L.updateCheckFailed, message),
+    log: (message) => console.warn(`[lares] update check failed: ${message}`),
+    setInterval: (callback, milliseconds) => setInterval(callback, milliseconds),
+    clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>)
+  })
+  trayShell = createTrayShell({
+    config: appConfig,
+    characters: () => listCharacterPackages(charactersRoot()),
+    activeCharacter: () => {
+      const selected = activeCharacter()
+      return 'error' in selected ? undefined : selected.manifestPath
+    },
+    switchCharacter: async (manifestPath) => {
+      const result = await switchCharacter(manifestPath)
+      if (result.ok) reconcileActiveCalibration()
+      return result
+    },
+    importCharacter: (source) => importCharacterPackage(charactersRoot(), source),
+    discardImportedCharacter: (manifestPath) =>
+      discardManagedCharacter(charactersRoot(), manifestPath),
+    pickImportDirectory: async () => {
+      const result = await dialog.showOpenDialog({
+        title: L.importCharacterDialogTitle,
+        properties: ['openDirectory']
+      })
+      return result.canceled ? null : (result.filePaths[0] ?? null)
+    },
+    setMenu: (items) => {
+      tray!.setContextMenu(Menu.buildFromTemplate(items as Electron.MenuItemConstructorOptions[]))
+    },
+    persist: (config) => saveConfig(configFile(), config),
+    showError: (title, message) => dialog.showErrorBox(title, message),
+    setOverlayVisible: (visible) => {
+      if (visible) {
+        if (overlayWindow) overlayWindow.show()
+        else createOverlayWindow()
+      } else {
+        overlayWindow?.hide()
+      }
+    },
+    setScale: (scale: Scale) => {
+      if (!overlayWindow?.webContents.isDestroyed()) {
+        overlayWindow?.webContents.send('overlay:scale', scale)
+      }
+    },
+    getLaunchAtLogin: () => app.getLoginItemSettings().openAtLogin,
+    setLaunchAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
+    resetPosition: resetOverlayPosition,
+    calibrationStatus: () => {
+      const report = activeCalibrationReport()
+      return calibrationState(report ?? { calibrated: 0, uncalibrated: 0 }).label
+    },
+    canMapExpressions: () => {
+      const report = activeCalibrationReport()
+      return report !== null && !calibrationState(report).complete
+    },
+    onMapExpressions: async () => {
+      const report = activeCalibrationReport()
+      if (!report) throw new Error('No active character')
+      await toggleCalibration(
+        appConfig,
+        report,
+        (text) => clipboard.writeText(text),
+        () => saveConfig(configFile(), appConfig)
+      )
+    },
+    onAutomaticUpdatesChanged: () => updateChecks?.automaticPreferenceChanged(),
+    onCheckForUpdates: () => updateChecks?.manual(),
+    onLanguageChanged: (language) => {
+      setLocale(resolveLocale(language, app.getLocale()))
+    },
+    onUninstall: uninstallFromTray,
+    quit: () => {
+      quitting = true
+      app.quit()
+    }
+  })
+}
+
+const removeAdaptersOnly = process.argv.includes('--remove-adapters')
+const uninstallOnly = process.argv.includes('--uninstall')
+
+if (removeAdaptersOnly) {
+  void cleanupOwnedIntegrations().then(
+    () => app.exit(0),
+    (error) => {
+      console.error('[lares] integration cleanup failed', error)
+      app.exit(1)
+    }
+  )
+} else if (uninstallOnly) {
+  if (!app.requestSingleInstanceLock()) {
+    console.error('[lares] Lares is already running; use Uninstall Lares… from its tray')
+    app.exit(2)
+  } else {
+    void app
+      .whenReady()
+      .then(() => {
+        setLocale(resolveLocale(loadConfig(configFile()).language, app.getLocale()))
+        return uninstallFromTray()
+      })
+      .then(
+        () => app.exit(0),
+        (error) => {
+          dialog.showErrorBox(L.laresCouldNotBeUninstalled, errorMessage(error))
+          app.exit(1)
+        }
+      )
+  }
 // A5: a second launch exits immediately; the running instance is untouched
 // (no focus steal — the spec says unaffected).
-if (!app.requestSingleInstanceLock()) {
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('io.lares')
+    app.dock?.hide()
+    appConfig = loadConfig(configFile())
+    setLocale(resolveLocale(appConfig.language, app.getLocale()))
+
+    try {
+      const seeded = ensureManagedCharacterLibrary(charactersRoot(), defaultCharacterRoot())
+      if (seeded.seeded) console.log('[lares] seeded managed character library')
+    } catch (error) {
+      const message = errorMessage(error)
+      console.error(`[lares] default character unavailable: ${message}`)
+      dialog.showErrorBox(L.defaultCharacterUnavailable, message)
+    }
 
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window)
@@ -602,17 +1396,18 @@ if (!app.requestSingleInstanceLock()) {
     registerOverlayIpc()
     void startNerves()
     createWindows()
+    createTray()
+    void updateChecks?.start()
 
     app.on('activate', function () {
       if (BrowserWindow.getAllWindows().length === 0) createWindows()
+      else if (!appConfig.doNotDisturb) overlayWindow?.show()
     })
   })
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-      app.quit()
-    }
+  app.on('before-quit', () => {
+    quitting = true
+    updateChecks?.stop()
+    stopNerves()
   })
-
-  app.on('before-quit', stopNerves)
 }

@@ -1,0 +1,8 @@
+{
+  "name": "lares",
+  "version": "0.1.0",
+  "description": "Give Claude Code sessions a local Lares companion.",
+  "author": {
+    "name": "Lares contributors"
+  }
+}

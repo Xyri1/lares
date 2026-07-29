@@ -117,6 +117,29 @@ describe('per-source saturation', () => {
     expect(e.snapshot().E.valence).toBeCloseTo(0.45, 10)
   })
 
+  it('clears cue saturation and selected-cue cache without changing affect or mood', () => {
+    const cues = {
+      same: { valence: 0.2, arousal: 0 },
+      other: { valence: -0.2, arousal: 0 }
+    }
+    const e = new AffectEngine(cues, 0)
+    e.applyCueNudge('same', 'source', 0)
+    e.applyCueNudge('same', 'source', 1)
+    e.selectCue()
+    const before = e.snapshot()
+
+    e.clearCharacterHistory()
+    cues.same = { valence: -0.2, arousal: 0 }
+    cues.other = { valence: 0.2, arousal: 0 }
+    expect(e.selectCue()).toBe('other')
+    e.applyCueNudge('same', 'source', 2)
+
+    expect(e.snapshot()).toMatchObject({
+      E: { valence: before.E.valence - 0.2, arousal: before.E.arousal },
+      M: before.M
+    })
+  })
+
   it('does not discount across sources', () => {
     const e = new AffectEngine(CUES, 0)
     e.applyCueNudge('joy', 'a', 0)

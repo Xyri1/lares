@@ -1,0 +1,13 @@
+Hiyori (Live2D Original Character)
+
+This application uses the "Hiyori" character sample, owned and copyrighted
+by Live2D Inc., licensed under the Live2D Free Material License Agreement:
+https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html
+
+Per Hiyori's per-character supplementary terms, no changes of any kind to
+the design of this character are permitted.
+
+Hiyori's runtime assets are not distributed in this repository. They are
+fetched at setup time from Live2D's official CubismWebSamples repository
+by scripts/fetch-assets.mjs. See sdd/clearances/M0-clearances.md (D19) for
+the clearance record.
