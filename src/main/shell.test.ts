@@ -51,6 +51,8 @@ function setup(overrides: Partial<TrayShellDependencies> = {}) {
       effects.push(`login:${enabled}`)
     },
     resetPosition: () => effects.push('reset'),
+    calibrationStatus: () => '🔴 Expressions not mapped',
+    canMapExpressions: () => true,
     onMapExpressions: () => {
       effects.push('map')
     },
@@ -82,7 +84,7 @@ describe('tray shell', () => {
     expect(item(state.menu, 'Hiyori').checked).toBe(true)
     expect(item(state.menu, 'Hiyori (2)').type).toBe('radio')
     for (const label of ['Import Character…', '50%', '75%', '100%', '125%', '150%',
-      'Do Not Disturb', 'Launch at Login', 'Reset Position', 'Calibration unavailable',
+      'Do Not Disturb', 'Launch at Login', 'Reset Position', '🔴 Expressions not mapped',
       'Map expressions…', 'Automatically Check for Updates', 'Check for Updates…',
       'Uninstall Lares…', 'Quit']) {
       expect(item(state.menu, label)).toBeTruthy()
@@ -163,6 +165,22 @@ describe('tray shell', () => {
     expect(item(state.menu, 'Map expressions…').enabled).toBe(false)
     expect(item(state.menu, 'Check for Updates…').enabled).toBe(false)
     expect(item(state.menu, 'Uninstall Lares…').enabled).toBe(false)
+  })
+
+  it('recomputes calibration status after mapping and disables completed packages', async () => {
+    let complete = false
+    const state = setup({
+      calibrationStatus: () => (complete ? 'Expressions mapped' : '🟡 1 expression left'),
+      canMapExpressions: () => !complete,
+      onMapExpressions: () => {
+        complete = true
+      }
+    })
+
+    expect(item(state.menu, '🟡 1 expression left')).toBeTruthy()
+    await item(state.menu, 'Map expressions…').click!()
+    expect(item(state.menu, 'Expressions mapped')).toBeTruthy()
+    expect(item(state.menu, 'Map expressions…').enabled).toBe(false)
   })
 
   it('shows rejected switch and picker failures instead of leaking menu promises', async () => {

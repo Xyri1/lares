@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { CALIBRATION_INVITE } from '../calibration'
 import { createServer, type ServerDeps } from './server'
 
 const event = {
@@ -16,10 +17,12 @@ describe('createServer', () => {
   const clients: Client[] = []
   let app: ReturnType<typeof createServer>
   let port: number
+  let calibrationArmed: boolean
 
   beforeEach(async () => {
     ingested.length = 0
     emoteSources.length = 0
+    calibrationArmed = false
     const deps: ServerDeps = {
       ingest: (envelope) => void ingested.push(envelope),
       emote: (_args, source) => {
@@ -31,7 +34,8 @@ describe('createServer', () => {
       listParameters: () => [{ id: 'ParamMouthForm' }],
       previewExpression: (args) => ({ preview: args }),
       saveExpression: (args) => ({ saved: args }),
-      updateExpression: (args) => ({ updated: args })
+      updateExpression: (args) => ({ updated: args }),
+      sessionInstructions: () => (calibrationArmed ? CALIBRATION_INVITE : undefined)
     }
     app = createServer(deps)
     port = await app.start(0)
@@ -174,6 +178,23 @@ describe('createServer', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
     })
     expect(closed.status).toBe(404)
+  })
+
+  it('adds the calibration invite only to sessions initialized while armed', async () => {
+    const { client: existing } = await client()
+    const base = existing.getInstructions()
+    expect(base).toContain('meaningful beats')
+    expect(base).not.toContain(CALIBRATION_INVITE)
+
+    calibrationArmed = true
+    const { client: armed } = await client()
+    expect(armed.getInstructions()).toContain('meaningful beats')
+    expect(armed.getInstructions()).toContain(CALIBRATION_INVITE)
+    expect(existing.getInstructions()).toBe(base)
+
+    calibrationArmed = false
+    const { client: later } = await client()
+    expect(later.getInstructions()).toBe(base)
   })
 
   it('rejects a port collision without scanning', async () => {

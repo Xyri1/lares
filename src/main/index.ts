@@ -1,4 +1,16 @@
-import { app, shell, BrowserWindow, dialog, ipcMain, Menu, protocol, net, screen, Tray } from 'electron'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  protocol,
+  net,
+  screen,
+  Tray
+} from 'electron'
 import {
   existsSync,
   mkdirSync,
@@ -46,6 +58,12 @@ import {
   type CharacterSwitcher,
   type CharacterSwitchResult
 } from './characters/switch'
+import {
+  CALIBRATION_INVITE,
+  calibrationState,
+  reconcileCalibrationArmed,
+  toggleCalibration
+} from './calibration'
 import { DEFAULT_CONFIG, loadConfig, saveConfig, type AppConfig, type Scale } from './config'
 import { DensityLog } from './densityLog'
 import { Nerves, type ParamInfo, type PreparedNervesCharacter } from './nerves'
@@ -69,7 +87,11 @@ import {
 } from './scenario/player'
 import { writeTrace } from './scenario/trace'
 import { createServer } from './server/server'
-import { createTrayShell, hydrateInitialCharacter } from './shell'
+import {
+  createTrayShell,
+  hydrateInitialCharacter,
+  type TrayShell
+} from './shell'
 
 // Character assets reach the renderer over lares:// so the load path is
 // identical in dev (http origin) and packaged (file origin) builds.
@@ -104,6 +126,7 @@ let characterAssets: CharacterAssetState | null = null
 let characterLoadBroker: CharacterLoadBroker | null = null
 let appConfig: AppConfig = { ...DEFAULT_CONFIG }
 let tray: Tray | null = null
+let trayShell: TrayShell | null = null
 let quitting = false
 
 // Dev A/B is a scenario harness, not a second product body. Scenario playback
@@ -141,6 +164,16 @@ function activeCharacter():
   }
   selectedCharacter = selected
   return selectedCharacter
+}
+
+function activeCalibrationReport() {
+  const selected = activeCharacter()
+  return 'error' in selected ? null : selected.character.report
+}
+
+function reconcileActiveCalibration(): boolean {
+  const report = activeCalibrationReport()
+  return report ? reconcileCalibrationArmed(appConfig, report) : false
 }
 
 export async function switchCharacter(manifestPath: string): Promise<CharacterSwitchResult> {
@@ -521,7 +554,7 @@ async function startNerves(): Promise<void> {
     status: (nowMs) => liveNerves!.status(nowMs),
     listParameters: () => liveNerves!.listParameters(),
     previewExpression: (args, nowMs) => liveNerves!.previewExpression(args, nowMs),
-    saveExpression: (raw) => {
+    saveExpression: async (raw) => {
       if (!currentSelection) throw new Error('No active character')
       const args = object(raw, 'save_expression')
       const params = liveNerves!.clampParams(args.params)
@@ -533,9 +566,10 @@ async function startNerves(): Promise<void> {
       )
       if (!result.ok) throw new Error(result.error)
       refreshCharacterState()
+      await syncCalibrationAfterAuthoring()
       return { saved: args.name, report: result.report }
     },
-    updateExpression: (raw) => {
+    updateExpression: async (raw) => {
       if (!currentSelection) throw new Error('No active character')
       const args = object(raw, 'update_expression')
       const params = args.params === undefined ? undefined : liveNerves!.clampParams(args.params)
@@ -547,8 +581,11 @@ async function startNerves(): Promise<void> {
       })
       if (!result.ok) throw new Error(result.error)
       refreshCharacterState()
+      await syncCalibrationAfterAuthoring()
       return { updated: args.name, report: result.report }
-    }
+    },
+    sessionInstructions: () =>
+      appConfig.calibrationArmed ? CALIBRATION_INVITE : undefined
   })
 
   try {
@@ -893,6 +930,20 @@ let overlayWindow: BrowserWindow | null = null
 const positionFile = (): string => join(app.getPath('userData'), 'window.json')
 const configFile = (): string => join(app.getPath('userData'), 'config.json')
 
+async function syncCalibrationAfterAuthoring(): Promise<void> {
+  if (reconcileActiveCalibration()) {
+    try {
+      await saveConfig(configFile(), appConfig)
+    } catch (error) {
+      dialog.showErrorBox(
+        'Could not save settings',
+        error instanceof Error ? error.message : String(error)
+      )
+    }
+  }
+  trayShell?.refresh()
+}
+
 /** Where she goes: the remembered spot snapped into a visible work area (A4),
  *  or the bottom-right corner of the primary display on a first run. */
 function overlayBounds(
@@ -1087,16 +1138,28 @@ function resetOverlayPosition(): void {
 }
 
 function createTray(): void {
+  if (reconcileActiveCalibration()) {
+    void saveConfig(configFile(), appConfig).catch((error) => {
+      dialog.showErrorBox(
+        'Could not save settings',
+        error instanceof Error ? error.message : String(error)
+      )
+    })
+  }
   tray = new Tray(icon)
   tray.setToolTip('Lares')
-  createTrayShell({
+  trayShell = createTrayShell({
     config: appConfig,
     characters: () => listCharacterPackages(charactersRoot()),
     activeCharacter: () => {
       const selected = activeCharacter()
       return 'error' in selected ? undefined : selected.manifestPath
     },
-    switchCharacter,
+    switchCharacter: async (manifestPath) => {
+      const result = await switchCharacter(manifestPath)
+      if (result.ok) reconcileActiveCalibration()
+      return result
+    },
     importCharacter: (source) => importCharacterPackage(charactersRoot(), source),
     pickImportDirectory: async () => {
       const result = await dialog.showOpenDialog({
@@ -1126,6 +1189,24 @@ function createTray(): void {
     getLaunchAtLogin: () => app.getLoginItemSettings().openAtLogin,
     setLaunchAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     resetPosition: resetOverlayPosition,
+    calibrationStatus: () => {
+      const report = activeCalibrationReport()
+      return calibrationState(report ?? { calibrated: 0, uncalibrated: 0 }).label
+    },
+    canMapExpressions: () => {
+      const report = activeCalibrationReport()
+      return report !== null && !calibrationState(report).complete
+    },
+    onMapExpressions: async () => {
+      const report = activeCalibrationReport()
+      if (!report) throw new Error('No active character')
+      await toggleCalibration(
+        appConfig,
+        report,
+        (text) => clipboard.writeText(text),
+        () => saveConfig(configFile(), appConfig)
+      )
+    },
     quit: () => {
       quitting = true
       app.quit()

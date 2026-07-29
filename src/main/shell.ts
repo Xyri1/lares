@@ -32,7 +32,8 @@ export interface TrayShellDependencies {
   getLaunchAtLogin(): boolean
   setLaunchAtLogin(enabled: boolean): void
   resetPosition(): void
-  calibrationStatus?: string
+  calibrationStatus?: () => string
+  canMapExpressions?: () => boolean
   onMapExpressions?: () => void | Promise<void>
   onCheckForUpdates?: () => void | Promise<void>
   onUninstall?: () => void | Promise<void>
@@ -150,6 +151,18 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     refresh()
   }
 
+  const mapExpressions = async (): Promise<void> => {
+    try {
+      await deps.onMapExpressions?.()
+    } catch (error) {
+      deps.showError(
+        'Expression mapping could not be updated',
+        error instanceof Error ? error.message : String(error)
+      )
+    }
+    refresh()
+  }
+
   function refresh(): void {
     const active = deps.activeCharacter()
     deps.setMenu([
@@ -189,13 +202,14 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
       },
       { label: 'Reset Position', click: deps.resetPosition },
       { type: 'separator' },
-      { label: deps.calibrationStatus ?? 'Calibration unavailable', enabled: false },
+      { label: deps.calibrationStatus?.() ?? 'Calibration unavailable', enabled: false },
       {
         label: 'Map expressions…',
         type: 'checkbox',
         checked: config.calibrationArmed,
-        enabled: deps.onMapExpressions !== undefined,
-        click: () => deps.onMapExpressions?.()
+        enabled:
+          deps.onMapExpressions !== undefined && (deps.canMapExpressions?.() ?? true),
+        click: mapExpressions
       },
       { type: 'separator' },
       {

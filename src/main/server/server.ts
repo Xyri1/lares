@@ -20,6 +20,7 @@ export interface ServerDeps {
   previewExpression?(args: unknown, nowMs: number): unknown | Promise<unknown>
   saveExpression?(args: unknown): unknown | Promise<unknown>
   updateExpression?(args: unknown): unknown | Promise<unknown>
+  sessionInstructions?(): string | undefined
 }
 
 interface McpSession {
@@ -83,9 +84,10 @@ export function createServer(deps: ServerDeps): {
 
   const createMcpSession = async (): Promise<McpSession> => {
     let session: McpSession
+    const invitation = deps.sessionInstructions?.()?.trim()
     const server = new McpServer(
       { name: 'lares', version: '1.0.0' },
-      { instructions: INSTRUCTIONS }
+      { instructions: invitation ? `${INSTRUCTIONS}\n${invitation}` : INSTRUCTIONS }
     )
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
