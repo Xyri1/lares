@@ -35,6 +35,7 @@ export interface TrayShellDependencies {
   calibrationStatus?: () => string
   canMapExpressions?: () => boolean
   onMapExpressions?: () => void | Promise<void>
+  onAutomaticUpdatesChanged?: (enabled: boolean) => void | Promise<void>
   onCheckForUpdates?: () => void | Promise<void>
   onUninstall?: () => void | Promise<void>
   quit(): void
@@ -148,6 +149,7 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
   const setAutomaticUpdates = async (): Promise<void> => {
     config.automaticallyCheckForUpdates = !config.automaticallyCheckForUpdates
     await persist()
+    await deps.onAutomaticUpdatesChanged?.(config.automaticallyCheckForUpdates)
     refresh()
   }
 

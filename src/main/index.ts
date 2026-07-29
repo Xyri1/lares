@@ -6,6 +6,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  Notification,
   protocol,
   net,
   screen,
@@ -92,6 +93,13 @@ import {
   hydrateInitialCharacter,
   type TrayShell
 } from './shell'
+import {
+  checkLatestRelease,
+  createUpdateChecks,
+  isLaresReleaseUrl,
+  loadUpdateCache,
+  saveUpdateCache
+} from './updates'
 
 // Character assets reach the renderer over lares:// so the load path is
 // identical in dev (http origin) and packaged (file origin) builds.
@@ -127,6 +135,7 @@ let characterLoadBroker: CharacterLoadBroker | null = null
 let appConfig: AppConfig = { ...DEFAULT_CONFIG }
 let tray: Tray | null = null
 let trayShell: TrayShell | null = null
+let updateChecks: ReturnType<typeof createUpdateChecks> | null = null
 let quitting = false
 
 // Dev A/B is a scenario harness, not a second product body. Scenario playback
@@ -929,6 +938,7 @@ let overlayWindow: BrowserWindow | null = null
 
 const positionFile = (): string => join(app.getPath('userData'), 'window.json')
 const configFile = (): string => join(app.getPath('userData'), 'config.json')
+const updateCacheFile = (): string => join(app.getPath('userData'), 'updates.json')
 
 async function syncCalibrationAfterAuthoring(): Promise<void> {
   if (reconcileActiveCalibration()) {
@@ -1148,6 +1158,42 @@ function createTray(): void {
   }
   tray = new Tray(icon)
   tray.setToolTip('Lares')
+  updateChecks = createUpdateChecks({
+    enabled: () => appConfig.automaticallyCheckForUpdates,
+    cache: loadUpdateCache(updateCacheFile()),
+    check: (cache) =>
+      checkLatestRelease({
+        currentVersion: app.getVersion(),
+        cache
+      }),
+    persist: (cache) => saveUpdateCache(updateCacheFile(), cache),
+    notify: ({ tag, url }) => {
+      if (!Notification.isSupported()) return
+      const notification = new Notification({
+        title: 'Lares update available',
+        body: `${tag} is available on GitHub.`
+      })
+      notification.on('click', () => {
+        if (isLaresReleaseUrl(url)) {
+          void shell.openExternal(url).catch((error) =>
+            console.error('[lares] release page could not be opened', error)
+          )
+        }
+      })
+      notification.show()
+    },
+    showInfo: () => {
+      void dialog.showMessageBox({
+        type: 'info',
+        title: 'Lares is up to date',
+        message: `You are running the latest Lares release (${app.getVersion()}).`
+      })
+    },
+    showError: (message) => dialog.showErrorBox('Update check failed', message),
+    log: (message) => console.warn(`[lares] update check failed: ${message}`),
+    setInterval: (callback, milliseconds) => setInterval(callback, milliseconds),
+    clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>)
+  })
   trayShell = createTrayShell({
     config: appConfig,
     characters: () => listCharacterPackages(charactersRoot()),
@@ -1207,6 +1253,8 @@ function createTray(): void {
         () => saveConfig(configFile(), appConfig)
       )
     },
+    onAutomaticUpdatesChanged: () => updateChecks?.automaticPreferenceChanged(),
+    onCheckForUpdates: () => updateChecks?.manual(),
     quit: () => {
       quitting = true
       app.quit()
@@ -1244,6 +1292,7 @@ if (!app.requestSingleInstanceLock()) {
     void startNerves()
     createWindows()
     createTray()
+    void updateChecks?.start()
 
     app.on('activate', function () {
       if (BrowserWindow.getAllWindows().length === 0) createWindows()
@@ -1253,6 +1302,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     quitting = true
+    updateChecks?.stop()
     stopNerves()
   })
 }

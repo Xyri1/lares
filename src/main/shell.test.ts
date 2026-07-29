@@ -56,6 +56,9 @@ function setup(overrides: Partial<TrayShellDependencies> = {}) {
     onMapExpressions: () => {
       effects.push('map')
     },
+    onAutomaticUpdatesChanged: (enabled) => {
+      effects.push(`automatic:${enabled}`)
+    },
     onCheckForUpdates: () => {
       effects.push('check')
     },
@@ -117,7 +120,7 @@ describe('tray shell', () => {
       'scale:1.25', 'persist',
       'visible:false', 'persist',
       'login:true', 'persist',
-      'persist', 'reset', 'map', 'check', 'uninstall', 'quit'
+      'persist', 'automatic:false', 'reset', 'map', 'check', 'uninstall', 'quit'
     ])
   })
 
