@@ -256,6 +256,7 @@ export function selectCharacterManifest(charactersRoot: string): CharacterSelect
   const manifests = readdirSync(charactersRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && existsSync(join(charactersRoot, entry.name, 'lar.character.json')))
     .map((entry) => join(charactersRoot, entry.name, 'lar.character.json'))
+    .filter((manifestPath) => loadCharacter(manifestPath).ok)
     .sort()
   if (manifests.length === 0) return { ok: false, error: `No character package found under ${charactersRoot}` }
   return {

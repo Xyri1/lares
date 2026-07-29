@@ -1,10 +1,22 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, join } from 'node:path'
 import { createManifestFromRawPackage, hasCharacterManifest } from './import'
 import { loadCharacter, type ManifestResult } from './manifest'
 
 const MANIFEST = 'lar.character.json'
+const STAGING_DIRECTORY = '.staging'
+
+function isStagingEntry(name: string): boolean {
+  return name === STAGING_DIRECTORY || name.includes('.staging-')
+}
+
+function clearStaging(root: string): void {
+  if (!existsSync(root)) return
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (isStagingEntry(entry.name)) rmSync(join(root, entry.name), { recursive: true, force: true })
+  }
+}
 
 export function bundledPackageRoot(
   appPath: string,
@@ -17,7 +29,7 @@ export function bundledPackageRoot(
 
 function hasValidCharacter(root: string): boolean {
   return existsSync(root) && readdirSync(root, { withFileTypes: true }).some((entry) => {
-    if (!entry.isDirectory()) return false
+    if (!entry.isDirectory() || isStagingEntry(entry.name)) return false
     return loadCharacter(join(root, entry.name, MANIFEST)).ok
   })
 }
@@ -33,11 +45,15 @@ function copyValidatedCharacter(
   root: string,
   source: string
 ): { manifestPath: string; character: Extract<ManifestResult, { ok: true }> } {
-  if (!statSync(source).isDirectory()) throw new Error('Import requires an extracted directory')
+  const sourceStat = lstatSync(source)
+  if (sourceStat.isSymbolicLink()) throw new Error('Import requires an extracted directory, not a symbolic link')
+  if (!sourceStat.isDirectory()) throw new Error('Import requires an extracted directory')
   mkdirSync(root, { recursive: true })
   const destination = destinationFor(root, source)
-  const staging = `${destination}.staging-${randomUUID()}`
+  const stagingRoot = join(root, STAGING_DIRECTORY)
+  const staging = join(stagingRoot, randomUUID())
   try {
+    mkdirSync(stagingRoot, { recursive: true })
     cpSync(source, staging, { recursive: true })
     if (!hasCharacterManifest(staging)) createManifestFromRawPackage(staging, staging, basename(source))
     const copiedCharacter = loadCharacter(join(staging, MANIFEST))
@@ -52,6 +68,7 @@ function copyValidatedCharacter(
 
 /** Seeds the managed library only when it has no valid character package. */
 export function ensureManagedCharacterLibrary(root: string, bundledPackageRoot: string): { seeded: boolean } {
+  clearStaging(root)
   if (hasValidCharacter(root)) return { seeded: false }
   copyValidatedCharacter(root, bundledPackageRoot)
   return { seeded: true }
@@ -77,7 +94,7 @@ export function listCharacterPackages(
 ): { manifestPath: string; character: Extract<ManifestResult, { ok: true }>; label: string }[] {
   if (!existsSync(root)) return []
   const packages = readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && !isStagingEntry(entry.name))
     .map((entry) => ({ manifestPath: join(root, entry.name, MANIFEST), character: loadCharacter(join(root, entry.name, MANIFEST)) }))
     .filter((entry): entry is { manifestPath: string; character: Extract<ManifestResult, { ok: true }> } => entry.character.ok)
     .sort((a, b) => a.manifestPath.localeCompare(b.manifestPath))

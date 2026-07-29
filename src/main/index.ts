@@ -21,11 +21,10 @@ import {
 } from './characters/authoring'
 import {
   loadCharacter,
-  selectCharacterManifest,
   type CueDefinition,
   type ManifestResult
 } from './characters/manifest'
-import { bundledPackageRoot, ensureManagedCharacterLibrary } from './characters/library'
+import { bundledPackageRoot, ensureManagedCharacterLibrary, listCharacterPackages } from './characters/library'
 import { DensityLog } from './densityLog'
 import { Nerves, type ParamInfo } from './nerves'
 import {
@@ -93,16 +92,14 @@ function activeCharacter():
   | { ok: true; manifestPath: string; character: Extract<ManifestResult, { ok: true }> }
   | { ok: false; error: string } {
   if (selectedCharacter) return selectedCharacter
-  const selection = selectCharacterManifest(charactersRoot())
-  if (!selection.ok) {
-    selectedCharacter = selection
-    return selection
+  const packages = listCharacterPackages(charactersRoot())
+  if (packages.length === 0) {
+    selectedCharacter = { ok: false, error: `No valid character package found under ${charactersRoot()}` }
+    return selectedCharacter
   }
-  if (selection.warning) console.warn(`[lares] ${selection.warning}`)
-  const character = loadCharacter(selection.manifestPath)
-  selectedCharacter = character.ok
-    ? { ok: true, manifestPath: selection.manifestPath, character }
-    : { ok: false, error: character.error }
+  const selected = packages[0]
+  if (packages.length > 1) console.warn(`[lares] Multiple character packages found; using ${selected.manifestPath}`)
+  selectedCharacter = { ok: true, manifestPath: selected.manifestPath, character: selected.character }
   return selectedCharacter
 }
 

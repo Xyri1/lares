@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -70,6 +70,28 @@ describe('managed character library', () => {
       expect(imported.manifestPath.startsWith(join(workspace, 'managed'))).toBe(true)
       expect(readFileSync(join(imported.manifestPath, '..', 'notice.txt'), 'utf8')).toBe('keep me')
     }
+  })
+
+  it('refuses a symlinked source directory without adding it to the library', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'lares-library-'))
+    const source = writePackage(workspace, 'source')
+    const linkedSource = join(workspace, 'linked-source')
+    const managedRoot = join(workspace, 'managed')
+    symlinkSync(source, linkedSource)
+
+    expect(importCharacterPackage(managedRoot, linkedSource)).toMatchObject({ ok: false })
+    expect(existsSync(join(managedRoot, 'linked-source'))).toBe(false)
+  })
+
+  it('hides and clears stale staging before deciding whether to seed', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'lares-library-'))
+    const managedRoot = join(workspace, 'managed')
+    const stale = writePackage(managedRoot, 'interrupted.staging-import')
+    const bundledRoot = writePackage(workspace, 'bundled')
+
+    expect(listCharacterPackages(managedRoot)).toEqual([])
+    expect(ensureManagedCharacterLibrary(managedRoot, bundledRoot)).toEqual({ seeded: true })
+    expect(existsSync(stale)).toBe(false)
   })
 
   it('imports one recursive raw model without flattening and harvests indexed plus loose assets', () => {

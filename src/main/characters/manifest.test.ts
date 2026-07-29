@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -173,12 +173,28 @@ describe('loadCharacter', () => {
   it('selects the first package alphabetically and diagnoses zero or many packages', () => {
     const root = mkdtempSync(join(tmpdir(), 'lares-characters-'))
     expect(selectCharacterManifest(root)).toMatchObject({ ok: false, error: 'No character package found under ' + root })
-    mkdirSync(join(root, 'zeta'))
-    mkdirSync(join(root, 'alpha'))
-    writeFileSync(join(root, 'zeta', 'lar.character.json'), '{}')
-    writeFileSync(join(root, 'alpha', 'lar.character.json'), '{}')
+    for (const name of ['zeta', 'alpha']) {
+      mkdirSync(join(root, name, 'runtime'), { recursive: true })
+      writeFileSync(join(root, name, 'lar.character.json'), JSON.stringify(VALID))
+      writeFileSync(join(root, name, 'runtime', 'Hiyori.model3.json'), '{}')
+    }
     const selected = selectCharacterManifest(root)
     expect(selected).toMatchObject({ ok: true, manifestPath: join(root, 'alpha', 'lar.character.json') })
     if (selected.ok) expect(selected.warning).toContain('Multiple character packages')
+  })
+
+  it('skips an invalid package when a later managed package is valid', () => {
+    const root = mkdtempSync(join(tmpdir(), 'lares-characters-'))
+    mkdirSync(join(root, 'alpha'))
+    writeFileSync(join(root, 'alpha', 'lar.character.json'), '{}')
+    const valid = writePackage(VALID)
+    const beta = join(root, 'beta')
+    mkdirSync(join(beta, 'runtime'), { recursive: true })
+    writeFileSync(join(beta, 'lar.character.json'), readFileSync(valid, 'utf8'))
+    writeFileSync(join(beta, 'runtime', 'Hiyori.model3.json'), '{}')
+
+    const selected = selectCharacterManifest(root)
+    expect(selected).toMatchObject({ ok: true, manifestPath: join(beta, 'lar.character.json') })
+    if (selected.ok) expect(loadCharacter(selected.manifestPath)).toMatchObject({ ok: true, name: 'Hiyori' })
   })
 })
