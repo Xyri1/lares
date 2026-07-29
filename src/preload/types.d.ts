@@ -73,6 +73,8 @@ interface CueListEntry {
 
 interface LaresBridge {
   getCharacter(): Promise<CharacterPayload>
+  getOverlayScale(): Promise<number>
+  onOverlayScale(cb: (scale: number) => void): void
   reportInventory(params: unknown[]): void
   onCharacterPrepare(cb: (request: CharacterPrepareRequest) => void): void
   reportCharacterPrepared(result: CharacterPrepareResult): void

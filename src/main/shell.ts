@@ -1,0 +1,201 @@
+import { resolve } from 'node:path'
+import { SCALES, type AppConfig, type Scale } from './config'
+
+export interface ShellCharacter {
+  manifestPath: string
+  label: string
+}
+
+export interface ShellMenuItem {
+  label?: string
+  type?: 'normal' | 'separator' | 'checkbox' | 'radio'
+  checked?: boolean
+  enabled?: boolean
+  submenu?: ShellMenuItem[]
+  click?: () => void | Promise<void>
+}
+
+type Result = { ok: true; manifestPath: string } | { ok: false; error: string }
+
+export interface TrayShellDependencies {
+  config: AppConfig
+  characters(): ShellCharacter[]
+  activeCharacter(): string | undefined
+  switchCharacter(manifestPath: string): Promise<Result>
+  importCharacter(source: string): Result
+  pickImportDirectory(): Promise<string | null>
+  setMenu(menu: ShellMenuItem[]): void
+  persist(config: AppConfig): Promise<void>
+  showError(title: string, message: string): void
+  setOverlayVisible(visible: boolean): void
+  setScale(scale: Scale): void
+  getLaunchAtLogin(): boolean
+  setLaunchAtLogin(enabled: boolean): void
+  resetPosition(): void
+  calibrationStatus?: string
+  onMapExpressions?: () => void | Promise<void>
+  onCheckForUpdates?: () => void | Promise<void>
+  onUninstall?: () => void | Promise<void>
+  quit(): void
+}
+
+export interface TrayShell {
+  refresh(): void
+}
+
+export function hydrateInitialCharacter<T extends ShellCharacter>(
+  characters: T[],
+  config: AppConfig
+): T | undefined {
+  const selected =
+    characters.find((character) =>
+      config.activeCharacter === undefined
+        ? false
+        : resolve(character.manifestPath) === resolve(config.activeCharacter)
+    ) ?? characters[0]
+  if (
+    selected &&
+    config.activeCharacter !== undefined &&
+    resolve(selected.manifestPath) !== resolve(config.activeCharacter)
+  ) {
+    delete config.activeCharacter
+  }
+  return selected
+}
+
+export function createTrayShell(deps: TrayShellDependencies): TrayShell {
+  const config = deps.config
+
+  const persist = async (): Promise<void> => {
+    try {
+      await deps.persist(config)
+    } catch (error) {
+      deps.showError('Could not save settings', error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const select = async (manifestPath: string): Promise<void> => {
+    const result = await deps.switchCharacter(manifestPath)
+    if (!result.ok) {
+      deps.showError('Character could not be loaded', result.error)
+      return
+    }
+    config.activeCharacter = result.manifestPath
+    await persist()
+    refresh()
+  }
+
+  const importCharacter = async (): Promise<void> => {
+    const source = await deps.pickImportDirectory()
+    if (!source) return
+    const imported = deps.importCharacter(source)
+    if (!imported.ok) {
+      deps.showError('Character could not be imported', imported.error)
+      return
+    }
+    await select(imported.manifestPath)
+  }
+
+  const setScale = async (scale: Scale): Promise<void> => {
+    config.scale = scale
+    deps.setScale(scale)
+    await persist()
+    refresh()
+  }
+
+  const setDoNotDisturb = async (): Promise<void> => {
+    config.doNotDisturb = !config.doNotDisturb
+    deps.setOverlayVisible(!config.doNotDisturb)
+    await persist()
+    refresh()
+  }
+
+  const setLaunchAtLogin = async (): Promise<void> => {
+    deps.setLaunchAtLogin(!deps.getLaunchAtLogin())
+    config.launchAtLogin = deps.getLaunchAtLogin()
+    await persist()
+    refresh()
+  }
+
+  const setAutomaticUpdates = async (): Promise<void> => {
+    config.automaticallyCheckForUpdates = !config.automaticallyCheckForUpdates
+    await persist()
+    refresh()
+  }
+
+  function refresh(): void {
+    const active = deps.activeCharacter()
+    deps.setMenu([
+      {
+        label: 'Characters',
+        submenu: [
+          ...deps.characters().map((character, index): ShellMenuItem => ({
+            label: `${index + 1}. ${character.label}`,
+            type: 'radio',
+            checked: character.manifestPath === active,
+            click: () => select(character.manifestPath)
+          })),
+          { type: 'separator' },
+          { label: 'Import Character…', click: importCharacter }
+        ]
+      },
+      {
+        label: 'Scale',
+        submenu: SCALES.map((scale): ShellMenuItem => ({
+          label: `${Math.round(scale * 100)}%`,
+          type: 'radio',
+          checked: config.scale === scale,
+          click: () => setScale(scale)
+        }))
+      },
+      {
+        label: 'Do Not Disturb',
+        type: 'checkbox',
+        checked: config.doNotDisturb,
+        click: setDoNotDisturb
+      },
+      {
+        label: 'Launch at Login',
+        type: 'checkbox',
+        checked: deps.getLaunchAtLogin(),
+        click: setLaunchAtLogin
+      },
+      { label: 'Reset Position', click: deps.resetPosition },
+      { type: 'separator' },
+      { label: deps.calibrationStatus ?? 'Calibration unavailable', enabled: false },
+      {
+        label: 'Map expressions…',
+        type: 'checkbox',
+        checked: config.calibrationArmed,
+        enabled: deps.onMapExpressions !== undefined,
+        click: () => deps.onMapExpressions?.()
+      },
+      { type: 'separator' },
+      {
+        label: 'Automatically Check for Updates',
+        type: 'checkbox',
+        checked: config.automaticallyCheckForUpdates,
+        click: setAutomaticUpdates
+      },
+      {
+        label: 'Check for Updates…',
+        enabled: deps.onCheckForUpdates !== undefined,
+        click: () => deps.onCheckForUpdates?.()
+      },
+      { type: 'separator' },
+      {
+        label: 'Uninstall Lares…',
+        enabled: deps.onUninstall !== undefined,
+        click: () => deps.onUninstall?.()
+      },
+      { label: 'Quit', click: deps.quit }
+    ])
+  }
+
+  deps.setScale(config.scale)
+  deps.setOverlayVisible(!config.doNotDisturb)
+  deps.setLaunchAtLogin(config.launchAtLogin)
+  config.launchAtLogin = deps.getLaunchAtLogin()
+  refresh()
+  return { refresh }
+}

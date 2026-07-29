@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, dialog, ipcMain, protocol, net, screen } from 'electron'
+import { app, shell, BrowserWindow, dialog, ipcMain, Menu, protocol, net, screen, Tray } from 'electron'
 import {
   existsSync,
   mkdirSync,
@@ -29,7 +29,12 @@ import {
   type CueDefinition,
   type ManifestResult
 } from './characters/manifest'
-import { bundledPackageRoot, ensureManagedCharacterLibrary, listCharacterPackages } from './characters/library'
+import {
+  bundledPackageRoot,
+  ensureManagedCharacterLibrary,
+  importCharacterPackage,
+  listCharacterPackages
+} from './characters/library'
 import {
   CharacterAssetState,
   CharacterLoadBroker,
@@ -41,6 +46,7 @@ import {
   type CharacterSwitcher,
   type CharacterSwitchResult
 } from './characters/switch'
+import { DEFAULT_CONFIG, loadConfig, saveConfig, type AppConfig, type Scale } from './config'
 import { DensityLog } from './densityLog'
 import { Nerves, type ParamInfo, type PreparedNervesCharacter } from './nerves'
 import {
@@ -63,6 +69,7 @@ import {
 } from './scenario/player'
 import { writeTrace } from './scenario/trace'
 import { createServer } from './server/server'
+import { createTrayShell, hydrateInitialCharacter } from './shell'
 
 // Character assets reach the renderer over lares:// so the load path is
 // identical in dev (http origin) and packaged (file origin) builds.
@@ -95,6 +102,9 @@ let selectedCharacter:
 let characterSwitcher: CharacterSwitcher | null = null
 let characterAssets: CharacterAssetState | null = null
 let characterLoadBroker: CharacterLoadBroker | null = null
+let appConfig: AppConfig = { ...DEFAULT_CONFIG }
+let tray: Tray | null = null
+let quitting = false
 
 // Dev A/B is a scenario harness, not a second product body. Scenario playback
 // still fans out for comparison; the normal live feed below targets only the overlay.
@@ -125,8 +135,10 @@ function activeCharacter():
     selectedCharacter = { ok: false, error: `No valid character package found under ${charactersRoot()}` }
     return selectedCharacter
   }
-  const selected = packages[0]
-  if (packages.length > 1) console.warn(`[lares] Multiple character packages found; using ${selected.manifestPath}`)
+  const selected = hydrateInitialCharacter(packages, appConfig)!
+  if (packages.length > 1 && appConfig.activeCharacter === undefined) {
+    console.warn(`[lares] Multiple character packages found; using ${selected.manifestPath}`)
+  }
   selectedCharacter = selected
   return selectedCharacter
 }
@@ -879,11 +891,15 @@ const IS_DEV_RUN = is.dev && !!process.env['ELECTRON_RENDERER_URL']
 let overlayWindow: BrowserWindow | null = null
 
 const positionFile = (): string => join(app.getPath('userData'), 'window.json')
+const configFile = (): string => join(app.getPath('userData'), 'config.json')
 
 /** Where she goes: the remembered spot snapped into a visible work area (A4),
  *  or the bottom-right corner of the primary display on a first run. */
-function overlayBounds(width: number, height: number): Rect {
-  const saved = loadPosition(positionFile())
+function overlayBounds(
+  width: number,
+  height: number,
+  saved: Point | null = loadPosition(positionFile())
+): Rect {
   if (saved) {
     const areas = screen.getAllDisplays().map((d) => d.workArea)
     return { ...clampToWorkArea({ ...saved, width, height }, areas), width, height }
@@ -936,8 +952,7 @@ function createOverlayWindow(): void {
     resizable: false,
     maximizable: false,
     fullscreenable: false,
-    // 003-D5: the taskbar entry is the only quit path until M5a's tray.
-    skipTaskbar: false,
+    skipTaskbar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -957,6 +972,11 @@ function createOverlayWindow(): void {
   })
 
   overlayWindow = overlay
+  overlay.on('close', (event) => {
+    if (quitting) return
+    event.preventDefault()
+    overlay.hide()
+  })
   overlay.on('closed', () => {
     overlayWindow = null
   })
@@ -968,7 +988,7 @@ function createOverlayWindow(): void {
     // a saved position is byte-identical across both calls.
     const [width, height] = overlay.getSize()
     overlay.setBounds(overlayBounds(width, height))
-    overlay.show()
+    if (!appConfig.doNotDisturb) overlay.show()
   })
 
   wireCommon(overlay, 'overlay', { mode: 'overlay' })
@@ -1029,6 +1049,10 @@ function registerOverlayIpc(): void {
     return { ok: true }
   })
 
+  ipcMain.handle('overlay:scale:get', (event) =>
+    fromOverlay(event) ? appConfig.scale : DEFAULT_CONFIG.scale
+  )
+
   // Drag in screen coordinates (003-D4). Main holds the origin so a dropped
   // or replayed move can never accumulate drift.
   let drag: { winX: number; winY: number; from: Point } | null = null
@@ -1054,6 +1078,61 @@ function registerOverlayIpc(): void {
   })
 }
 
+function resetOverlayPosition(): void {
+  if (!overlayWindow) return
+  const [width, height] = overlayWindow.getSize()
+  const bounds = overlayBounds(width, height, null)
+  overlayWindow.setBounds(bounds)
+  savePosition(positionFile(), bounds)
+}
+
+function createTray(): void {
+  tray = new Tray(icon)
+  tray.setToolTip('Lares')
+  createTrayShell({
+    config: appConfig,
+    characters: () => listCharacterPackages(charactersRoot()),
+    activeCharacter: () => {
+      const selected = activeCharacter()
+      return 'error' in selected ? undefined : selected.manifestPath
+    },
+    switchCharacter,
+    importCharacter: (source) => importCharacterPackage(charactersRoot(), source),
+    pickImportDirectory: async () => {
+      const result = await dialog.showOpenDialog({
+        title: 'Import Character',
+        properties: ['openDirectory']
+      })
+      return result.canceled ? null : (result.filePaths[0] ?? null)
+    },
+    setMenu: (items) => {
+      tray!.setContextMenu(Menu.buildFromTemplate(items as Electron.MenuItemConstructorOptions[]))
+    },
+    persist: (config) => saveConfig(configFile(), config),
+    showError: (title, message) => dialog.showErrorBox(title, message),
+    setOverlayVisible: (visible) => {
+      if (visible) {
+        if (overlayWindow) overlayWindow.show()
+        else createOverlayWindow()
+      } else {
+        overlayWindow?.hide()
+      }
+    },
+    setScale: (scale: Scale) => {
+      if (!overlayWindow?.webContents.isDestroyed()) {
+        overlayWindow?.webContents.send('overlay:scale', scale)
+      }
+    },
+    getLaunchAtLogin: () => app.getLoginItemSettings().openAtLogin,
+    setLaunchAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
+    resetPosition: resetOverlayPosition,
+    quit: () => {
+      quitting = true
+      app.quit()
+    }
+  })
+}
+
 // A5: a second launch exits immediately; the running instance is untouched
 // (no focus steal — the spec says unaffected).
 if (!app.requestSingleInstanceLock()) {
@@ -1061,6 +1140,8 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('io.lares')
+    app.dock?.hide()
+    appConfig = loadConfig(configFile())
 
     try {
       const seeded = ensureManagedCharacterLibrary(charactersRoot(), defaultCharacterRoot())
@@ -1081,17 +1162,18 @@ if (!app.requestSingleInstanceLock()) {
     registerOverlayIpc()
     void startNerves()
     createWindows()
+    createTray()
 
     app.on('activate', function () {
       if (BrowserWindow.getAllWindows().length === 0) createWindows()
+      else if (!appConfig.doNotDisturb) overlayWindow?.show()
     })
   })
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-      app.quit()
-    }
-  })
+  app.on('window-all-closed', () => {})
 
-  app.on('before-quit', stopNerves)
+  app.on('before-quit', () => {
+    quitting = true
+    stopNerves()
+  })
 }

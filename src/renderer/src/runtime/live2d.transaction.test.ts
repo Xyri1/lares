@@ -99,6 +99,16 @@ const { Live2DRuntime } = await import('./live2d')
 const cleanup = { children: true, texture: true, baseTexture: true }
 
 describe('Live2DRuntime character transaction', () => {
+  it('scales both the reported Lar bounds and renderer fit ceiling', async () => {
+    boundary.models.set('/scaled', boundary.model('/scaled'))
+    const runtime = new Live2DRuntime({ parentElement: null } as HTMLCanvasElement)
+    await runtime.load('/scaled')
+
+    expect(runtime.larSize()).toEqual({ width: 200, height: 400 })
+    runtime.setDisplayScale(1.5)
+    expect(runtime.larSize()).toEqual({ width: 300, height: 600 })
+  })
+
   beforeEach(() => {
     boundary.models.clear()
     boundary.applications.length = 0

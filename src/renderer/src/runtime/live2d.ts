@@ -70,6 +70,7 @@ export class Live2DRuntime implements IRuntime {
   // split the screen into slots.
   private peers: Live2DRuntime[]
   private active = true
+  private displayScale = 1
   private loadGeneration = 0
   private prepared?: { id: number; model: Live2DModel; inventory: ParamInfo[] }
   private committed?: {
@@ -112,6 +113,11 @@ export class Live2DRuntime implements IRuntime {
     this.active = on
     if (this.model) this.model.visible = on
     for (const p of this.peers) p.fit()
+  }
+
+  setDisplayScale(scale: number): void {
+    this.displayScale = Number.isFinite(scale) ? Math.min(1.5, Math.max(0.5, scale)) : 1
+    this.fit()
   }
 
   // Measured from processed ticks — pixi's Ticker.FPS reports raw rAF cadence
@@ -359,7 +365,8 @@ export class Live2DRuntime implements IRuntime {
   // whatever fit() last did to it.
   larSize(): { width: number; height: number } {
     const aspect = this.model ? this.model.width / this.model.height : 1
-    return { width: Math.round(DEFAULT_LAR_HEIGHT * aspect), height: DEFAULT_LAR_HEIGHT }
+    const height = DEFAULT_LAR_HEIGHT * this.displayScale
+    return { width: Math.round(height * aspect), height }
   }
 
   private core(): CoreModel {
@@ -409,7 +416,7 @@ export class Live2DRuntime implements IRuntime {
     this.model.scale.set(1)
     const scale = Math.min(
       slotWidth / this.model.width,
-      Math.min(height, DEFAULT_LAR_HEIGHT) / this.model.height
+      Math.min(height, DEFAULT_LAR_HEIGHT * this.displayScale) / this.model.height
     )
     this.model.scale.set(scale)
     this.model.x = slotX + (slotWidth - this.model.width) / 2

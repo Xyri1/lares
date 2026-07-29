@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 const lares = {
   getCharacter: (): Promise<CharacterPayload> => ipcRenderer.invoke('character:get'),
+  getOverlayScale: (): Promise<number> => ipcRenderer.invoke('overlay:scale:get'),
+  onOverlayScale: (cb: (scale: number) => void): void => {
+    ipcRenderer.on('overlay:scale', (_event, scale: number) => cb(scale))
+  },
   reportInventory: (params: unknown[]): void => {
     ipcRenderer.send('body:inventory', params)
   },
