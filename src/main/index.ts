@@ -1327,6 +1327,7 @@ function createTray(): void {
 }
 
 const removeAdaptersOnly = process.argv.includes('--remove-adapters')
+const uninstallOnly = process.argv.includes('--uninstall')
 
 if (removeAdaptersOnly) {
   void cleanupOwnedIntegrations().then(
@@ -1336,6 +1337,22 @@ if (removeAdaptersOnly) {
       app.exit(1)
     }
   )
+} else if (uninstallOnly) {
+  if (!app.requestSingleInstanceLock()) {
+    console.error('[lares] Lares is already running; use Uninstall Lares… from its tray')
+    app.exit(2)
+  } else {
+    void app.whenReady().then(uninstallFromTray).then(
+      () => app.exit(0),
+      (error) => {
+        dialog.showErrorBox(
+          'Lares could not be uninstalled',
+          error instanceof Error ? error.message : String(error)
+        )
+        app.exit(1)
+      }
+    )
+  }
 // A5: a second launch exits immediately; the running instance is untouched
 // (no focus steal — the spec says unaffected).
 } else if (!app.requestSingleInstanceLock()) {
