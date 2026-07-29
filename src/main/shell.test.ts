@@ -202,6 +202,14 @@ describe('tray shell', () => {
     })
     await item(importState.menu, 'Import Character…').click!()
     expect(importState.effects).toContain('error:picker failed')
+
+    const uninstallState = setup({
+      onUninstall: async () => {
+        throw new Error('uninstaller missing')
+      }
+    })
+    await item(uninstallState.menu, 'Uninstall Lares…').click!()
+    expect(uninstallState.effects).toContain('error:uninstaller missing')
   })
 })
 

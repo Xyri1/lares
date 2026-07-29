@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -52,6 +52,10 @@ describe('adapter:remove', () => {
         }
       })
     )
+    const binDirectory = join(home, '.lares', 'bin')
+    await mkdir(binDirectory, { recursive: true })
+    await writeFile(join(binDirectory, 'lares-forwarder'), 'old')
+    await writeFile(join(binDirectory, 'lares-forwarder.cmd'), 'old')
 
     const result = await new Promise<{ code: number | null; stdout: string }>((done, reject) => {
       const child = spawn(
@@ -80,5 +84,6 @@ describe('adapter:remove', () => {
     expect(JSON.parse(await readFile(join(codexDirectory, 'hooks.json'), 'utf8'))).toEqual({
       hooks: { Stop: [{ hooks: [{ type: 'command', command: 'keep-me' }] }] }
     })
+    expect(await readdir(binDirectory)).toEqual([])
   })
 })

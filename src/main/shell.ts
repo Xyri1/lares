@@ -165,6 +165,15 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     refresh()
   }
 
+  const uninstall = async (): Promise<void> => {
+    try {
+      await deps.onUninstall?.()
+    } catch (error) {
+      deps.showError('Lares could not be uninstalled',
+        error instanceof Error ? error.message : String(error))
+    }
+  }
+
   function refresh(): void {
     const active = deps.activeCharacter()
     deps.setMenu([
@@ -229,7 +238,7 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
       {
         label: 'Uninstall Lares…',
         enabled: deps.onUninstall !== undefined,
-        click: () => deps.onUninstall?.()
+        click: uninstall
       },
       { label: 'Quit', click: deps.quit }
     ])

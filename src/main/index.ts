@@ -100,6 +100,12 @@ import {
   loadUpdateCache,
   saveUpdateCache
 } from './updates'
+import {
+  removeLaresUserData,
+  removeOwnedIntegrations,
+  runMacUninstall,
+  runWindowsUninstall
+} from './uninstall'
 
 // Character assets reach the renderer over lares:// so the load path is
 // identical in dev (http origin) and packaged (file origin) builds.
@@ -1147,6 +1153,63 @@ function resetOverlayPosition(): void {
   savePosition(positionFile(), { x: bounds.x, y: bounds.y })
 }
 
+async function cleanupOwnedIntegrations(): Promise<void> {
+  const { claude, codex } = await removeOwnedIntegrations(
+    homedir(),
+    (message) => console.error(`[lares] ${message}`)
+  )
+  console.log(
+    `[lares] integrations removed: Claude hooks=${claude.settings}, MCP=${claude.mcp}; Codex hooks=${codex}`
+  )
+}
+
+async function uninstallFromTray(): Promise<void> {
+  if (process.platform === 'win32') {
+    await runWindowsUninstall({
+      execPath: process.execPath,
+      packaged: app.isPackaged,
+      platform: process.platform,
+      cleanup: cleanupOwnedIntegrations,
+      exists: existsSync,
+      launch: (path) => shell.openPath(path),
+      quit: () => {
+        quitting = true
+        app.quit()
+      }
+    })
+    return
+  }
+  if (process.platform !== 'darwin') throw new Error('Uninstall is supported on macOS and Windows')
+
+  const choice = await dialog.showMessageBox({
+    type: 'warning',
+    title: 'Uninstall Lares',
+    message: 'Remove Lares and its agent integrations?',
+    detail: 'Imported characters and authored work are retained unless you select the option below.',
+    buttons: ['Cancel', 'Uninstall'],
+    defaultId: 0,
+    cancelId: 0,
+    checkboxLabel: 'Also delete Lares data',
+    checkboxChecked: false
+  })
+  if (choice.response !== 1) return
+  await runMacUninstall({
+    execPath: process.execPath,
+    packaged: app.isPackaged,
+    platform: process.platform,
+    userData: app.getPath('userData'),
+    appData: app.getPath('appData'),
+    deleteData: choice.checkboxChecked,
+    cleanup: cleanupOwnedIntegrations,
+    removeData: removeLaresUserData,
+    trash: (path) => shell.trashItem(path),
+    quit: () => {
+      quitting = true
+      app.quit()
+    }
+  })
+}
+
 function createTray(): void {
   if (reconcileActiveCalibration()) {
     void saveConfig(configFile(), appConfig).catch((error) => {
@@ -1255,6 +1318,7 @@ function createTray(): void {
     },
     onAutomaticUpdatesChanged: () => updateChecks?.automaticPreferenceChanged(),
     onCheckForUpdates: () => updateChecks?.manual(),
+    onUninstall: uninstallFromTray,
     quit: () => {
       quitting = true
       app.quit()
@@ -1262,9 +1326,19 @@ function createTray(): void {
   })
 }
 
+const removeAdaptersOnly = process.argv.includes('--remove-adapters')
+
+if (removeAdaptersOnly) {
+  void cleanupOwnedIntegrations().then(
+    () => app.exit(0),
+    (error) => {
+      console.error('[lares] integration cleanup failed', error)
+      app.exit(1)
+    }
+  )
 // A5: a second launch exits immediately; the running instance is untouched
 // (no focus steal — the spec says unaffected).
-if (!app.requestSingleInstanceLock()) {
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.whenReady().then(() => {
