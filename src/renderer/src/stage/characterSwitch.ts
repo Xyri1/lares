@@ -240,9 +240,40 @@ export function createCharacterLoadHandler(
     async prepare(raw) {
       const request = parseCharacterPrepareRequest(raw)
       if (!request || request.id <= latestId) return
-      if (latestId > 0) cancel(latestId)
+      const previousId = latestId
       latestId = request.id
       cancelled.delete(request.id)
+      const predecessorId = tentative?.request.id
+      if (predecessorId !== undefined) {
+        let decision: unknown
+        try {
+          decision = await getDecision(predecessorId)
+        } catch (error) {
+          if (request.id !== latestId) return
+          if (tentative?.request.id === predecessorId) {
+            report(reportPrepared, {
+              id: request.id,
+              ok: false,
+              error: `previous character switch decision failed: ${error instanceof Error ? error.message : String(error)}`
+            })
+            return
+          }
+        }
+        if (request.id !== latestId) return
+        if (tentative?.request.id === predecessorId) {
+          if (decision === 'commit') finalize(predecessorId)
+          else if (decision === 'rollback') rollback(predecessorId)
+          else {
+            report(reportPrepared, {
+              id: request.id,
+              ok: false,
+              error: 'previous character switch decision is unavailable'
+            })
+            return
+          }
+        }
+      }
+      if (previousId > 0) cancel(previousId)
       try {
         const inventory = await runtime.prepareLoad(
           request.id,

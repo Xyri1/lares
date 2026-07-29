@@ -65,14 +65,70 @@ describe('AffectDriver character switching', () => {
 
     const transaction = driver.characterChanged()
     expect(stopScenario).not.toHaveBeenCalled()
+    affectUpdate?.({ ...feed, tick: 2 })
+    expect(driver.buffer().engine).toHaveLength(1)
     transaction.finalize()
 
     expect(stopScenario).not.toHaveBeenCalled()
-    affectUpdate?.({ ...feed, tick: 2 })
+    affectUpdate?.({ ...feed, tick: 3 })
     expect(driver.buffer().engine).toHaveLength(1)
 
     scenarioStopped?.()
-    affectUpdate?.({ ...feed, tick: 3 })
+    affectUpdate?.({ ...feed, tick: 4 })
     expect(driver.buffer().engine).toHaveLength(1)
+  })
+
+  it('buffers affect while tentative and replays it only after rollback', () => {
+    let affectUpdate: ((feed: AffectFeed) => void) | undefined
+    const rt = runtime()
+    Object.assign(globalThis, {
+      requestAnimationFrame: vi.fn(),
+      window: {
+        lares: {
+          onAuthoringPreview: vi.fn(),
+          onAuthoringRevert: vi.fn(),
+          onAffectUpdate: (cb: (feed: AffectFeed) => void) => {
+            affectUpdate = cb
+          },
+          onScenarioSeeked: vi.fn(),
+          onScenarioEnd: vi.fn(),
+          onScenarioStopped: vi.fn(),
+          sendSynthTrace: vi.fn(),
+          playScenario: vi.fn(async () => ({ ok: true as const, endMs: 1000 })),
+          stopScenario: vi.fn(async () => ({ ok: true as const }))
+        }
+      }
+    })
+    const driver = createAffectDriver(rt, PRESETS.default, {}, { Wave: 'Idle:0' })
+    const feed: AffectFeed = {
+      stageId: 'A',
+      tick: 1,
+      E: { valence: 0, arousal: 0 },
+      M: { valence: 0, arousal: 0 },
+      baselineState: 'steady',
+      expressionStack: [],
+      beats: []
+    }
+
+    driver.play('smooth-build', 1)
+    affectUpdate?.(feed)
+    const transaction = driver.characterChanged()
+    vi.mocked(rt.playMotion).mockClear()
+    vi.mocked(rt.setParams).mockClear()
+
+    affectUpdate?.({
+      ...feed,
+      tick: 2,
+      expressionStack: [{ cueOrFreeform: 'Wave', weight: 1, expiryMs: 1000 }]
+    })
+
+    expect(driver.buffer().engine).toHaveLength(1)
+    expect(rt.playMotion).not.toHaveBeenCalled()
+    expect(rt.setParams).not.toHaveBeenCalled()
+
+    transaction.rollback()
+
+    expect(driver.buffer().engine.map((entry) => entry.t)).toEqual([100, 200])
+    expect(rt.playMotion).toHaveBeenCalledWith('Idle', 0)
   })
 })

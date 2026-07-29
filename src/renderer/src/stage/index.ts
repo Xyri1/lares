@@ -67,7 +67,9 @@ async function boot(): Promise<void> {
       (result) => window.lares.reportCharacterCommitted(result as CharacterCommitResult),
       (request) => {
         currentCharacter = request.character
-        void window.lares.fitToModel(runtime.larSize())
+        void window.lares.fitToModel(runtime.larSize()).catch((error) => {
+          console.error('[lares] fit after character switch failed', error)
+        })
       },
       window.lares.getCharacterDecision
     )

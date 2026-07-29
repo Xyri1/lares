@@ -218,6 +218,39 @@ describe('main character load broker', () => {
     expect(broker.decision(1)).toBe('rollback')
   })
 
+  it('keeps monotonic process-lifetime decisions after later rollback and elapsed timers', async () => {
+    vi.useFakeTimers()
+    try {
+      const body = new Body('overlay')
+      const broker = new CharacterLoadBroker(
+        new CharacterAssetState('/characters/first'),
+        () => body,
+        50
+      )
+      const prepare = async (id: number, root: string): Promise<void> => {
+        const prepared = broker.prepare(id, root, { id })
+        broker.receive('overlay', { id, ok: true, inventory: INVENTORY })
+        await prepared
+        const committed = broker.commit(id, { id, cues: [] })
+        broker.receiveCommit('overlay', { id, ok: true })
+        await committed
+      }
+
+      await prepare(1, '/characters/second')
+      expect(broker.finalize(1)).toBe(true)
+      await prepare(2, '/characters/third')
+      expect(broker.rollback(2)).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(1_000_000)
+
+      expect(broker.decision(1)).toBe('commit')
+      expect(broker.decision(2)).toBe('rollback')
+      expect(broker.decision(3)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('retains rollback state and the old root when finalize delivery throws', async () => {
     const body = new Body('overlay')
     const assets = new CharacterAssetState('/characters/first')

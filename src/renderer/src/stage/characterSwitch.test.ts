@@ -389,6 +389,197 @@ describe('body character load handshake', () => {
     }
   })
 
+  it.each([
+    ['commit', 'lares://candidate/1/runtime/second.model3.json'],
+    ['rollback', 'first']
+  ] as const)(
+    'reconciles a lost predecessor %s before a failing superseding prepare',
+    async (decision, expectedVisible) => {
+      const runtime = new FixtureRuntime()
+      const results: unknown[] = []
+      const handler = createCharacterLoadHandler(
+        runtime,
+        { characterChanged: () => () => {} },
+        { First: { ParamFirst: 1 } },
+        {},
+        (result) => results.push(result),
+        () => {},
+        undefined,
+        async (id) => (id === 1 ? decision : null),
+        50
+      )
+      await handler.prepare({
+        id: 1,
+        character: {
+          ok: true,
+          name: 'Second',
+          live2d: { model: 'lares://candidate/1/runtime/second.model3.json' }
+        },
+        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      })
+      handler.commit({ id: 1, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+
+      await handler.prepare({
+        id: 2,
+        character: {
+          ok: true,
+          name: 'Broken',
+          live2d: { model: 'lares://candidate/2/runtime/failure.model3.json' }
+        },
+        cues: [{ name: 'Broken', params: { ParamSecond: 1 } }]
+      })
+
+      expect(runtime.visible).toBe(expectedVisible)
+      expect(results.at(-1)).toEqual({ id: 2, ok: false, error: failure.error })
+    }
+  )
+
+  it('keeps a tentative predecessor intact when its decision is unavailable', async () => {
+    const runtime = new FixtureRuntime()
+    const results: unknown[] = []
+    const handler = createCharacterLoadHandler(
+      runtime,
+      { characterChanged: () => () => {} },
+      { First: { ParamFirst: 1 } },
+      {},
+      (result) => results.push(result),
+      () => {},
+      undefined,
+      async () => null,
+      50
+    )
+    await handler.prepare({
+      id: 1,
+      character: {
+        ok: true,
+        name: 'Second',
+        live2d: { model: 'lares://candidate/1/runtime/second.model3.json' }
+      },
+      cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+    })
+    handler.commit({ id: 1, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+
+    await handler.prepare({
+      id: 2,
+      character: {
+        ok: true,
+        name: 'Third',
+        live2d: { model: 'lares://candidate/2/runtime/third.model3.json' }
+      },
+      cues: [{ name: 'Third', params: { ParamSecond: 1 } }]
+    })
+
+    expect(runtime.visible).toBe('lares://candidate/1/runtime/second.model3.json')
+    expect(runtime.tentative?.id).toBe(1)
+    expect(results.at(-1)).toEqual({
+      id: 2,
+      ok: false,
+      error: 'previous character switch decision is unavailable'
+    })
+  })
+
+  it('reports a rejected predecessor decision without disturbing its watchdog', async () => {
+    const runtime = new FixtureRuntime()
+    const results: unknown[] = []
+    const handler = createCharacterLoadHandler(
+      runtime,
+      { characterChanged: () => () => {} },
+      { First: { ParamFirst: 1 } },
+      {},
+      (result) => results.push(result),
+      () => {},
+      undefined,
+      async () => {
+        throw new Error('main frame changed')
+      },
+      50
+    )
+    await handler.prepare({
+      id: 1,
+      character: {
+        ok: true,
+        name: 'Second',
+        live2d: { model: 'lares://candidate/1/runtime/second.model3.json' }
+      },
+      cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+    })
+    handler.commit({ id: 1, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+
+    await handler.prepare({
+      id: 2,
+      character: {
+        ok: true,
+        name: 'Third',
+        live2d: { model: 'lares://candidate/2/runtime/third.model3.json' }
+      },
+      cues: [{ name: 'Third', params: { ParamSecond: 1 } }]
+    })
+
+    expect(runtime.visible).toBe('lares://candidate/1/runtime/second.model3.json')
+    expect(runtime.tentative?.id).toBe(1)
+    expect(results.at(-1)).toEqual({
+      id: 2,
+      ok: false,
+      error: 'previous character switch decision failed: main frame changed'
+    })
+  })
+
+  it('lets only the newest concurrent prepare continue after predecessor reconciliation', async () => {
+    const runtime = new FixtureRuntime()
+    const results: unknown[] = []
+    const decisions: Array<(value: unknown) => void> = []
+    const handler = createCharacterLoadHandler(
+      runtime,
+      { characterChanged: () => () => {} },
+      { First: { ParamFirst: 1 } },
+      {},
+      (result) => results.push(result),
+      () => {},
+      undefined,
+      async () => new Promise((resolve) => decisions.push(resolve)),
+      50
+    )
+    await handler.prepare({
+      id: 1,
+      character: {
+        ok: true,
+        name: 'Second',
+        live2d: { model: 'lares://candidate/1/runtime/second.model3.json' }
+      },
+      cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+    })
+    handler.commit({ id: 1, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+
+    const second = handler.prepare({
+      id: 2,
+      character: {
+        ok: true,
+        name: 'Third',
+        live2d: { model: 'lares://candidate/2/runtime/third.model3.json' }
+      },
+      cues: [{ name: 'Third', params: { ParamSecond: 1 } }]
+    })
+    const third = handler.prepare({
+      id: 3,
+      character: {
+        ok: true,
+        name: 'Fourth',
+        live2d: { model: 'lares://candidate/3/runtime/fourth.model3.json' }
+      },
+      cues: [{ name: 'Fourth', params: { ParamSecond: 1 } }]
+    })
+    await vi.waitFor(() => expect(decisions).toHaveLength(2))
+    decisions[0]('commit')
+    await second
+    decisions[1]('commit')
+    await third
+
+    expect(runtime.finalized).toEqual([1])
+    expect(runtime.prepared?.id).toBe(3)
+    expect(results.some((result) => (result as { id?: number }).id === 2)).toBe(false)
+    expect(results.at(-1)).toMatchObject({ id: 3, ok: true })
+  })
+
   it('retries a transient decision rejection without an unhandled promise', async () => {
     vi.useFakeTimers()
     const unhandled = vi.fn()

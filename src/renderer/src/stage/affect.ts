@@ -221,7 +221,8 @@ export function createAffectDriver(
     )
   })
 
-  window.lares.onAffectUpdate((f) => {
+  let tentativeFeeds: AffectFeed[] | null = null
+  const processFeed = (f: AffectFeed): void => {
     const st = stages[f.stageId as StageId]
     if (!st) return
     st.feed = f
@@ -235,6 +236,14 @@ export function createAffectDriver(
       st.trace.synth.push(frame)
       st.latest = frame.params
     }
+  }
+
+  window.lares.onAffectUpdate((f) => {
+    if (tentativeFeeds !== null && f.stageId === 'A') {
+      tentativeFeeds.push(f)
+      return
+    }
+    processFeed(f)
   })
 
   // Seek lands here as one batch covering scenario time 0..T for every active
@@ -444,6 +453,7 @@ export function createAffectDriver(
     },
     characterChanged(): CharacterChangeTransaction {
       const st = stages.A!
+      const bufferedFeeds: AffectFeed[] = []
       const before = {
         preview,
         authoringPreview,
@@ -455,6 +465,7 @@ export function createAffectDriver(
         motionCue: st.motionCue
       }
       const rollback = (): void => {
+        if (tentativeFeeds !== bufferedFeeds) return
         preview = before.preview
         authoringPreview = before.authoringPreview
         st.defaults = before.defaults
@@ -463,8 +474,11 @@ export function createAffectDriver(
         st.fade = before.fade
         st.latest = before.latest
         st.motionCue = before.motionCue
+        tentativeFeeds = null
+        for (const feed of bufferedFeeds) processFeed(feed)
       }
       try {
+        tentativeFeeds = bufferedFeeds
         preview = null
         authoringPreview = null
         st.defaults = Object.fromEntries(st.runtime.parameters().map((p) => [p.id, p.default]))
@@ -476,7 +490,11 @@ export function createAffectDriver(
         st.runtime.resetParams()
         return {
           rollback,
-          finalize: () => reset(true, false)
+          finalize: () => {
+            if (tentativeFeeds !== bufferedFeeds) return
+            tentativeFeeds = null
+            reset(true, false)
+          }
         }
       } catch (error) {
         rollback()

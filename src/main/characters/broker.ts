@@ -95,11 +95,6 @@ interface AwaitingCommit extends BodyState {
 
 export type CharacterDecision = 'commit' | 'rollback'
 
-interface FinalDecision {
-  value: CharacterDecision
-  timer: ReturnType<typeof setTimeout>
-}
-
 function bestEffortSend(body: CharacterBody, channel: string, value: unknown): void {
   if (body.isDestroyed()) return
   try {
@@ -114,7 +109,8 @@ export class CharacterLoadBroker {
   private readonly prepared = new Map<number, BodyState>()
   private readonly committing = new Map<number, AwaitingCommit>()
   private readonly committed = new Map<number, BodyState>()
-  private readonly decisions = new Map<number, FinalDecision>()
+  private lastDecidedId = 0
+  private activeCandidateId: number | null = null
 
   constructor(
     private readonly assets: CharacterAssetState,
@@ -237,9 +233,10 @@ export class CharacterLoadBroker {
   }
 
   decision(rawId: unknown): CharacterDecision | null {
-    return Number.isSafeInteger(rawId) && (rawId as number) > 0
-      ? (this.decisions.get(rawId as number)?.value ?? null)
-      : null
+    if (!Number.isSafeInteger(rawId)) return null
+    const id = rawId as number
+    if (id < 1 || id > this.lastDecidedId) return null
+    return id === this.activeCandidateId ? 'commit' : 'rollback'
   }
 
   finalize(id: number): boolean {
@@ -315,13 +312,8 @@ export class CharacterLoadBroker {
   }
 
   private recordDecision(id: number, value: CharacterDecision): void {
-    const previous = this.decisions.get(id)
-    if (previous) clearTimeout(previous.timer)
-    // The body asks after one timeout and retries within 1s; four windows keep
-    // the answer available through transient query/frame failures.
-    const timer = setTimeout(() => this.decisions.delete(id), this.timeoutMs * 4)
-    timer.unref?.()
-    this.decisions.set(id, { value, timer })
+    this.lastDecidedId = Math.max(this.lastDecidedId, id)
+    if (value === 'commit') this.activeCandidateId = id
   }
 
   private cleanupPending(id: number): void {
