@@ -1,5 +1,6 @@
 import { AffectEngine, type AffectSnapshot, type FreeformExpression } from './affect/engine'
 import type { CueCoordinates } from './characters/manifest'
+import { errorMessage } from './errors'
 import { Ingestor, type PidProbe, type SessionSummary } from './sessions/ingest'
 import type { EventEnvelope } from './sessions/mapEvent'
 
@@ -102,7 +103,7 @@ function prepareResolvedCues(
     try {
       resolved = resolver(cue, defaults, inventory)
     } catch (error) {
-      cueErrors.push(error instanceof Error ? error.message : String(error))
+      cueErrors.push(errorMessage(error))
       continue
     }
     if (!resolved) continue

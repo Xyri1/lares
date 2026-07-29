@@ -1,6 +1,7 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { errorMessage } from '../errors'
 import { createManifestFromRawPackage, hasCharacterManifest } from './import'
 import { loadCharacter, type ManifestResult } from './manifest'
 
@@ -121,7 +122,7 @@ export function importCharacterPackage(
   try {
     return { ok: true, ...copyValidatedCharacter(root, source) }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    return { ok: false, error: errorMessage(error) }
   }
 }
 

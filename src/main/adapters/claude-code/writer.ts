@@ -1,7 +1,8 @@
 import { constants } from 'node:fs'
-import { copyFile, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { copyFile, readFile, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
+import { errorMessage } from '../../errors.ts'
+import { atomicWrite } from '../../fs.ts'
 
 export type JsonObject = Record<string, unknown>
 export type FileResult = 'updated' | 'unchanged' | 'skipped'
@@ -140,26 +141,6 @@ export async function backupOnce(path: string): Promise<void> {
   }
 }
 
-export async function atomicWrite(path: string, value: JsonObject): Promise<void> {
-  const temporary = `${path}.lares-tmp-${process.pid}-${randomUUID()}`
-  try {
-    let copied = false
-    try {
-      await copyFile(path, temporary, constants.COPYFILE_EXCL)
-      copied = true
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-      flag: copied ? 'w' : 'wx'
-    })
-    await rename(temporary, path)
-  } catch (error) {
-    await rm(temporary, { force: true })
-    throw error
-  }
-}
-
 export async function writeIfDifferent(
   path: string,
   transform: (settings: JsonObject) => JsonObject,
@@ -183,7 +164,7 @@ async function writeMcp(
   try {
     current = await readJson(path)
   } catch (error) {
-    log(error instanceof Error ? error.message : String(error))
+    log(errorMessage(error))
     return 'skipped'
   }
   if (!current) {
@@ -195,7 +176,7 @@ async function writeMcp(
   try {
     next = transform(current.value)
   } catch (error) {
-    log(error instanceof Error ? error.message : String(error))
+    log(errorMessage(error))
     return 'skipped'
   }
   if (isDeepStrictEqual(current.value, next)) return 'unchanged'

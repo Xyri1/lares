@@ -11,6 +11,7 @@ import {
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Vec2 } from '../affect/constants'
+import { errorMessage } from '../errors'
 import { validateCharacter, type ValidationReport } from './manifest'
 
 export type AuthoringResult = { ok: true; report: ValidationReport } | { ok: false; error: string }
@@ -87,7 +88,7 @@ function readManifest(manifestPath: string): ManifestDocument | AuthoringResult 
   try {
     return JSON.parse(readFileSync(manifestPath, 'utf8')) as ManifestDocument
   } catch (error) {
-    return failure(`Cannot read character manifest: ${error instanceof Error ? error.message : String(error)}`)
+    return failure(`Cannot read character manifest: ${errorMessage(error)}`)
   }
 }
 
@@ -158,7 +159,7 @@ export function saveExpression(manifestPath: string, name: string, params: Recor
   } catch (error) {
     if (existsSync(expressionPath)) unlinkSync(expressionPath)
     if (!authoredExisted && existsSync(authoredRoot)) rmdirSync(authoredRoot)
-    return failure(`Cannot save expression: ${error instanceof Error ? error.message : String(error)}`)
+    return failure(`Cannot save expression: ${errorMessage(error)}`)
   }
 }
 
@@ -184,7 +185,7 @@ export function updateExpression(manifestPath: string, name: string, update: Exp
     try {
       return commitManifest(manifestPath, next)
     } catch (error) {
-      return failure(`Cannot update expression: ${error instanceof Error ? error.message : String(error)}`)
+      return failure(`Cannot update expression: ${errorMessage(error)}`)
     }
   }
 
@@ -213,6 +214,6 @@ export function updateExpression(manifestPath: string, name: string, update: Exp
     } catch {
       return failure('Cannot update expression and could not restore its previous authored file')
     }
-    return failure(`Cannot update expression: ${error instanceof Error ? error.message : String(error)}`)
+    return failure(`Cannot update expression: ${errorMessage(error)}`)
   }
 }

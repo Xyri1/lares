@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
+import { errorMessage } from '../errors'
 import { parseEnvelope, type EventEnvelope } from '../sessions/mapEvent'
 
 const MAX_BODY_BYTES = 1024 * 1024
@@ -65,7 +66,7 @@ async function toolResult(action: () => unknown | Promise<unknown>) {
     return { content: [{ type: 'text' as const, text: text(await action()) }] }
   } catch (error) {
     return {
-      content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
+      content: [{ type: 'text' as const, text: errorMessage(error) }],
       isError: true
     }
   }

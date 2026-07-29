@@ -2,13 +2,13 @@ import { rm, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 import pluginHooks from '../../../../plugins/lares/hooks/hooks.json' with { type: 'json' }
 import {
-  atomicWrite,
   backupOnce,
   readJson,
   writeIfDifferent,
   type FileResult,
   type JsonObject
 } from '../claude-code/writer.ts'
+import { atomicWrite } from '../../fs.ts'
 
 export interface CodexHooksOptions {
   codexDirectory: string

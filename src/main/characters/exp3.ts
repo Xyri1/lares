@@ -1,5 +1,6 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
+import { errorMessage } from '../errors.ts'
 
 export type Exp3Blend = 'Add' | 'Multiply' | 'Overwrite'
 
@@ -32,7 +33,7 @@ export function parseExp3File(path: string, displayNames?: ReadonlyMap<string, s
   try {
     return parseExp3(JSON.parse(readFileSync(path, 'utf8')), displayNames)
   } catch (error) {
-    return { ok: false, error: `cannot parse ${path}: ${error instanceof Error ? error.message : String(error)}` }
+    return { ok: false, error: `cannot parse ${path}: ${errorMessage(error)}` }
   }
 }
 

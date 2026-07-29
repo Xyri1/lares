@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { validateCharacter, type ValidationReport } from './manifest.ts'
+import { nestedFileReferences, validateCharacter, type ValidationReport } from './manifest.ts'
 
 const MANIFEST = 'lar.character.json'
 
@@ -30,23 +30,13 @@ function findModels(root: string): string[] {
   return models
 }
 
-function fileReferences(value: unknown): string[] {
-  if (Array.isArray(value)) return value.flatMap(fileReferences)
-  if (typeof value !== 'object' || value === null) return []
-  const record = value as Record<string, unknown>
-  return [
-    ...(typeof record.File === 'string' ? [record.File] : []),
-    ...Object.values(record).flatMap(fileReferences)
-  ]
-}
-
 function modelReferences(modelPath: string, packageRoot: string): string[] {
   const model = JSON.parse(readFileSync(modelPath, 'utf8')) as { FileReferences?: { Expressions?: unknown; Motions?: unknown } }
   const refs = model.FileReferences ?? {}
   const modelDir = dirname(modelPath)
   return [
-    ...fileReferences(refs.Expressions).map((path) => toPackagePath(packageRoot, resolve(modelDir, path))),
-    ...fileReferences(refs.Motions).map((path) => toPackagePath(packageRoot, resolve(modelDir, path)))
+    ...nestedFileReferences(refs.Expressions).map((path) => toPackagePath(packageRoot, resolve(modelDir, path))),
+    ...nestedFileReferences(refs.Motions).map((path) => toPackagePath(packageRoot, resolve(modelDir, path)))
   ]
 }
 

@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { errorMessage } from '../errors'
 import { parseInventory, type ParamInfo } from '../nerves'
 import { listCharacterPackages } from './library'
 import type { ManifestResult } from './manifest'
@@ -59,7 +60,7 @@ export function createCharacterSwitcher<Precomputed, CommitState>(
       try {
         precomputed = operations.precompute(candidate)
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+        return { ok: false, error: errorMessage(error) }
       }
       const id = ++latestId
       if (pendingId !== null) {
@@ -82,7 +83,7 @@ export function createCharacterSwitcher<Precomputed, CommitState>(
         if (pendingId === id) pendingId = null
         return id !== latestId
           ? { ok: false, error: 'character switch was superseded' }
-          : { ok: false, error: error instanceof Error ? error.message : String(error) }
+          : { ok: false, error: errorMessage(error) }
       }
       try {
         await operations.commit(id, state)
@@ -91,7 +92,7 @@ export function createCharacterSwitcher<Precomputed, CommitState>(
         if (pendingId === id) pendingId = null
         return id !== latestId
           ? { ok: false, error: 'character switch was superseded' }
-          : { ok: false, error: error instanceof Error ? error.message : String(error) }
+          : { ok: false, error: errorMessage(error) }
       }
       try {
         operations.finalize(id)
@@ -100,7 +101,7 @@ export function createCharacterSwitcher<Precomputed, CommitState>(
         if (pendingId === id) pendingId = null
         return {
           ok: false,
-          error: error instanceof Error ? error.message : String(error)
+          error: errorMessage(error)
         }
       }
       // prepareCommit owns all fallible main work. Publication is synchronous,

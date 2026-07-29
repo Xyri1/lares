@@ -142,7 +142,7 @@ function pathError(packageRoot: string, path: string, label: string): string | n
     : `${label} escapes character package through a symbolic link: ${path}`
 }
 
-function nestedFileReferences(value: unknown): string[] {
+export function nestedFileReferences(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(nestedFileReferences)
   if (typeof value !== 'object' || value === null) return []
   const record = value as Record<string, unknown>

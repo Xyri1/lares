@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
-import { atomicWrite } from './adapters/claude-code/writer'
+import { errorMessage } from './errors'
+import { atomicWrite } from './fs'
 
 export const LATEST_RELEASE_URL =
   'https://api.github.com/repos/Xyri1/lares/releases/latest'
@@ -239,7 +240,7 @@ export function createUpdateChecks(deps: {
       if (result.newer) deps.notify({ tag: result.tag, url: result.url })
       else if (manual) deps.showInfo()
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = errorMessage(error)
       deps.log(message)
       if (manual) deps.showError(message)
     }
