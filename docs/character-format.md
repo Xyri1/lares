@@ -183,10 +183,10 @@ expression (`驚き`), an artist motion (`wave`), and an authored gap (`weary`):
 This is illustrative data after mapping. Immediately after import, each
 coordinate entry is `null` until it is mapped with the visible model.
 
-## Hiyori is a regression fixture
+## Haru is the bundled default
 
-The retained Hiyori package is a raw-parameter reference: it has no bundled
-`.exp3.json` expressions. Its cues use `params` directly, so it demonstrates
-the escape hatch but is not the build-selected default or a representative
-import example. Haru is the selected default; third-party models commonly
-provide expressions and motions for import.
+Haru is the build-selected default and ships fully calibrated. Cues may
+also drive raw parameters via `params` instead of referencing an
+`.exp3.json` — the escape hatch for models that bundle no expression
+files; third-party models commonly provide expressions and motions for
+import.

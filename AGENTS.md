@@ -19,14 +19,14 @@ src/main     brain: manifest load, lares:// asset protocol, IPC, and the two
              windows — the desktop overlay (prod) + the dev control window
 src/renderer body: stage/ (bootstrap, dev panel) + runtime/ (IRuntime over
              pixi-live2d-display — nothing else imports the Live2D packages)
-scripts/     fetch-assets.mjs — downloads Core + Hiyori into gitignored paths
+scripts/     fetch-assets.mjs — downloads Core + Haru into gitignored paths
 characters/  committed manifests; runtime/ asset dirs are gitignored
 vendor/      gitignored — Cubism Core, fetched, never committed (D20 §6.8)
 
 ## Commands
 - `pnpm dev` — run the app (dev server on 127.0.0.1:5300)
 - `pnpm test` — vitest, main-side pure logic only
-- `pnpm fetch-assets` — download Live2D Core + Hiyori (run once after clone)
+- `pnpm fetch-assets` — download Live2D Core + Haru (run once after clone)
 - `pnpm build` — typecheck + production build
 
 ## Constitution
