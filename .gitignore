@@ -6,7 +6,10 @@ out
 *.log*
 
 AGENTS.local.md
-.agents/
+.agents/*
+!.agents/plugins/
+.agents/plugins/*
+!.agents/plugins/marketplace.json
 .claude/
 .vscode/
 .mcp.json

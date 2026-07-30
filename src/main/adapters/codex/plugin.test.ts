@@ -18,7 +18,11 @@ describe('Codex plugin', () => {
       plugins: [
         {
           name: 'lares',
-          source: { source: 'local', path: './plugins/codex' },
+          source: {
+            source: 'git-subdir',
+            url: 'https://github.com/Xyri1/lares',
+            path: 'plugins/codex'
+          },
           policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
           category: 'Productivity'
         }

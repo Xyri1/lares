@@ -19,7 +19,11 @@ describe('Claude Code plugin', () => {
       plugins: [
         {
           name: 'lares',
-          source: './plugins/claude-code',
+          source: {
+            source: 'git-subdir',
+            url: 'https://github.com/Xyri1/lares',
+            path: 'plugins/claude-code'
+          },
           description: 'Give Claude Code sessions a local Lares companion.'
         }
       ]
