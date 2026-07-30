@@ -1,6 +1,9 @@
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { packagePreflight } from './scripts/distribution.mjs'
+import {
+  DEFAULT_CHARACTER_FILTER,
+  packagePreflight
+} from './scripts/distribution.mjs'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const { character } = packagePreflight(root)
@@ -20,7 +23,7 @@ export default {
     'package.json'
   ],
   extraResources: [
-    { from: character, to: 'default-character', filter: ['**/*'] },
+    { from: character, to: 'default-character', filter: DEFAULT_CHARACTER_FILTER },
     { from: 'LICENSE', to: 'LICENSE' },
     { from: 'NOTICE', to: 'NOTICE' }
   ],

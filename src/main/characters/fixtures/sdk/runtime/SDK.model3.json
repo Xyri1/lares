@@ -1,6 +1,8 @@
 {
   "Version": 3,
   "FileReferences": {
+    "Moc": "SDK.moc3",
+    "Textures": ["SDK.png"],
     "Motions": {
       "Idle": [{ "File": "motions/idle.motion3.json" }]
     }

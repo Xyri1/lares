@@ -20,7 +20,14 @@ const expression = (params: Record<string, number> = {}) => ({
 function writePackage(cues: Record<string, unknown> = {}, expressions: Record<string, unknown> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'lares-authoring-'))
   mkdirSync(join(dir, 'runtime'))
-  writeFileSync(join(dir, 'runtime', 'model.model3.json'), '{}')
+  writeFileSync(
+    join(dir, 'runtime', 'model.model3.json'),
+    JSON.stringify({
+      FileReferences: { Moc: 'model.moc3', Textures: ['model.png'] }
+    })
+  )
+  writeFileSync(join(dir, 'runtime', 'model.moc3'), 'moc')
+  writeFileSync(join(dir, 'runtime', 'model.png'), 'png')
   writeFileSync(join(dir, 'runtime', 'smile.exp3.json'), JSON.stringify(expression({ ParamSmile: 0.5 })))
   const manifestPath = join(dir, 'lar.character.json')
   writeFileSync(manifestPath, JSON.stringify({
@@ -130,7 +137,7 @@ describe('character authoring', () => {
         { ParamMouth: 1 },
         { valence: 0, arousal: 0 }
       )
-    ).toMatchObject({ ok: false, error: expect.stringContaining('escapes') })
+    ).toMatchObject({ ok: false, error: expect.stringContaining('symbolic link') })
     expect(existsSync(join(outside, 'escape.exp3.json'))).toBe(false)
   })
 })

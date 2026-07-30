@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -49,5 +49,23 @@ describe('import-character', () => {
     expect(Object.keys(manifest.renderers.live2d.cues)).toEqual(['idle', 'tap'])
     expect(output).toContain('"motion":2')
     expect(readFileSync(manifestPath, 'utf8')).toBe(before)
+  })
+
+  it('keeps duplicate basenames distinct by canonical package path', () => {
+    const packageRoot = copyFixture('vtube')
+    mkdirSync(join(packageRoot, 'runtime', 'nested'))
+    writeFileSync(
+      join(packageRoot, 'runtime', 'nested', '惊讶.exp3.json'),
+      JSON.stringify({ Parameters: [] })
+    )
+    run(packageRoot)
+    const manifest = JSON.parse(
+      readFileSync(join(packageRoot, 'lar.character.json'), 'utf8')
+    )
+
+    expect(manifest.renderers.live2d.cues).toMatchObject({
+      'runtime/惊讶': { expression: 'runtime/惊讶.exp3.json' },
+      'runtime/nested/惊讶': { expression: 'runtime/nested/惊讶.exp3.json' }
+    })
   })
 })

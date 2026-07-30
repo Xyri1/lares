@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { IRuntime } from '../runtime/iface'
+import type { SynthPreset } from '../synth/synth'
 import { createAffectDriver } from './affect'
 import { PRESETS } from './presets'
 
@@ -130,5 +131,58 @@ describe('AffectDriver character switching', () => {
 
     expect(driver.buffer().engine.map((entry) => entry.t)).toEqual([100, 200])
     expect(rt.playMotion).toHaveBeenCalledWith('Idle', 0)
+  })
+
+  it('falls back to the bundled default preset when the incoming character has no performance mapping, and rollback restores the previous preset', () => {
+    // Stand-in for an outgoing character with a legacy uppercase-ID mapping
+    // (e.g. Haru), deliberately using ids the bundled default preset doesn't.
+    const legacyPreset: SynthPreset = {
+      params: [{ id: 'PARAM_MOUTH_FORM', source: 'valence', gain: 1, offset: 0 }],
+      idle: {
+        breath: { id: 'PARAM_BREATH', basePeriodMs: 4000, amplitude: 1 },
+        blink: {
+          ids: ['PARAM_EYE_L_OPEN', 'PARAM_EYE_R_OPEN'],
+          baseIntervalMs: 3500,
+          durationMs: 160,
+          valenceGain: 0.15
+        },
+        sway: { id: 'PARAM_ANGLE_X', baseAmplitude: 6, periodMs: 5000 }
+      }
+    }
+    let present: (() => void) | undefined
+    const rt = runtime()
+    Object.assign(globalThis, {
+      requestAnimationFrame: vi.fn((cb: () => void) => {
+        present = cb
+      }),
+      window: {
+        lares: {
+          onAuthoringPreview: vi.fn(),
+          onAuthoringRevert: vi.fn(),
+          onAffectUpdate: vi.fn(),
+          onScenarioSeeked: vi.fn(),
+          onScenarioEnd: vi.fn(),
+          onScenarioStopped: vi.fn(),
+          sendSynthTrace: vi.fn(),
+          playScenario: vi.fn(async () => ({ ok: true as const, endMs: 1000 })),
+          stopScenario: vi.fn(async () => ({ ok: true as const }))
+        }
+      }
+    })
+    const driver = createAffectDriver(rt, legacyPreset, {})
+
+    present!() // sanity: idles on the outgoing (legacy) preset before any switch
+    expect(vi.mocked(rt.setParams).mock.calls.at(-1)![0]).toHaveProperty('PARAM_BREATH')
+
+    const transaction = driver.characterChanged() // no arg: incoming character has no `performance` block
+    present!()
+    const afterSwitch = vi.mocked(rt.setParams).mock.calls.at(-1)![0]
+    expect(afterSwitch).toHaveProperty(PRESETS.default.idle.breath.id)
+    expect(afterSwitch).not.toHaveProperty('PARAM_BREATH')
+
+    transaction.rollback()
+    present!()
+    const afterRollback = vi.mocked(rt.setParams).mock.calls.at(-1)![0]
+    expect(afterRollback).toHaveProperty('PARAM_BREATH')
   })
 })

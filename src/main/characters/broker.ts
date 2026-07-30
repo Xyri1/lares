@@ -30,6 +30,7 @@ export class CharacterAssetState {
     }
     this.activeCandidate = id
     this.activeRoot = root
+    this.candidates.delete(id)
     return true
   }
 
@@ -84,6 +85,7 @@ interface BodyState {
 interface Pending extends BodyState {
   resolve(inventory: ParamInfo[]): void
   reject(error: Error): void
+  inspect?(inventory: ParamInfo[], compatibility: unknown): boolean
   timer: ReturnType<typeof setTimeout>
 }
 
@@ -118,7 +120,12 @@ export class CharacterLoadBroker {
     private readonly timeoutMs: number
   ) {}
 
-  prepare(id: number, root: string, payload: unknown): Promise<ParamInfo[]> {
+  prepare(
+    id: number,
+    root: string,
+    payload: unknown,
+    inspect?: Pending['inspect']
+  ): Promise<ParamInfo[]> {
     this.assets.prepare(id, root)
     const body = this.body()
     if (!body || body.isDestroyed()) {
@@ -130,6 +137,7 @@ export class CharacterLoadBroker {
         body,
         resolve,
         reject,
+        inspect,
         timer: setTimeout(
           () => this.failPrepare(id, new Error('character body prepare timed out')),
           this.timeoutMs
@@ -163,6 +171,10 @@ export class CharacterLoadBroker {
     const inventory = parseInventory(result.inventory)
     if (!inventory) {
       this.failPrepare(id, new Error('renderer returned an invalid body inventory'))
+      return true
+    }
+    if (pending.inspect && !pending.inspect(inventory, result.compatibility)) {
+      this.failPrepare(id, new Error('renderer returned invalid compatibility findings'))
       return true
     }
     this.cleanupPending(id)

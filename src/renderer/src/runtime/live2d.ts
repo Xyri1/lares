@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js'
 import { Application, Renderer, Ticker, UPDATE_PRIORITY } from 'pixi.js'
 import { install } from '@pixi/unsafe-eval'
 import { Live2DModel, MotionPriority } from 'pixi-live2d-display/cubism4'
-import type { IRuntime, ParamInfo } from './iface'
+import type { IRuntime, ParamInfo, RuntimeCompatibility } from './iface'
 import {
   isCubism4MotionManager,
   LARES_MOTION_GROUP,
@@ -37,6 +37,185 @@ interface CoreModel {
   _model: { parameters: CoreParamStruct }
 }
 
+interface MocHandle {
+  _release(): void
+}
+
+interface CubismCore {
+  Moc: { fromArrayBuffer(bytes: ArrayBuffer): MocHandle | null }
+  Version: { csmGetMocVersion(moc: MocHandle, bytes: ArrayBuffer): number }
+}
+
+interface ModelSettings {
+  url?: string
+  FileReferences?: {
+    Moc?: unknown
+    Textures?: unknown
+    Physics?: unknown
+    Motions?: unknown
+    [key: string]: unknown
+  }
+  Groups?: unknown
+  [key: string]: unknown
+}
+
+interface PreparedSource {
+  source: string | ModelSettings
+  compatibility: Omit<RuntimeCompatibility, 'motions' | 'maxTextureSize'>
+}
+
+const SUPPORTED_MOC_VERSIONS = new Set([1, 2, 3, 4])
+const MOC_LABELS: Record<number, string> = {
+  1: 'SDK 3.0–3.2',
+  2: 'SDK 3.3',
+  3: 'SDK 4.0',
+  4: 'SDK 4.2',
+  5: 'SDK 5.x+'
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function groupIds(settings: ModelSettings, name: 'EyeBlink' | 'LipSync'): string[] {
+  if (!Array.isArray(settings.Groups)) return []
+  const group = settings.Groups.find(
+    (value) => record(value) && value.Target === 'Parameter' && value.Name === name
+  )
+  return record(group) && Array.isArray(group.Ids)
+    ? group.Ids.filter((id): id is string => typeof id === 'string')
+    : []
+}
+
+function resourceUrl(modelUrl: string, reference: string): string {
+  const resolved = new URL(reference, modelUrl)
+  const model = new URL(modelUrl)
+  const leavesCandidateRoot =
+    model.hostname === 'candidate' &&
+    resolved.pathname.split('/')[1] !== model.pathname.split('/')[1]
+  if (
+    resolved.protocol !== 'lares:' ||
+    model.protocol !== 'lares:' ||
+    resolved.hostname !== model.hostname ||
+    leavesCandidateRoot
+  ) {
+    throw new Error(`Model resource escapes its character root: ${reference}`)
+  }
+  return resolved.toString()
+}
+
+function withoutMotionSounds(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutMotionSounds)
+  if (!record(value)) return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== 'Sound')
+      .map(([key, child]) => [key, withoutMotionSounds(child)])
+  )
+}
+
+/** Reads Core compatibility before pixi creates a Live2DModel. */
+export async function prepareModelSource(
+  modelPath: string,
+  fallbackPhysics?: string,
+  core = window.Live2DCubismCore as CubismCore,
+  maxTextureSize: number | null = null
+): Promise<PreparedSource> {
+  if (!modelPath.startsWith('lares://')) {
+    return {
+      source: modelPath,
+      compatibility: {
+        mocVersion: null,
+        groups: { eyeBlink: [], lipSync: [] },
+        textures: [],
+        textureDimensions: []
+      }
+    }
+  }
+  const response = await fetch(modelPath)
+  if (!response.ok) throw new Error(`Model settings request failed (${response.status})`)
+  const settings = await response.json() as ModelSettings
+  if (!record(settings) || !record(settings.FileReferences)) {
+    throw new Error('Model settings are malformed')
+  }
+  const mocReference = settings.FileReferences.Moc
+  if (typeof mocReference !== 'string' || mocReference === '') {
+    throw new Error('Model FileReferences.Moc is required')
+  }
+  const mocResponse = await fetch(resourceUrl(modelPath, mocReference))
+  if (!mocResponse.ok) throw new Error(`MOC request failed (${mocResponse.status})`)
+  const bytes = await mocResponse.arrayBuffer()
+  let moc: MocHandle | null = null
+  let mocVersion = 0
+  try {
+    moc = core.Moc.fromArrayBuffer(bytes)
+    if (!moc) throw new Error('MOC is malformed or unsupported')
+    mocVersion = core.Version.csmGetMocVersion(moc, bytes)
+  } finally {
+    moc?._release()
+  }
+  if (!Number.isInteger(mocVersion) || !SUPPORTED_MOC_VERSIONS.has(mocVersion)) {
+    const detected = MOC_LABELS[mocVersion] ?? `unknown value ${String(mocVersion)}`
+    throw new Error(
+      `Unsupported Live2D MOC runtime ${detected}; Lares supports SDK 3.0–4.2`
+    )
+  }
+  const references = { ...settings.FileReferences }
+  if (references.Motions !== undefined) {
+    references.Motions = withoutMotionSounds(references.Motions)
+  }
+  for (const key of ['Physics', 'Pose', 'UserData', 'DisplayInfo'] as const) {
+    const reference = references[key]
+    if (typeof reference !== 'string') {
+      delete references[key]
+      continue
+    }
+    try {
+      if (!(await fetch(resourceUrl(modelPath, reference))).ok) delete references[key]
+    } catch {
+      delete references[key]
+    }
+  }
+  if (references.Physics === undefined && fallbackPhysics) {
+    references.Physics = resourceUrl(modelPath, fallbackPhysics)
+  }
+  const textures = Array.isArray(references.Textures)
+    ? references.Textures.filter((path): path is string => typeof path === 'string')
+    : []
+  const textureDimensions: RuntimeCompatibility['textureDimensions'] = []
+  if (maxTextureSize !== null) {
+    for (const path of textures) {
+      const textureResponse = await fetch(resourceUrl(modelPath, path))
+      if (!textureResponse.ok) {
+        throw new Error(`Texture request failed (${textureResponse.status}): ${path}`)
+      }
+      const bitmap = await createImageBitmap(await textureResponse.blob())
+      try {
+        textureDimensions.push({ path, width: bitmap.width, height: bitmap.height })
+        if (bitmap.width > maxTextureSize || bitmap.height > maxTextureSize) {
+          throw new Error(
+            `Texture exceeds this renderer's ${maxTextureSize}px limit: ${path} (${bitmap.width}×${bitmap.height})`
+          )
+        }
+      } finally {
+        bitmap.close()
+      }
+    }
+  }
+  return {
+    source: { ...settings, url: modelPath, FileReferences: references },
+    compatibility: {
+      mocVersion,
+      groups: {
+        eyeBlink: groupIds(settings, 'EyeBlink'),
+        lipSync: groupIds(settings, 'LipSync')
+      },
+      textures,
+      textureDimensions
+    }
+  }
+}
+
 interface RuntimeExpression {
   params: Record<string, number>
   weight: number
@@ -47,6 +226,7 @@ interface RuntimeExpression {
 interface RuntimeModelState {
   model: Live2DModel
   inventory: ParamInfo[]
+  compatibility: RuntimeCompatibility
   paramIndex: Map<string, number>
   overrides: Map<string, { value: number; weight: number }>
   expression?: RuntimeExpression
@@ -56,6 +236,14 @@ export class Live2DRuntime implements IRuntime {
   private app: Application
   private model?: Live2DModel
   private inventory: ParamInfo[] = []
+  private modelCompatibility: RuntimeCompatibility = {
+    mocVersion: null,
+    groups: { eyeBlink: [], lipSync: [] },
+    motions: {},
+    maxTextureSize: null,
+    textures: [],
+    textureDimensions: []
+  }
   private paramIndex = new Map<string, number>()
   // Last-written values, reapplied every frame after the model's own update:
   // motions/physics rewrite parameters each tick, so a one-shot write would
@@ -72,7 +260,12 @@ export class Live2DRuntime implements IRuntime {
   private active = true
   private displayScale = 1
   private loadGeneration = 0
-  private prepared?: { id: number; model: Live2DModel; inventory: ParamInfo[] }
+  private prepared?: {
+    id: number
+    model: Live2DModel
+    inventory: ParamInfo[]
+    compatibility: RuntimeCompatibility
+  }
   private committed?: {
     id: number
     candidate: Live2DModel
@@ -140,19 +333,42 @@ export class Live2DRuntime implements IRuntime {
     )
   }
 
-  async load(modelPath: string): Promise<void> {
-    await this.prepareLoad(0, modelPath)
+  async load(modelPath: string, fallbackPhysics?: string): Promise<void> {
+    await this.prepareLoad(0, modelPath, fallbackPhysics)
     if (!this.commitLoad(0)) throw new Error('character load commit failed')
     this.finalizeLoad(0)
   }
 
-  async prepareLoad(id: number, modelPath: string): Promise<ParamInfo[]> {
+  async prepareLoad(
+    id: number,
+    modelPath: string,
+    fallbackPhysics?: string
+  ): Promise<ParamInfo[]> {
     const generation = ++this.loadGeneration
     if (this.prepared) {
       this.destroy(this.prepared.model)
       this.prepared = undefined
     }
-    const model = await Live2DModel.from(modelPath, { autoUpdate: false, autoInteract: false })
+    const gl = (this.app.renderer as Renderer).gl
+    const rawMaxTextureSize =
+      typeof gl?.getParameter === 'function' && gl.MAX_TEXTURE_SIZE !== undefined
+        ? Number(gl.getParameter(gl.MAX_TEXTURE_SIZE))
+        : null
+    const maxTextureSize =
+      rawMaxTextureSize !== null && Number.isFinite(rawMaxTextureSize)
+        ? rawMaxTextureSize
+        : null
+    const preparedSource = await prepareModelSource(
+      modelPath,
+      fallbackPhysics,
+      window.Live2DCubismCore as CubismCore,
+      maxTextureSize
+    )
+    if (generation !== this.loadGeneration) throw new Error('character load was superseded')
+    const model = await Live2DModel.from(
+      preparedSource.source as Parameters<typeof Live2DModel.from>[0],
+      { autoUpdate: false, autoInteract: false }
+    )
     try {
       if (generation !== this.loadGeneration) throw new Error('character load was superseded')
       const internal = model.internalModel as unknown as {
@@ -184,7 +400,25 @@ export class Live2DRuntime implements IRuntime {
       ) {
         throw new Error('renderer returned an invalid body inventory')
       }
-      this.prepared = { id, model, inventory }
+      const definitions = model.internalModel.motionManager.definitions as Record<
+        string,
+        unknown[] | undefined
+      >
+      this.prepared = {
+        id,
+        model,
+        inventory,
+        compatibility: {
+          ...preparedSource.compatibility,
+          motions: Object.fromEntries(
+            Object.entries(definitions ?? {}).map(([group, motions]) => [
+              group,
+              motions?.length ?? 0
+            ])
+          ),
+          maxTextureSize
+        }
+      }
       return inventory.map((param) => ({ ...param }))
     } catch (error) {
       this.destroy(model)
@@ -194,12 +428,13 @@ export class Live2DRuntime implements IRuntime {
 
   commitLoad(id: number): boolean {
     if (this.committed || this.prepared?.id !== id) return false
-    const { model, inventory } = this.prepared
+    const { model, inventory, compatibility } = this.prepared
     this.prepared = undefined
     const previous = this.model
       ? {
           model: this.model,
           inventory: this.inventory,
+          compatibility: this.modelCompatibility,
           paramIndex: this.paramIndex,
           overrides: this.overrides,
           expression: this.expression
@@ -207,6 +442,7 @@ export class Live2DRuntime implements IRuntime {
       : undefined
     this.model = model
     this.inventory = inventory
+    this.modelCompatibility = compatibility
     this.paramIndex = new Map(inventory.map((param, index) => [param.id, index]))
     this.overrides = new Map()
     this.expression = undefined
@@ -255,6 +491,14 @@ export class Live2DRuntime implements IRuntime {
     if (!previous) {
       this.model = undefined
       this.inventory = []
+      this.modelCompatibility = {
+        mocVersion: null,
+        groups: { eyeBlink: [], lipSync: [] },
+        motions: {},
+        maxTextureSize: null,
+        textures: [],
+        textureDimensions: []
+      }
       this.paramIndex = new Map()
       this.overrides = new Map()
       this.expression = undefined
@@ -262,6 +506,7 @@ export class Live2DRuntime implements IRuntime {
     }
     this.model = previous.model
     this.inventory = previous.inventory
+    this.modelCompatibility = previous.compatibility
     this.paramIndex = previous.paramIndex
     this.overrides = previous.overrides
     this.expression = previous.expression
@@ -278,6 +523,21 @@ export class Live2DRuntime implements IRuntime {
 
   parameters(): ParamInfo[] {
     return this.inventory
+  }
+
+  compatibility(): RuntimeCompatibility {
+    return {
+      ...this.modelCompatibility,
+      groups: {
+        eyeBlink: [...this.modelCompatibility.groups.eyeBlink],
+        lipSync: [...this.modelCompatibility.groups.lipSync]
+      },
+      motions: { ...this.modelCompatibility.motions },
+      textures: [...this.modelCompatibility.textures],
+      textureDimensions: this.modelCompatibility.textureDimensions.map((texture) => ({
+        ...texture
+      }))
+    }
   }
 
   setParams(batch: Record<string, number>, weight = 1): void {

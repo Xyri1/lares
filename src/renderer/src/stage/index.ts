@@ -1,6 +1,6 @@
 import presetJson from '../../../../presets/default.json'
 import { Live2DRuntime } from '../runtime/live2d'
-import type { SynthPreset } from '../synth/synth'
+import { isSynthPreset, type SynthPreset } from '../synth/synth'
 import { createAffectDriver } from './affect'
 import { createCharacterLoadHandler } from './characterSwitch'
 import { wireOverlayPointer } from './overlayPointer'
@@ -42,7 +42,7 @@ async function boot(): Promise<void> {
     }
   }
   try {
-    await runtime.load(character.live2d.model)
+    await runtime.load(character.live2d.model, character.live2d.fallbackPhysics)
   } catch (err) {
     showError(
       `Failed to load "${character.name}": ${err instanceof Error ? err.message : String(err)}`
@@ -50,7 +50,10 @@ async function boot(): Promise<void> {
     return
   }
 
-  window.lares.reportInventory(runtime.parameters()) // body:inventory (root SPEC §8)
+  window.lares.reportInventory(
+    runtime.parameters(),
+    runtime.compatibility()
+  ) // body:inventory (root SPEC §8)
 
   // Cue name → Live2D param set. The feed carries cue NAMES only (root §8);
   // resolving them to parameters is body-side knowledge and stops here (P6).
@@ -62,7 +65,14 @@ async function boot(): Promise<void> {
     cues.flatMap((c) => (c.motion === undefined ? [] : [[c.name, c.motion]]))
   )
 
-  const driver = createAffectDriver(runtime, presetJson as SynthPreset, cueParams, cueMotions)
+  const driver = createAffectDriver(
+    runtime,
+    isSynthPreset(character.live2d.performance)
+      ? character.live2d.performance
+      : presetJson as SynthPreset,
+    cueParams,
+    cueMotions
+  )
   let currentCharacter = character
   if (OVERLAY) {
     const characterLoads = createCharacterLoadHandler(
@@ -117,7 +127,10 @@ async function boot(): Promise<void> {
       if (!on) return Promise.resolve(stageB?.then((rb) => rb.setActive(false)) ?? undefined)
       stageB ??= (async () => {
         const rb = new Live2DRuntime(runtime)
-        await rb.load(currentCharacter.live2d.model)
+        await rb.load(
+          currentCharacter.live2d.model,
+          currentCharacter.live2d.fallbackPhysics
+        )
         window.__runtimeB = rb
         driver.addStage('B', rb)
         return rb

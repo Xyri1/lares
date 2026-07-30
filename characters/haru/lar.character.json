@@ -1,0 +1,99 @@
+{
+  "format": "lares/1",
+  "identity": {
+    "name": "Haru",
+    "author": "Live2D Inc. (sample data); Lares package by Cyril Tsui",
+    "license": "Live2D Free Material License Agreement and Terms of Use for Live2D Cubism Sample Data; voice data excluded"
+  },
+  "expressions": {
+    "Angry": { "valence": -0.8, "arousal": 0.75 },
+    "Blushing": { "valence": 0.35, "arousal": 0.45 },
+    "f01": null,
+    "f02": null,
+    "Normal": { "valence": 0, "arousal": 0.2 },
+    "Sad": { "valence": -0.75, "arousal": 0.25 },
+    "Smile": { "valence": 0.8, "arousal": 0.45 },
+    "Surprised": { "valence": 0.15, "arousal": 0.95 },
+    "haru_idle_01": null,
+    "haru_idle_02": null,
+    "haru_idle_03": null,
+    "haru_m_01": null,
+    "haru_m_02": null,
+    "haru_m_03": null,
+    "haru_m_04": null,
+    "haru_m_05": null,
+    "haru_m_06": null,
+    "haru_m_07": null,
+    "haru_m_08": null,
+    "haru_m_09": null,
+    "haru_m_10": null,
+    "haru_normal_01": null,
+    "haru_normal_02": null,
+    "haru_normal_03": null,
+    "haru_normal_04": null,
+    "haru_normal_05": null,
+    "haru_normal_06": null,
+    "haru_normal_07": null,
+    "haru_normal_08": null,
+    "haru_normal_09": null,
+    "haru_normal_10": null
+  },
+  "renderers": {
+    "live2d": {
+      "model": "haru.model3.json",
+      "performance": {
+        "params": [
+          { "id": "PARAM_BROW_L_Y", "source": "valence", "gain": 0.7, "offset": 0 },
+          { "id": "PARAM_BROW_R_Y", "source": "valence", "gain": 0.7, "offset": 0 },
+          { "id": "PARAM_BROW_L_FORM", "source": "valence", "gain": 0.6, "offset": 0 },
+          { "id": "PARAM_BROW_R_FORM", "source": "valence", "gain": 0.6, "offset": 0 },
+          { "id": "PARAM_MOUTH_FORM", "source": "valence", "gain": 1, "offset": 0 },
+          { "id": "PARAM_MOUTH_OPEN_Y", "source": "arousal", "gain": 0.25, "offset": 0 }
+        ],
+        "idle": {
+          "breath": { "id": "PARAM_BREATH", "basePeriodMs": 4000, "amplitude": 1 },
+          "blink": {
+            "ids": ["PARAM_EYE_L_OPEN", "PARAM_EYE_R_OPEN"],
+            "baseIntervalMs": 3500,
+            "durationMs": 160,
+            "valenceGain": 0.15
+          },
+          "sway": { "id": "PARAM_BODY_ANGLE_X", "baseAmplitude": 6, "periodMs": 5000 }
+        }
+      },
+      "cues": {
+        "Angry": { "expression": "runtime/expressions/Angry.exp3.json" },
+        "Blushing": { "expression": "runtime/expressions/Blushing.exp3.json" },
+        "f01": { "expression": "runtime/expressions/f01.exp3.json" },
+        "f02": { "expression": "runtime/expressions/f02.exp3.json" },
+        "Normal": { "expression": "runtime/expressions/Normal.exp3.json" },
+        "Sad": { "expression": "runtime/expressions/Sad.exp3.json" },
+        "Smile": { "expression": "runtime/expressions/Smile.exp3.json" },
+        "Surprised": { "expression": "runtime/expressions/Surprised.exp3.json" },
+        "haru_idle_01": { "motion": "runtime/motion/haru_idle_01.motion3.json" },
+        "haru_idle_02": { "motion": "runtime/motion/haru_idle_02.motion3.json" },
+        "haru_idle_03": { "motion": "runtime/motion/haru_idle_03.motion3.json" },
+        "haru_m_01": { "motion": "runtime/motion/haru_m_01.motion3.json" },
+        "haru_m_02": { "motion": "runtime/motion/haru_m_02.motion3.json" },
+        "haru_m_03": { "motion": "runtime/motion/haru_m_03.motion3.json" },
+        "haru_m_04": { "motion": "runtime/motion/haru_m_04.motion3.json" },
+        "haru_m_05": { "motion": "runtime/motion/haru_m_05.motion3.json" },
+        "haru_m_06": { "motion": "runtime/motion/haru_m_06.motion3.json" },
+        "haru_m_07": { "motion": "runtime/motion/haru_m_07.motion3.json" },
+        "haru_m_08": { "motion": "runtime/motion/haru_m_08.motion3.json" },
+        "haru_m_09": { "motion": "runtime/motion/haru_m_09.motion3.json" },
+        "haru_m_10": { "motion": "runtime/motion/haru_m_10.motion3.json" },
+        "haru_normal_01": { "motion": "runtime/motion/haru_normal_01.motion3.json" },
+        "haru_normal_02": { "motion": "runtime/motion/haru_normal_02.motion3.json" },
+        "haru_normal_03": { "motion": "runtime/motion/haru_normal_03.motion3.json" },
+        "haru_normal_04": { "motion": "runtime/motion/haru_normal_04.motion3.json" },
+        "haru_normal_05": { "motion": "runtime/motion/haru_normal_05.motion3.json" },
+        "haru_normal_06": { "motion": "runtime/motion/haru_normal_06.motion3.json" },
+        "haru_normal_07": { "motion": "runtime/motion/haru_normal_07.motion3.json" },
+        "haru_normal_08": { "motion": "runtime/motion/haru_normal_08.motion3.json" },
+        "haru_normal_09": { "motion": "runtime/motion/haru_normal_09.motion3.json" },
+        "haru_normal_10": { "motion": "runtime/motion/haru_normal_10.motion3.json" }
+      }
+    }
+  }
+}

@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadCharacter, selectCharacterManifest, validateCharacter } from './manifest'
+import {
+  loadCharacter,
+  mergeRuntimeCompatibility,
+  selectCharacterManifest,
+  validateCharacter
+} from './manifest'
 
 const VALID = {
   format: 'lares/1',
@@ -10,14 +15,26 @@ const VALID = {
   renderers: { live2d: { model: 'runtime/Hiyori.model3.json' } }
 }
 
+function writeRuntime(root: string, model = 'Hiyori'): void {
+  mkdirSync(join(root, 'runtime'), { recursive: true })
+  writeFileSync(
+    join(root, 'runtime', `${model}.model3.json`),
+    JSON.stringify({
+      FileReferences: {
+        Moc: `${model}.moc3`,
+        Textures: [`${model}.png`]
+      }
+    })
+  )
+  writeFileSync(join(root, 'runtime', `${model}.moc3`), 'moc')
+  writeFileSync(join(root, 'runtime', `${model}.png`), 'png')
+}
+
 function writePackage(manifest: unknown, withModel = true): string {
   const dir = mkdtempSync(join(tmpdir(), 'lares-manifest-'))
   const path = join(dir, 'lar.character.json')
   writeFileSync(path, typeof manifest === 'string' ? manifest : JSON.stringify(manifest))
-  if (withModel) {
-    mkdirSync(join(dir, 'runtime'))
-    writeFileSync(join(dir, 'runtime', 'Hiyori.model3.json'), '{}')
-  }
+  if (withModel) writeRuntime(dir)
   return path
 }
 
@@ -73,6 +90,87 @@ describe('loadCharacter', () => {
     const result = loadCharacter(writePackage(manifest))
     expect(result).toMatchObject({ ok: true })
     if (result.ok) expect(result.expressions).toEqual({ neutral: { valence: 0.1, arousal: 0.25 } })
+  })
+
+  it('validates character-owned performance and reports optional VTS capabilities', () => {
+    const manifestPath = writePackage({
+      ...VALID,
+      renderers: {
+        live2d: {
+          ...VALID.renderers.live2d,
+          performance: {
+            params: [{ id: 'ParamMouthForm', source: 'valence', gain: 1, offset: 0 }],
+            idle: {
+              breath: { id: 'ParamBreath', basePeriodMs: 4000, amplitude: 1 },
+              blink: {
+                ids: ['ParamEyeLOpen', 'ParamEyeROpen'],
+                baseIntervalMs: 3500,
+                durationMs: 160,
+                valenceGain: 0.15
+              },
+              sway: { id: 'ParamBodyAngleX', baseAmplitude: 6, periodMs: 5000 }
+            }
+          }
+        }
+      }
+    })
+    const runtime = join(manifestPath, '..', 'runtime')
+    writeFileSync(join(runtime, 'loose.physics3.json'), '{}')
+    writeFileSync(join(runtime, 'model.vtube.json'), '{}')
+
+    const result = loadCharacter(manifestPath)
+    expect(result).toMatchObject({
+      ok: true,
+      live2d: { fallbackPhysics: 'runtime/loose.physics3.json' },
+      report: {
+        performance: { configured: true },
+        resources: {
+          physics: { fallback: 'runtime/loose.physics3.json' },
+          ignored: ['runtime/model.vtube.json']
+        }
+      }
+    })
+    if (result.ok) {
+      expect(result.report.warnings.join('\n')).toContain('Ignored VTube Studio metadata')
+      expect(result.report.performance.parameterIds).toContain('ParamMouthForm')
+      expect(
+        mergeRuntimeCompatibility(
+          result.report,
+          [{ id: 'ParamMouthForm', name: 'Mouth', min: -1, max: 1, default: 0 }],
+          {
+            mocVersion: 4,
+            groups: { eyeBlink: [], lipSync: [] },
+            motions: { Idle: 2 },
+            maxTextureSize: 4096,
+            textures: ['Hiyori.png'],
+            textureDimensions: [
+              { path: 'Hiyori.png', width: 1024, height: 1024 }
+            ]
+          }
+        )
+      ).toBe(true)
+      expect(result.report).toMatchObject({
+        mocVersion: 4,
+        body: {
+          motions: { Idle: 2 },
+          performanceGaps: expect.arrayContaining(['ParamBreath', 'ParamEyeLOpen'])
+        }
+      })
+    }
+  })
+
+  it('rejects malformed character-owned performance', () => {
+    const result = loadCharacter(writePackage({
+      ...VALID,
+      renderers: {
+        live2d: {
+          ...VALID.renderers.live2d,
+          performance: { params: [], idle: {} }
+        }
+      }
+    }))
+    expect(result).toMatchObject({ ok: false })
+    if (!result.ok) expect(result.error).toContain('performance.idle')
   })
 
   it('rejects an out-of-range expression valence', () => {
@@ -145,10 +243,14 @@ describe('loadCharacter', () => {
     const manifestPath = writePackage(VALID)
     writeFileSync(
       join(manifestPath, '..', 'runtime', 'Hiyori.model3.json'),
-      JSON.stringify({ FileReferences: { Moc: '../../outside.moc3' } })
+      JSON.stringify({
+        FileReferences: { Moc: '../../outside.moc3', Textures: ['Hiyori.png'] }
+      })
     )
 
-    expect(validateCharacter(manifestPath).errors.join('\n')).toContain('Model runtime reference escapes character package')
+    expect(validateCharacter(manifestPath).errors.join('\n')).toContain(
+      'Required model resource must be a normalized package-relative path'
+    )
   })
 
   it('requires every affect cue to have one renderer mapping and vice versa', () => {
@@ -174,9 +276,8 @@ describe('loadCharacter', () => {
     const root = mkdtempSync(join(tmpdir(), 'lares-characters-'))
     expect(selectCharacterManifest(root)).toMatchObject({ ok: false, error: 'No character package found under ' + root })
     for (const name of ['zeta', 'alpha']) {
-      mkdirSync(join(root, name, 'runtime'), { recursive: true })
+      writeRuntime(join(root, name))
       writeFileSync(join(root, name, 'lar.character.json'), JSON.stringify(VALID))
-      writeFileSync(join(root, name, 'runtime', 'Hiyori.model3.json'), '{}')
     }
     const selected = selectCharacterManifest(root)
     expect(selected).toMatchObject({ ok: true, manifestPath: join(root, 'alpha', 'lar.character.json') })
@@ -189,9 +290,9 @@ describe('loadCharacter', () => {
     writeFileSync(join(root, 'alpha', 'lar.character.json'), '{}')
     const valid = writePackage(VALID)
     const beta = join(root, 'beta')
-    mkdirSync(join(beta, 'runtime'), { recursive: true })
+    mkdirSync(beta)
     writeFileSync(join(beta, 'lar.character.json'), readFileSync(valid, 'utf8'))
-    writeFileSync(join(beta, 'runtime', 'Hiyori.model3.json'), '{}')
+    writeRuntime(beta)
 
     const selected = selectCharacterManifest(root)
     expect(selected).toMatchObject({ ok: true, manifestPath: join(beta, 'lar.character.json') })

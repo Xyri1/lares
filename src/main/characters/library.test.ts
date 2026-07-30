@@ -28,7 +28,14 @@ function writePackage(root: string, name = 'hiyori'): string {
   const packageRoot = join(root, name)
   mkdirSync(join(packageRoot, 'runtime'), { recursive: true })
   writeFileSync(join(packageRoot, 'lar.character.json'), JSON.stringify(VALID))
-  writeFileSync(join(packageRoot, 'runtime', 'Hiyori.model3.json'), '{}')
+  writeFileSync(
+    join(packageRoot, 'runtime', 'Hiyori.model3.json'),
+    JSON.stringify({
+      FileReferences: { Moc: 'Hiyori.moc3', Textures: ['Hiyori.png'] }
+    })
+  )
+  writeFileSync(join(packageRoot, 'runtime', 'Hiyori.moc3'), 'moc')
+  writeFileSync(join(packageRoot, 'runtime', 'Hiyori.png'), 'png')
   return packageRoot
 }
 
@@ -41,11 +48,15 @@ function writeRawPackage(root: string, name = 'raw'): string {
     join(modelRoot, 'lar.model3.json'),
     JSON.stringify({
       FileReferences: {
+        Moc: 'lar.moc3',
+        Textures: ['lar.png'],
         Expressions: [{ File: 'expressions/indexed-expression.exp3.json' }],
         Motions: { Idle: [{ File: 'motions/indexed-motion.motion3.json' }] }
       }
     })
   )
+  writeFileSync(join(modelRoot, 'lar.moc3'), 'moc')
+  writeFileSync(join(modelRoot, 'lar.png'), 'png')
   writeFileSync(join(modelRoot, 'expressions', 'indexed-expression.exp3.json'), JSON.stringify({ Parameters: [] }))
   writeFileSync(join(modelRoot, 'expressions', 'loose-expression.exp3.json'), JSON.stringify({ Parameters: [] }))
   writeFileSync(join(modelRoot, 'motions', 'indexed-motion.motion3.json'), '{}')
@@ -63,9 +74,13 @@ describe('managed character library', () => {
     const copiedManifest = join(managedRoot, 'bundled', 'lar.character.json')
     expect(existsSync(copiedManifest)).toBe(true)
 
-    writeFileSync(join(managedRoot, 'bundled', 'runtime', 'Hiyori.model3.json'), '{"userModified":true}')
+    const modified = JSON.stringify({
+      userModified: true,
+      FileReferences: { Moc: 'Hiyori.moc3', Textures: ['Hiyori.png'] }
+    })
+    writeFileSync(join(managedRoot, 'bundled', 'runtime', 'Hiyori.model3.json'), modified)
     expect(ensureManagedCharacterLibrary(managedRoot, bundledRoot)).toEqual({ seeded: false })
-    expect(readFileSync(join(managedRoot, 'bundled', 'runtime', 'Hiyori.model3.json'), 'utf8')).toBe('{"userModified":true}')
+    expect(readFileSync(join(managedRoot, 'bundled', 'runtime', 'Hiyori.model3.json'), 'utf8')).toBe(modified)
   })
 
   it('imports a ready package as a validated managed copy', () => {

@@ -1,6 +1,34 @@
 type CharacterPayload =
-  | { ok: true; name: string; live2d: { model: string } & Record<string, unknown> }
+  | {
+      ok: true
+      name: string
+      live2d: {
+        model: string
+        fallbackPhysics?: string
+        performance?: CharacterSynthPreset
+      } & Record<string, unknown>
+    }
   | { ok: false; error: string }
+
+interface CharacterSynthPreset {
+  params: {
+    id: string
+    source: 'valence' | 'arousal'
+    gain: number
+    offset: number
+    weight?: number
+  }[]
+  idle: {
+    breath: { id: string; basePeriodMs: number; amplitude: number }
+    blink: {
+      ids: string[]
+      baseIntervalMs: number
+      durationMs: number
+      valenceGain: number
+    }
+    sway: { id: string; baseAmplitude: number; periodMs: number }
+  }
+}
 
 interface CharacterPrepareRequest {
   id: number
@@ -14,7 +42,7 @@ interface CharacterCommitRequest {
 }
 
 type CharacterPrepareResult =
-  | { id: number; ok: true; inventory: unknown[] }
+  | { id: number; ok: true; inventory: unknown[]; compatibility?: unknown }
   | { id: number; ok: false; error: string }
 
 type CharacterCommitResult =
@@ -75,7 +103,7 @@ interface LaresBridge {
   getCharacter(): Promise<CharacterPayload>
   getOverlayScale(): Promise<number>
   onOverlayScale(cb: (scale: number) => void): void
-  reportInventory(params: unknown[]): void
+  reportInventory(params: unknown[], compatibility: unknown): void
   onCharacterPrepare(cb: (request: CharacterPrepareRequest) => void): void
   reportCharacterPrepared(result: CharacterPrepareResult): void
   onCharacterCommit(cb: (request: CharacterCommitRequest) => void): void

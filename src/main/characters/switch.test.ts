@@ -23,7 +23,14 @@ function writePackage(root: string, directory: string, cue: string): string {
       }
     })
   )
-  writeFileSync(join(packageRoot, 'runtime', 'model.model3.json'), '{}')
+  writeFileSync(
+    join(packageRoot, 'runtime', 'model.model3.json'),
+    JSON.stringify({
+      FileReferences: { Moc: 'model.moc3', Textures: ['model.png'] }
+    })
+  )
+  writeFileSync(join(packageRoot, 'runtime', 'model.moc3'), 'moc')
+  writeFileSync(join(packageRoot, 'runtime', 'model.png'), 'png')
   return packageRoot
 }
 

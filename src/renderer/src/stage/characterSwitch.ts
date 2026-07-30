@@ -1,4 +1,5 @@
 import type { IRuntime } from '../runtime/iface'
+import { isSynthPreset, type SynthPreset } from '../synth/synth'
 
 interface CuePayload {
   name: string
@@ -8,7 +9,15 @@ interface CuePayload {
 
 export interface CharacterLoadRequest {
   id: number
-  character: { ok: true; name: string; live2d: { model: string } }
+  character: {
+    ok: true
+    name: string
+    live2d: {
+      model: string
+      fallbackPhysics?: string
+      performance?: SynthPreset
+    }
+  }
   cues: CuePayload[]
 }
 
@@ -90,6 +99,18 @@ export function parseCharacterPrepareRequest(value: unknown): CharacterLoadReque
   const character = value.character
   if (typeof character.name !== 'string' || !character.name || !record(character.live2d)) return null
   if (!candidateUrl(character.live2d.model, id)) return null
+  if (
+    character.live2d.fallbackPhysics !== undefined &&
+    !candidateUrl(character.live2d.fallbackPhysics, id)
+  ) {
+    return null
+  }
+  if (
+    character.live2d.performance !== undefined &&
+    !isSynthPreset(character.live2d.performance)
+  ) {
+    return null
+  }
   const cues = parseCues(value.cues, id)
   if (!cues) return null
   return {
@@ -120,8 +141,11 @@ export function createCharacterLoadHandler(
     | 'finalizeLoad'
     | 'cancelLoad'
     | 'parameters'
+    | 'compatibility'
   >,
-  driver: { characterChanged(): void | (() => void) | DriverCharacterChange },
+  driver: {
+    characterChanged(preset?: SynthPreset): void | (() => void) | DriverCharacterChange
+  },
   cueParams: Record<string, Record<string, number>>,
   cueMotions: Record<string, string>,
   reportPrepared: (result: unknown) => void,
@@ -283,7 +307,8 @@ export function createCharacterLoadHandler(
       try {
         const inventory = await runtime.prepareLoad(
           request.id,
-          request.character.live2d.model
+          request.character.live2d.model,
+          request.character.live2d.fallbackPhysics
         )
         if (cancelled.has(request.id) || request.id !== latestId) {
           runtime.cancelLoad(request.id)
@@ -301,7 +326,34 @@ export function createCharacterLoadHandler(
           }
         }
         prepared = request
-        report(reportPrepared, { id: request.id, ok: true, inventory })
+        const compatibility = runtime.compatibility?.()
+        const performanceIds = request.character.live2d.performance
+          ? [
+              ...request.character.live2d.performance.params.map((binding) => binding.id),
+              request.character.live2d.performance.idle.breath.id,
+              ...request.character.live2d.performance.idle.blink.ids,
+              request.character.live2d.performance.idle.sway.id
+            ]
+          : []
+        report(reportPrepared, {
+          id: request.id,
+          ok: true,
+          inventory,
+          ...(compatibility
+            ? {
+                compatibility: {
+                  ...compatibility,
+                  performanceGaps: [
+                    ...new Set(
+                      performanceIds.filter(
+                        (id) => !inventory.some((parameter) => parameter.id === id)
+                      )
+                    )
+                  ]
+                }
+              }
+            : {})
+        })
       } catch (error) {
         runtime.cancelLoad(request.id)
         if (request.id === latestId && !cancelled.has(request.id)) {
@@ -338,7 +390,7 @@ export function createCharacterLoadHandler(
             cue.motion === undefined ? [] : [[cue.name, cue.motion]]
           )
         )
-        const driverChange = driver.characterChanged()
+        const driverChange = driver.characterChanged(request.character.live2d.performance)
         if (typeof driverChange === 'function') {
           tentative.rollbackDriver = driverChange
         } else if (driverChange) {

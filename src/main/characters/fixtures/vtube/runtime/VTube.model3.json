@@ -1,4 +1,7 @@
 {
   "Version": 3,
-  "FileReferences": {}
+  "FileReferences": {
+    "Moc": "VTube.moc3",
+    "Textures": ["VTube.png"]
+  }
 }

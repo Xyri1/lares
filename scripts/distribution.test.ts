@@ -32,8 +32,11 @@ async function defaultCharacter(root: string): Promise<void> {
   )
   await file(
     join(root, 'runtime/model.model3.json'),
-    JSON.stringify({ FileReferences: { Textures: ['texture.png'] } })
+    JSON.stringify({
+      FileReferences: { Moc: 'model.moc3', Textures: ['texture.png'] }
+    })
   )
+  await file(join(root, 'runtime/model.moc3'))
   await file(join(root, 'runtime/texture.png'))
 }
 
@@ -106,7 +109,7 @@ describe('distribution inputs', () => {
 
     const texture = join(root, 'characters/hiyori/runtime/texture.png')
     await unlink(texture)
-    expect(() => packagePreflight(root, {})).toThrow('runtime reference')
+    expect(() => packagePreflight(root, {})).toThrow('Required model resource')
     await file(texture)
 
     await unlink(join(root, 'vendor/live2d/live2dcubismcore.min.js'))

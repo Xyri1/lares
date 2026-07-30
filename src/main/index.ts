@@ -40,6 +40,7 @@ import {
 } from './characters/authoring'
 import {
   loadCharacter,
+  mergeRuntimeCompatibility,
   type CueDefinition,
   type ManifestResult
 } from './characters/manifest'
@@ -71,7 +72,12 @@ import { DEFAULT_CONFIG, loadConfig, saveConfig, type AppConfig, type Scale } fr
 import { DensityLog } from './densityLog'
 import { errorMessage } from './errors'
 import { L, resolveLocale, setLocale } from './strings'
-import { Nerves, type ParamInfo, type PreparedNervesCharacter } from './nerves'
+import {
+  Nerves,
+  parseInventory,
+  type ParamInfo,
+  type PreparedNervesCharacter
+} from './nerves'
 import {
   clampToWorkArea,
   loadPosition,
@@ -126,7 +132,7 @@ const defaultCharacterRoot = (): string =>
     app.getAppPath(),
     process.resourcesPath,
     app.isPackaged,
-    process.env.LARES_DEFAULT_CHARACTER || 'hiyori'
+    process.env.LARES_DEFAULT_CHARACTER || 'haru'
   )
 const runtimeFile = (): string => join(homedir(), '.lares', 'runtime.json')
 
@@ -220,7 +226,7 @@ function cueSources(
 }
 
 function assetUrl(path: string, candidateId?: number): string {
-  const encoded = path.split(sep).map(encodeURIComponent).join('/')
+  const encoded = path.split(/[\\/]/).map(encodeURIComponent).join('/')
   return candidateId === undefined
     ? `lares://characters/${encoded}`
     : `lares://candidate/${candidateId}/${encoded}`
@@ -228,9 +234,16 @@ function assetUrl(path: string, candidateId?: number): string {
 
 function characterPayload(selected: CharacterPackage, candidateId?: number) {
   const model = relative(dirname(selected.manifestPath), selected.character.live2d.model)
+  const fallbackPhysics = selected.character.live2d.fallbackPhysics
   return {
     ...selected.character,
-    live2d: { ...selected.character.live2d, model: assetUrl(model, candidateId) }
+    live2d: {
+      ...selected.character.live2d,
+      model: assetUrl(model, candidateId),
+      ...(typeof fallbackPhysics === 'string'
+        ? { fallbackPhysics: assetUrl(fallbackPhysics, candidateId) }
+        : {})
+    }
   }
 }
 
@@ -294,7 +307,18 @@ function bodyPreparePayload(candidate: CharacterPackage, id: number) {
         model: assetUrl(
           relative(dirname(candidate.manifestPath), candidate.character.live2d.model),
           id
-        )
+        ),
+        ...(typeof candidate.character.live2d.fallbackPhysics === 'string'
+          ? {
+              fallbackPhysics: assetUrl(
+                candidate.character.live2d.fallbackPhysics,
+                id
+              )
+            }
+          : {}),
+        ...(candidate.character.live2d.performance
+          ? { performance: candidate.character.live2d.performance }
+          : {})
       }
     },
     cues: cuePayload(candidate, id).filter(
@@ -495,7 +519,9 @@ async function startNerves(): Promise<void> {
           characterLoadBroker!.prepare(
             id,
             dirname(candidate.manifestPath),
-            bodyPreparePayload(candidate, id)
+            bodyPreparePayload(candidate, id),
+            (inventory, compatibility) =>
+              mergeRuntimeCompatibility(candidate.character.report, inventory, compatibility)
           ),
         prepareCommit: (candidate, inventory, files, id) => {
           const namedInventory = inventory.map((param) => ({
@@ -681,7 +707,7 @@ function registerCharacterIpc(): void {
     return characterPayload(selected)
   })
 
-  ipcMain.on('body:inventory', (event, params: unknown[]) => {
+  ipcMain.on('body:inventory', (event, params: unknown[], compatibility: unknown) => {
     if (overlayWindow && BrowserWindow.fromWebContents(event.sender) !== overlayWindow) return
     const selected = activeCharacter()
     const names =
@@ -695,8 +721,14 @@ function registerCharacterIpc(): void {
         })
       : params
     const accepted = liveNerves?.setInventory(withDisplayNames) ?? false
+    const parsed = parseInventory(withDisplayNames)
+    const selectedReport = 'error' in selected ? null : selected.character.report
+    const compatible =
+      parsed && selectedReport
+        ? mergeRuntimeCompatibility(selectedReport, parsed, compatibility)
+        : false
     console.log(
-      `[lares] body:inventory — ${accepted && Array.isArray(params) ? params.length : 0} parameters`
+      `[lares] body:inventory — ${accepted && compatible && Array.isArray(params) ? params.length : 0} parameters`
     )
     if (accepted) reportCharacterInventoryIssues()
   })

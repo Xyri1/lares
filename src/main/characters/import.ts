@@ -44,6 +44,10 @@ function cueName(path: string): string {
   return basename(path).replace(/\.(?:exp3|motion3)\.json$/, '')
 }
 
+function canonicalCueName(path: string): string {
+  return path.replace(/\.(?:exp3|motion3)\.json$/, '')
+}
+
 /** Writes and validates a lares/1 manifest for one unambiguous raw Live2D tree. */
 export function createManifestFromRawPackage(
   packageRoot: string,
@@ -62,9 +66,15 @@ export function createManifestFromRawPackage(
   }
   const expressions: Record<string, null> = {}
   const cues: Record<string, { expression: string } | { motion: string }> = {}
-  for (const [path, kind] of [...pathsByKind.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+  const assets = [...pathsByKind.entries()].sort(([a], [b]) => a.localeCompare(b))
+  const basenameCounts = new Map<string, number>()
+  for (const [path] of assets) {
     const name = cueName(path)
-    if (Object.hasOwn(cues, name)) throw new Error(`Duplicate cue name ${JSON.stringify(name)} from ${path}`)
+    basenameCounts.set(name, (basenameCounts.get(name) ?? 0) + 1)
+  }
+  for (const [path, kind] of assets) {
+    const base = cueName(path)
+    const name = basenameCounts.get(base) === 1 ? base : canonicalCueName(path)
     expressions[name] = null
     cues[name] = kind === 'expression' ? { expression: path } : { motion: path }
   }

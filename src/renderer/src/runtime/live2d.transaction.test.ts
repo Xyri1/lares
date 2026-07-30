@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const boundary = vi.hoisted(() => {
   const models = new Map<string, ReturnType<typeof model>>()
   const applications: Array<{ stage: { children: unknown[]; addChild(value: unknown): void } }> = []
+  const from = vi.fn(async (source: string | { url?: string }) => {
+    const path = typeof source === 'string' ? source : source.url ?? ''
+    const found = models.get(path)
+    if (!found) throw new Error(`missing fixture ${path}`)
+    return found
+  })
 
   function model(path: string, valid = true, fitFails = false, destroyFails = false) {
     const listeners = new Map<string, () => void>()
@@ -46,7 +52,7 @@ const boundary = vi.hoisted(() => {
     }
   }
 
-  return { models, applications, model }
+  return { models, applications, from, model }
 })
 
 vi.mock('pixi.js', () => {
@@ -77,11 +83,7 @@ vi.mock('@pixi/unsafe-eval', () => ({ install: vi.fn() }))
 vi.mock('pixi-live2d-display/cubism4', () => ({
   Live2DModel: {
     registerTicker: vi.fn(),
-    from: vi.fn(async (path: string) => {
-      const found = boundary.models.get(path)
-      if (!found) throw new Error(`missing fixture ${path}`)
-      return found
-    })
+    from: boundary.from
   },
   MotionPriority: { NORMAL: 2 }
 }))
@@ -94,7 +96,7 @@ Object.assign(globalThis, {
   performance: { now: () => 0 }
 })
 
-const { Live2DRuntime } = await import('./live2d')
+const { Live2DRuntime, prepareModelSource } = await import('./live2d')
 
 const cleanup = { children: true, texture: true, baseTexture: true }
 
@@ -112,6 +114,160 @@ describe('Live2DRuntime character transaction', () => {
   beforeEach(() => {
     boundary.models.clear()
     boundary.applications.length = 0
+    boundary.from.mockClear()
+  })
+
+  it('accepts Core MOC versions 1–4 and rejects version 5 before pixi revival', async () => {
+    const released = vi.fn()
+    const core = {
+      Moc: { fromArrayBuffer: vi.fn(() => ({ _release: released })) },
+      Version: { csmGetMocVersion: vi.fn(() => 1) }
+    }
+    const response = (value: unknown): Response =>
+      (value instanceof ArrayBuffer
+        ? { ok: true, arrayBuffer: async () => value }
+        : { ok: true, json: async () => value }) as unknown as Response
+    const settings = {
+      FileReferences: { Moc: 'model.moc3', Textures: ['texture.png'] },
+      Groups: [
+        { Target: 'Parameter', Name: 'EyeBlink', Ids: ['EyeL', 'EyeR'] }
+      ]
+    }
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(response(settings))
+      .mockResolvedValueOnce(response(new ArrayBuffer(8))))
+    for (const version of [1, 2, 3, 4]) {
+      core.Version.csmGetMocVersion.mockReturnValueOnce(version)
+      if (version > 1) {
+        vi.mocked(fetch)
+          .mockResolvedValueOnce(response(settings))
+          .mockResolvedValueOnce(response(new ArrayBuffer(8)))
+      }
+      await expect(
+        prepareModelSource(
+          'lares://candidate/1/runtime/model.model3.json',
+          undefined,
+          core
+        )
+      ).resolves.toMatchObject({
+        compatibility: {
+          mocVersion: version,
+          groups: { eyeBlink: ['EyeL', 'EyeR'] }
+        }
+      })
+    }
+
+    core.Version.csmGetMocVersion.mockReturnValueOnce(4)
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({
+        ...settings,
+        FileReferences: { ...settings.FileReferences, Moc: '../shared.moc3' }
+      }))
+      .mockResolvedValueOnce(response(new ArrayBuffer(8)))
+    await prepareModelSource('lares://characters/nested/model.model3.json', undefined, core)
+    expect(fetch).toHaveBeenLastCalledWith('lares://characters/shared.moc3')
+
+    boundary.models.set(
+      'lares://candidate/1/runtime/model.model3.json',
+      boundary.model('lares://candidate/1/runtime/model.model3.json')
+    )
+    Object.assign(window, {
+      Live2DCubismCore: {
+        ...core,
+        Version: { csmGetMocVersion: vi.fn(() => 5) }
+      }
+    })
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response(settings))
+      .mockResolvedValueOnce(response(new ArrayBuffer(8)))
+    const runtime = new Live2DRuntime({ parentElement: null } as HTMLCanvasElement)
+
+    await expect(
+      runtime.prepareLoad(1, 'lares://candidate/1/runtime/model.model3.json')
+    ).rejects.toThrow('SDK 5.x+')
+    expect(boundary.from).not.toHaveBeenCalled()
+    expect(released).toHaveBeenCalledTimes(6)
+    vi.unstubAllGlobals()
+  })
+
+  it('rejects a texture over the live renderer limit before pixi revival', async () => {
+    const core = {
+      Moc: { fromArrayBuffer: vi.fn(() => ({ _release: vi.fn() })) },
+      Version: { csmGetMocVersion: vi.fn(() => 4) }
+    }
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          FileReferences: { Moc: 'model.moc3', Textures: ['huge.png'] }
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(8)
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        blob: async () => ({})
+      }))
+    const close = vi.fn()
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({
+      width: 8192,
+      height: 1024,
+      close
+    })))
+
+    await expect(
+      prepareModelSource(
+        'lares://candidate/1/runtime/model.model3.json',
+        undefined,
+        core,
+        4096
+      )
+    ).rejects.toThrow('8192×1024')
+    expect(boundary.from).not.toHaveBeenCalled()
+    expect(close).toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('drops missing optional sidecars and uses the validated physics fallback', async () => {
+    const core = {
+      Moc: { fromArrayBuffer: vi.fn(() => ({ _release: vi.fn() })) },
+      Version: { csmGetMocVersion: vi.fn(() => 4) }
+    }
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          FileReferences: {
+            Moc: 'model.moc3',
+            Textures: ['texture.png'],
+            Physics: 'missing.physics3.json',
+            Pose: 'missing.pose3.json'
+          }
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(8)
+      })
+      .mockResolvedValueOnce({ ok: false })
+      .mockResolvedValueOnce({ ok: false }))
+
+    await expect(
+      prepareModelSource(
+        'lares://candidate/1/runtime/model.model3.json',
+        'lares://candidate/1/runtime/fallback.physics3.json',
+        core
+      )
+    ).resolves.toMatchObject({
+      source: {
+        FileReferences: {
+          Physics: 'lares://candidate/1/runtime/fallback.physics3.json'
+        }
+      }
+    })
+    vi.unstubAllGlobals()
   })
 
   it('keeps the old model through tentative commit, then cleans it on finalize', async () => {

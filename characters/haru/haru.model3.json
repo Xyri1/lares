@@ -1,0 +1,66 @@
+{
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "runtime/haru.moc3",
+    "Textures": [
+      "runtime/haru.1024/texture_00.png",
+      "runtime/haru.1024/texture_01.png",
+      "runtime/haru.1024/texture_02.png"
+    ],
+    "Physics": "runtime/haru.physics3.json",
+    "Pose": "runtime/haru.pose3.json",
+    "DisplayInfo": "runtime/haru.cdi3.json",
+    "Motions": {
+      "Idle": [
+        { "File": "runtime/motion/haru_idle_01.motion3.json" },
+        { "File": "runtime/motion/haru_idle_02.motion3.json" },
+        { "File": "runtime/motion/haru_idle_03.motion3.json" }
+      ],
+      "Flick": [
+        { "File": "runtime/motion/haru_m_01.motion3.json" },
+        { "File": "runtime/motion/haru_m_03.motion3.json" },
+        { "File": "runtime/motion/haru_m_04.motion3.json" }
+      ],
+      "Tap": [
+        { "File": "runtime/motion/haru_m_02.motion3.json" },
+        { "File": "runtime/motion/haru_m_06.motion3.json" },
+        { "File": "runtime/motion/haru_m_07.motion3.json" },
+        { "File": "runtime/motion/haru_m_10.motion3.json" },
+        { "File": "runtime/motion/haru_normal_02.motion3.json" },
+        { "File": "runtime/motion/haru_normal_05.motion3.json" }
+      ],
+      "FlickRight": [
+        { "File": "runtime/motion/haru_m_05.motion3.json" },
+        { "File": "runtime/motion/haru_normal_03.motion3.json" },
+        { "File": "runtime/motion/haru_normal_04.motion3.json" }
+      ],
+      "Flick3": [
+        { "File": "runtime/motion/haru_m_08.motion3.json" },
+        { "File": "runtime/motion/haru_normal_01.motion3.json" },
+        { "File": "runtime/motion/haru_normal_06.motion3.json" }
+      ],
+      "FlickLeft": [
+        { "File": "runtime/motion/haru_m_09.motion3.json" },
+        { "File": "runtime/motion/haru_normal_09.motion3.json" },
+        { "File": "runtime/motion/haru_normal_10.motion3.json" }
+      ],
+      "Shake": [
+        { "File": "runtime/motion/haru_normal_07.motion3.json" },
+        { "File": "runtime/motion/haru_normal_08.motion3.json" }
+      ]
+    }
+  },
+  "Groups": [
+    {
+      "Target": "Parameter",
+      "Name": "LipSync",
+      "Ids": ["PARAM_MOUTH_OPEN_Y"]
+    },
+    {
+      "Target": "Parameter",
+      "Name": "EyeBlink",
+      "Ids": ["PARAM_EYE_L_OPEN", "PARAM_EYE_R_OPEN"]
+    }
+  ],
+  "HitAreas": []
+}

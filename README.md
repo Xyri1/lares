@@ -19,7 +19,7 @@ pending — see [`sdd/slices/008-ship/`](sdd/slices/008-ship/).
 
 ```bash
 pnpm install
-pnpm fetch-assets   # once after clone — Cubism Core + Hiyori sample
+pnpm fetch-assets   # once after clone — Cubism Core + Hiyori/Haru samples
 pnpm dev            # Electron app; renderer on 127.0.0.1:5300
 ```
 
@@ -30,7 +30,7 @@ pnpm dev            # Electron app; renderer on 127.0.0.1:5300
 | `pnpm dev` | Run the app in development |
 | `pnpm build` | Typecheck + production build |
 | `pnpm test` | Vitest (main-side pure logic) |
-| `pnpm fetch-assets` | Download Live2D Core + Hiyori into gitignored paths |
+| `pnpm fetch-assets` | Download Live2D Core + Hiyori/Haru into gitignored paths |
 | `pnpm package:preflight` | Validate local distribution inputs |
 | `pnpm package:mac` | Build the unsigned universal macOS DMG |
 | `pnpm package:win` | Build the unsigned Windows x64 NSIS installer |

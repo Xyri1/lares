@@ -50,6 +50,43 @@ files or model index.
   affect selector ignores them until mapped.
 - Author new expressions under `authored/<name>.exp3.json` and reference them
   as an `expression` cue. Do not overwrite bundled files.
+- `renderers.live2d.performance` may contain the same `params` and `idle`
+  mapping shape as `presets/default.json`. Production uses the active
+  character's mapping; presets remain dev-panel overrides.
+
+## Compatibility boundary
+
+Lares supports VTube Studio-style model asset folders, not VTube Studio
+configuration, tracking, hotkeys, items, or VFX. `.vtube.json` is reported
+and ignored.
+
+Cubism Core decides compatibility from the MOC itself:
+
+| Core MOC value | Runtime | Result |
+| --- | --- | --- |
+| 1 | SDK 3.0–3.2 | supported |
+| 2 | SDK 3.3 | supported |
+| 3 | SDK 4.0 | supported |
+| 4 | SDK 4.2 | supported |
+| 5 or later | SDK 5.x+ | refused |
+| unknown or malformed | unknown | refused |
+
+The `.moc3` extension and model JSON `Version` do not prove compatibility.
+The app probes Core before pixi revives the model.
+
+`FileReferences` owns the MOC, textures, and registered sidecars. Import also
+scans recursively for loose `.exp3.json` and `.motion3.json` files, dedupes
+by normalized package-relative path, and keeps duplicate basenames distinct
+by using their relative paths as cue names. One loose `.physics3.json` is a
+fallback; multiple loose physics files are ambiguous. Missing MOC or textures
+blocks import. Missing pose, user data, display info, hit areas, or motion
+audio is reported as a named degradation or warning.
+
+The JSON report printed by `--check` includes the selected entry point,
+required and optional resources, registered and loose assets, ignored VTS
+metadata, performance IDs, all errors, warnings, and degradations. Runtime
+load adds the Core MOC version, parameter/group inventory, motion groups, and
+the renderer texture limit and probed texture dimensions.
 
 ## Import and map a model
 
@@ -135,9 +172,10 @@ expression (`驚き`), an artist motion (`wave`), and an authored gap (`weary`):
 This is illustrative data after mapping. Immediately after import, each
 coordinate entry is `null` until it is mapped with the visible model.
 
-## Hiyori is atypical
+## Hiyori is a regression fixture
 
-The bundled Hiyori package is a raw-parameter reference: it has no bundled
+The retained Hiyori package is a raw-parameter reference: it has no bundled
 `.exp3.json` expressions. Its cues use `params` directly, so it demonstrates
-the escape hatch but is not a representative import example. Third-party
-models commonly provide expressions and motions for import.
+the escape hatch but is not the build-selected default or a representative
+import example. Haru is the selected default; third-party models commonly
+provide expressions and motions for import.

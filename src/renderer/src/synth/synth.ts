@@ -34,6 +34,47 @@ export interface SynthPreset {
   }
 }
 
+export function isSynthPreset(value: unknown): value is SynthPreset {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const preset = value as Partial<SynthPreset>
+  const finite = (number: unknown): number is number =>
+    typeof number === 'number' && Number.isFinite(number)
+  if (
+    !Array.isArray(preset.params) ||
+    preset.params.some(
+      (binding) =>
+        typeof binding?.id !== 'string' ||
+        binding.id === '' ||
+        (binding.source !== 'valence' && binding.source !== 'arousal') ||
+        !finite(binding.gain) ||
+        !finite(binding.offset) ||
+        (binding.weight !== undefined && !finite(binding.weight))
+    )
+  ) {
+    return false
+  }
+  const { breath, blink, sway } = preset.idle ?? {}
+  return (
+    typeof breath?.id === 'string' &&
+    breath.id !== '' &&
+    finite(breath.basePeriodMs) &&
+    breath.basePeriodMs > 0 &&
+    finite(breath.amplitude) &&
+    Array.isArray(blink?.ids) &&
+    blink.ids.every((id) => typeof id === 'string' && id !== '') &&
+    finite(blink.baseIntervalMs) &&
+    blink.baseIntervalMs > 0 &&
+    finite(blink.durationMs) &&
+    blink.durationMs > 0 &&
+    finite(blink.valenceGain) &&
+    typeof sway?.id === 'string' &&
+    sway.id !== '' &&
+    finite(sway.baseAmplitude) &&
+    finite(sway.periodMs) &&
+    sway.periodMs > 0
+  )
+}
+
 /** Uniform [0,1) source — mulberry32 in replay, Math.random live. */
 export type Rng = () => number
 

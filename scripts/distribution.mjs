@@ -21,6 +21,15 @@ const REQUIRED_INPUTS = [
   'NOTICE'
 ]
 
+export const DEFAULT_CHARACTER_FILTER = [
+  '**/*',
+  '!**/*.cmo3',
+  '!**/*.can3',
+  '!**/*.wav',
+  '!runtime/haru.model3.json',
+  '!ReadMe.txt'
+]
+
 function requireFile(path, label = path) {
   if (!existsSync(path) || !lstatSync(path).isFile()) {
     throw new Error(`Missing distribution input: ${label}`)
@@ -71,11 +80,6 @@ export function packagePreflight(root, env = process.env) {
   for (const input of REQUIRED_INPUTS) requireFile(join(project, input), input)
   const character = selectedDefaultCharacter(project, env)
   validateDefaultCharacter(character)
-  for (const path of filesUnder(character)) {
-    if (/\.(?:cmo3|can3)$/i.test(path)) {
-      throw new Error(`Source-only character file is forbidden: ${path}`)
-    }
-  }
   return { character }
 }
 
@@ -169,7 +173,7 @@ export function inspectArtifact(artifact, platform, arch) {
     (path) =>
       path.toLowerCase().includes('icegirl') ||
       path.split('/').some((part) => part.toLowerCase() === 'characters') ||
-      /\.(?:cmo3|can3)$/i.test(path)
+      /\.(?:cmo3|can3|wav)$/i.test(path)
   )
   if (forbidden) throw new Error(`Artifact contains forbidden content: ${forbidden}`)
   return { platform, arch, resources, files: paths.length }

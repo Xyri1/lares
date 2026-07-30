@@ -87,7 +87,7 @@ A paid character-creation service (VRM/3D, agent-driven production pipeline) mon
 
 ## 14. Open Questions
 
-1. Hiyori was read and cleared at M0 (`sdd/clearances/M0-clearances.md`). Haru's additive per-character, exact-artifact, notice, and sound-data clearance remains a slice 010 packaging gate (D19/010-D7).
+1. Hiyori was read and cleared at M0 (`sdd/clearances/M0-clearances.md`). Haru's additive per-character, exact-artifact, notice, and voice-exclusion clearance closed in slice 010 (D19/010-D7).
 2. ~~Cubism Core distribution mechanics (user-loaded vs bundled per Live2D's redistribution terms).~~ Resolved at M0 — bundled with notice, Core kept out of the Apache-2.0 repo (D20).
 3. Emote tag vocabulary v1 (proposal to be made in SPEC).
 4. ~~Cubism 5 runtime coverage.~~ Resolved by the slice 010 compatibility boundary — v1 supports VTS-style Cubism 3/4 assets only; Cubism 2.1 and Cubism 5 are explicitly rejected, with no SDK-swap tripwire (D24/010-D1).

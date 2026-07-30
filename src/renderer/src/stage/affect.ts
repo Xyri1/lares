@@ -1,9 +1,16 @@
+import defaultPresetJson from '../../../../presets/default.json'
 import type { IRuntime } from '../runtime/iface'
 import { createSynth, mulberry32, type Synth, type SynthFeed, type SynthPreset } from '../synth/synth'
 import { composeFrame, initialFade, type CueParams, type FadeState, type StackEntry } from './compose'
 import { PRESETS } from './presets'
 import { driveTick, frameToLine, replayHistory } from './synthReplay'
 import { createTraceBuffer, pushEngine, resetBuffer, type TraceBuffer } from './traceBuffer'
+
+// Bundled fallback for a character with no `performance` mapping — same
+// preset boot (stage/index.ts) falls back to. Never the previous character's
+// preset, and never the driver's constructor `preset` (which may itself be a
+// character-specific mapping, e.g. Haru's, at boot).
+const defaultPreset = defaultPresetJson as SynthPreset
 
 export type StageId = 'A' | 'B'
 export type CueMotions = Readonly<Record<string, string>>
@@ -40,7 +47,7 @@ export interface AffectDriver {
    * Leaves the trace buffer alone — the overlay is history, not state. */
   reset(): void
   /** Tentatively refresh model defaults; finalize stops package-specific playback. */
-  characterChanged(): CharacterChangeTransaction
+  characterChanged(preset?: SynthPreset): CharacterChangeTransaction
 }
 
 /** What a stage's synth reads, plus the expression stack the compositor
@@ -137,7 +144,7 @@ export function createAffectDriver(
 ): AffectDriver {
   // Rest-point feed so a Lar idles before any brain tick arrives.
   const restFeed = (): StageFeed => ({ E: { valence: 0.1, arousal: 0.25 } })
-  const idlePreset = preset
+  let idlePreset = preset
 
   const makeStage = (rt: IRuntime): StageState => ({
     runtime: rt,
@@ -451,27 +458,31 @@ export function createAffectDriver(
     reset(): void {
       reset()
     },
-    characterChanged(): CharacterChangeTransaction {
+    characterChanged(nextPreset: SynthPreset = defaultPreset): CharacterChangeTransaction {
       const st = stages.A!
       const bufferedFeeds: AffectFeed[] = []
       const before = {
+        preset: idlePreset,
         preview,
         authoringPreview,
         defaults: st.defaults,
         driven: st.driven,
         feed: st.feed,
         fade: st.fade,
+        live: st.live,
         latest: st.latest,
         motionCue: st.motionCue
       }
       const rollback = (): void => {
         if (tentativeFeeds !== bufferedFeeds) return
+        idlePreset = before.preset
         preview = before.preview
         authoringPreview = before.authoringPreview
         st.defaults = before.defaults
         st.driven = before.driven
         st.feed = before.feed
         st.fade = before.fade
+        st.live = before.live
         st.latest = before.latest
         st.motionCue = before.motionCue
         tentativeFeeds = null
@@ -479,12 +490,14 @@ export function createAffectDriver(
       }
       try {
         tentativeFeeds = bufferedFeeds
+        idlePreset = nextPreset
         preview = null
         authoringPreview = null
         st.defaults = Object.fromEntries(st.runtime.parameters().map((p) => [p.id, p.default]))
         st.latest = null
         st.feed = restFeed()
         st.fade = initialFade()
+        st.live = createSynth(idlePreset, Math.random)
         st.driven = new Set()
         st.motionCue = null
         st.runtime.resetParams()

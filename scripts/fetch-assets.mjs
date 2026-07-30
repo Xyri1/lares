@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Fetches the proprietary Live2D Cubism Core and the Hiyori sample runtime
+// Fetches the proprietary Live2D Cubism Core plus the Hiyori and Haru runtimes
 // into gitignored paths. Neither ships in the repo: license §6.8 compels
 // excluding the Core (D20); Hiyori exclusion is repo-hygiene (slice
 // decision 001-D3, sdd/slices/001-canvas/DECISIONS.md).
@@ -11,7 +11,10 @@
 // that already exist unless --force is given. Exits non-zero on any
 // failure so `pnpm fetch-assets` fails loudly in CI/first-run.
 
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,6 +39,13 @@ const CORE_DEST = join(ROOT, 'vendor/live2d/live2dcubismcore.min.js');
 const HIYORI_COMMIT = 'ed1e0b714826d92469b9e51cacc3346f4e393f03'; // tag 5-r.5
 const HIYORI_BASE = `https://raw.githubusercontent.com/Live2D/CubismWebSamples/${HIYORI_COMMIT}/Samples/Resources/Hiyori/`;
 const HIYORI_DEST = join(ROOT, 'characters/hiyori/runtime');
+const HARU_URL = 'https://cubism.live2d.com/sample-data/bin/haru/haru_ja.zip';
+const HARU_SHA256 = '3686daa9ed014d0d56c623ef66ba85132fbee3558d2e3e34a154d833c86cebdd';
+const HARU_DEST = join(ROOT, 'characters/haru/runtime');
+
+const require = createRequire(import.meta.url);
+const electronDir = dirname(require.resolve('electron/package.json'));
+const extractZip = require(require.resolve('extract-zip', { paths: [electronDir] }));
 
 async function exists(path) {
   try {
@@ -85,9 +95,36 @@ async function fetchHiyori() {
   }
 }
 
+async function fetchHaru() {
+  if (!FORCE && (await exists(join(HARU_DEST, 'haru.moc3')))) {
+    console.log(`skip  ${HARU_DEST} (exists)`);
+    return;
+  }
+  const scratch = await mkdtemp(join(tmpdir(), 'lares-haru-'));
+  try {
+    const archive = join(scratch, 'haru.zip');
+    const bytes = await fetchTo(HARU_URL, archive);
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    if (digest !== HARU_SHA256) throw new Error(`Haru archive checksum mismatch: ${digest}`);
+    const extracted = join(scratch, 'extracted');
+    await extractZip(archive, { dir: extracted });
+    const runtime = join(extracted, 'runtime');
+    await cp(runtime, HARU_DEST, {
+      recursive: true,
+      filter: (path) => {
+        const rel = path.slice(runtime.length).replace(/^[/\\]/, '');
+        return rel !== 'haru.model3.json' && !/^sounds(?:[/\\]|$)/.test(rel);
+      }
+    });
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
 try {
   await fetchCore();
   await fetchHiyori();
+  await fetchHaru();
 } catch (err) {
   console.error(`fetch-assets: ${err.message}`);
   process.exit(1);

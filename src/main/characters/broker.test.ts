@@ -57,7 +57,7 @@ describe('character asset transaction state', () => {
     assets.prepare(2, '/characters/second')
     expect(assets.commit(2)).toBe(true)
     expect(assets.resolve('lares://characters/runtime/model.json')?.root).toBe('/characters/second')
-    expect(assets.resolve('lares://candidate/2/runtime/model.json')?.root).toBe('/characters/second')
+    expect(assets.resolve('lares://candidate/2/runtime/model.json')).toBeNull()
   })
 })
 
@@ -87,6 +87,28 @@ describe('main character load broker', () => {
     expect(broker.finalize(1)).toBe(false)
     expect(broker.rollback(1)).toBe(false)
     expect(broker.decision(1)).toBe('commit')
+  })
+
+  it('merges body compatibility before accepting a prepared character', async () => {
+    const body = new Body('overlay')
+    const broker = new CharacterLoadBroker(
+      new CharacterAssetState('/characters/first'),
+      () => body,
+      1000
+    )
+    const inspect = vi.fn(() => true)
+    const prepared = broker.prepare(1, '/characters/second', { id: 1 }, inspect)
+
+    expect(
+      broker.receive('overlay', {
+        id: 1,
+        ok: true,
+        inventory: INVENTORY,
+        compatibility: { mocVersion: 4 }
+      })
+    ).toBe(true)
+    await expect(prepared).resolves.toEqual(INVENTORY)
+    expect(inspect).toHaveBeenCalledWith(INVENTORY, { mocVersion: 4 })
   })
 
   it('rolls back on commit acknowledgement timeout and ignores a late result', async () => {

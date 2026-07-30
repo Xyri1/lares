@@ -6,8 +6,8 @@ const lares = {
   onOverlayScale: (cb: (scale: number) => void): void => {
     ipcRenderer.on('overlay:scale', (_event, scale: number) => cb(scale))
   },
-  reportInventory: (params: unknown[]): void => {
-    ipcRenderer.send('body:inventory', params)
+  reportInventory: (params: unknown[], compatibility: unknown): void => {
+    ipcRenderer.send('body:inventory', params, compatibility)
   },
   onCharacterPrepare: (cb: (request: CharacterPrepareRequest) => void): void => {
     ipcRenderer.on('character:prepare', (_event, request: CharacterPrepareRequest) => cb(request))

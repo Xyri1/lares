@@ -8,15 +8,25 @@ export interface ParamInfo {
   default: number
 }
 
+export interface RuntimeCompatibility {
+  mocVersion: number | null
+  groups: { eyeBlink: string[]; lipSync: string[] }
+  motions: Record<string, number>
+  maxTextureSize: number | null
+  textures: string[]
+  textureDimensions: { path: string; width: number; height: number }[]
+}
+
 export interface IRuntime {
-  load(modelPath: string): Promise<void>
-  prepareLoad(id: number, modelPath: string): Promise<ParamInfo[]>
+  load(modelPath: string, fallbackPhysics?: string): Promise<void>
+  prepareLoad(id: number, modelPath: string, fallbackPhysics?: string): Promise<ParamInfo[]>
   commitLoad(id: number): boolean
   rollbackLoad(id: number): boolean
   /** One-way finalization. Matching callers already own the new body; cleanup is best effort. */
   finalizeLoad(id: number): void
   cancelLoad(id: number): boolean
   parameters(): ParamInfo[]
+  compatibility?(): RuntimeCompatibility
   setParams(batch: Record<string, number>, weight?: number): void
   /** Release selected sticky overrides back to motion/physics ownership. */
   releaseParams(ids: readonly string[]): void
