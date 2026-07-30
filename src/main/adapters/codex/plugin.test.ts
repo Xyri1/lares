@@ -28,7 +28,8 @@ describe('Codex plugin', () => {
       '.codex-plugin',
       '.mcp.json',
       'README.md',
-      'hooks'
+      'hooks',
+      'skills'
     ])
     expect(await json('.codex-plugin/plugin.json')).toMatchObject({
       name: 'lares',
@@ -63,5 +64,12 @@ describe('Codex plugin', () => {
         }
       ])
     }
+  })
+
+  it('ships the same emoting skill as Claude Code', async () => {
+    expect(await readdir(resolve(root, 'skills'))).toEqual(['emoting'])
+    expect(await readFile(resolve(root, 'skills/emoting/SKILL.md'), 'utf8')).toBe(
+      await readFile(resolve('plugins/claude-code/skills/emoting/SKILL.md'), 'utf8')
+    )
   })
 })
