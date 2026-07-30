@@ -20,6 +20,7 @@ describe('update cache and version trust boundary', () => {
     expect(compareVersions('1.1.9', '1.2.0')).toBe(-1)
     expect(compareVersions('v0.5.0', '0.5.0-alpha.1')).toBe(1)
     expect(compareVersions('0.5.0-alpha.2', '0.5.0-alpha.1')).toBe(1)
+    expect(compareVersions('0.1.0-alpha.1', '0.5.0-alpha.1')).toBe(-1)
     expect(() => compareVersions('latest', '1.2.3')).toThrow('version')
   })
 

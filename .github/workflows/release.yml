@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
     paths: [package.json]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,51 +18,59 @@ jobs:
     name: Detect version bump
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.version.outputs.changed }}
+      release: ${{ steps.version.outputs.release }}
       prerelease: ${{ steps.version.outputs.prerelease }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.18.0
       - id: version
-        name: Compare package versions
+        name: Decide release
         env:
           BEFORE: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
         run: |
-          node <<'NODE'
-          const { execFileSync, spawnSync } = require('node:child_process')
-          const { appendFileSync, readFileSync } = require('node:fs')
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --input-type=module <<'NODE'
+          import { execFileSync, spawnSync } from 'node:child_process'
+          import { appendFileSync, readFileSync } from 'node:fs'
+          import { compareVersions } from './src/main/version.ts'
 
           const current = JSON.parse(readFileSync('package.json', 'utf8')).version
-          const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
-          if (!semver.test(current)) throw new Error(`Invalid package version: ${current}`)
-
+          compareVersions(current, current)
+          const manual = process.env.EVENT_NAME === 'workflow_dispatch'
+          if (manual && process.env.REF !== 'refs/heads/master') {
+            throw new Error('Manual releases must run from master')
+          }
           const before = process.env.BEFORE
-          const previous = /^0+$/.test(before)
+          const previous = manual || !before || /^0+$/.test(before)
             ? null
             : JSON.parse(execFileSync('git', ['show', `${before}:package.json`], { encoding: 'utf8' })).version
-          const changed = previous !== current
+          const release = manual || previous === null || compareVersions(current, previous) > 0
 
-          if (changed) {
+          if (release) {
             const tag = spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/tags/v${current}`])
             if (tag.status === 0) throw new Error(`Release tag already exists: v${current}`)
             if (tag.status !== 1) throw new Error(`Unable to check release tag v${current}`)
           }
 
           appendFileSync(process.env.GITHUB_OUTPUT, [
-            `changed=${changed}`,
+            `release=${release}`,
             `prerelease=${current.includes('-')}`,
             `version=${current}`,
             ''
           ].join('\n'))
-          console.log(previous === null ? `initial version ${current}` : `${previous} -> ${current}`)
+          console.log(manual ? `manual release ${current}` : `${previous ?? 'initial'} -> ${current}: ${release ? 'release' : 'skip'}`)
           NODE
 
   test:
     name: Test
     needs: detect
-    if: needs.detect.outputs.changed == 'true'
+    if: needs.detect.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -78,7 +87,7 @@ jobs:
   package:
     name: Package ${{ matrix.name }}
     needs: [detect, test]
-    if: needs.detect.outputs.changed == 'true'
+    if: needs.detect.outputs.release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -139,7 +148,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [detect, package]
-    if: needs.detect.outputs.changed == 'true'
+    if: needs.detect.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -7,12 +7,19 @@ same unsigned artifact shape through GitHub Releases.
 
 ## Automated public release
 
-A `package.json` version change pushed to `master` is the sole automatic
-release signal. Other code, dependency, and documentation pushes do not
-package. After tests and both native package inspections pass, GitHub Actions
-creates `v<version>` at that commit, publishes both installers with SHA-256
-files, and marks versions containing `-` as prereleases. An existing tag
-fails rather than being moved or overwritten.
+A semantic `package.json` version increase pushed to `master` is the sole
+automatic release signal. Corrections, decreases, and other code, dependency,
+or documentation pushes do not package. A manual run packages the current
+version from `master`:
+
+```sh
+gh workflow run release.yml --ref master
+```
+
+After tests and both native package inspections pass, GitHub Actions creates
+`v<version>` at that commit, publishes both installers with SHA-256 files,
+and marks versions containing `-` as prereleases. An existing tag fails
+rather than being moved or overwritten.
 
 ## Build and inspect
 
@@ -62,7 +69,7 @@ manifests, and `.cmo3`/`.can3` source files.
 These scripts never download. The artifact path is supplied explicitly.
 
 ```sh
-./scripts/install-local.sh install "/absolute/path/Lares-0.5.0-alpha.1-macOS-universal-unsigned.dmg"
+./scripts/install-local.sh install "/absolute/path/Lares-0.1.0-alpha.1-macOS-universal-unsigned.dmg"
 ./scripts/install-local.sh uninstall
 ```
 
@@ -71,7 +78,7 @@ Lares data** is unchecked by default. If Lares is already running, use
 **Uninstall Lares…** from its tray instead.
 
 ```powershell
-.\scripts\install-local.ps1 install "C:\local\Lares-0.5.0-alpha.1-Windows-x64-unsigned.exe"
+.\scripts\install-local.ps1 install "C:\local\Lares-0.1.0-alpha.1-Windows-x64-unsigned.exe"
 .\scripts\install-local.ps1 uninstall
 .\scripts\install-local.ps1 uninstall -DeleteData
 ```
