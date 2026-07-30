@@ -36,6 +36,7 @@ function setup(overrides: Partial<TrayShellDependencies> = {}) {
     switchCharacter: async (path) => ({ ok: true, manifestPath: path }),
     importCharacter: () => ({ ok: true, manifestPath: '/managed/new/lar.character.json' }),
     discardImportedCharacter: () => {},
+    openCharacterFolder: () => effects.push('openFolder'),
     pickImportDirectory: async () => '/external/new',
     setMenu: (next) => {
       menu = next
@@ -63,9 +64,6 @@ function setup(overrides: Partial<TrayShellDependencies> = {}) {
     onCheckForUpdates: () => {
       effects.push('check')
     },
-    onUninstall: () => {
-      effects.push('uninstall')
-    },
     quit: () => effects.push('quit'),
     ...overrides
   }
@@ -87,10 +85,10 @@ describe('tray shell', () => {
     expect(state.effects).toEqual(['login:true'])
     expect(item(state.menu, 'Hiyori').checked).toBe(true)
     expect(item(state.menu, 'Hiyori (2)').type).toBe('radio')
-    for (const label of ['Import Character…', '50%', '75%', '100%', '125%', '150%',
-      'Do Not Disturb', 'Launch at Login', 'Reset Position', '🔴 Expressions not mapped',
-      'Map expressions…', 'Automatically Check for Updates', 'Check for Updates…',
-      'Uninstall Lares…', 'Quit']) {
+    for (const label of ['Import Character…', 'Open Character Folder', '50%', '75%', '100%',
+      '125%', '150%', 'Do Not Disturb', 'Launch at Login', 'Reset Position',
+      '🔴 Expressions not mapped', 'Map expressions…', 'Automatically Check for Updates',
+      'Check for Updates…', 'Quit']) {
       expect(item(state.menu, label)).toBeTruthy()
     }
     expect(item(state.menu, 'Map expressions…').checked).toBe(true)
@@ -107,7 +105,7 @@ describe('tray shell', () => {
     await item(state.menu, 'Reset Position').click!()
     await item(state.menu, 'Map expressions…').click!()
     await item(state.menu, 'Check for Updates…').click!()
-    await item(state.menu, 'Uninstall Lares…').click!()
+    await item(state.menu, 'Open Character Folder').click!()
     await item(state.menu, 'Quit').click!()
 
     expect(state.config).toMatchObject({
@@ -121,7 +119,7 @@ describe('tray shell', () => {
       'scale:1.25', 'persist',
       'visible:false', 'persist',
       'login:true', 'persist',
-      'persist', 'automatic:false', 'reset', 'map', 'check', 'uninstall', 'quit'
+      'persist', 'automatic:false', 'reset', 'map', 'check', 'openFolder', 'quit'
     ])
   })
 
@@ -165,12 +163,10 @@ describe('tray shell', () => {
   it('keeps unavailable later-task actions disabled while retaining typed callbacks', () => {
     const state = setup({
       onMapExpressions: undefined,
-      onCheckForUpdates: undefined,
-      onUninstall: undefined
+      onCheckForUpdates: undefined
     })
     expect(item(state.menu, 'Map expressions…').enabled).toBe(false)
     expect(item(state.menu, 'Check for Updates…').enabled).toBe(false)
-    expect(item(state.menu, 'Uninstall Lares…').enabled).toBe(false)
   })
 
   it('recomputes calibration status after mapping and disables completed packages', async () => {
@@ -205,14 +201,6 @@ describe('tray shell', () => {
     })
     await item(importState.menu, 'Import Character…').click!()
     expect(importState.effects).toContain('error:picker failed')
-
-    const uninstallState = setup({
-      onUninstall: async () => {
-        throw new Error('uninstaller missing')
-      }
-    })
-    await item(uninstallState.menu, 'Uninstall Lares…').click!()
-    expect(uninstallState.effects).toContain('error:uninstaller missing')
   })
 })
 

@@ -1323,6 +1323,9 @@ function createTray(): void {
     importCharacter: (source) => importCharacterPackage(charactersRoot(), source),
     discardImportedCharacter: (manifestPath) =>
       discardManagedCharacter(charactersRoot(), manifestPath),
+    openCharacterFolder: () => {
+      void shell.openPath(charactersRoot())
+    },
     pickImportDirectory: async () => {
       const result = await dialog.showOpenDialog({
         title: L.importCharacterDialogTitle,
@@ -1374,7 +1377,6 @@ function createTray(): void {
     onLanguageChanged: (language) => {
       setLocale(resolveLocale(language, app.getLocale()))
     },
-    onUninstall: uninstallFromTray,
     quit: () => {
       quitting = true
       app.quit()
@@ -1395,7 +1397,7 @@ if (removeAdaptersOnly) {
   )
 } else if (uninstallOnly) {
   if (!app.requestSingleInstanceLock()) {
-    console.error('[lares] Lares is already running; use Uninstall Lares… from its tray')
+    console.error('[lares] Lares is already running; quit it and run --uninstall again')
     app.exit(2)
   } else {
     void app

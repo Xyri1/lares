@@ -8,6 +8,7 @@ export const en = {
   // Tray menu
   characters: 'Characters',
   importCharacter: 'Import Character…',
+  openCharacterFolder: 'Open Character Folder',
   scale: 'Scale',
   doNotDisturb: 'Do Not Disturb',
   launchAtLogin: 'Launch at Login',
@@ -16,7 +17,6 @@ export const en = {
   mapExpressions: 'Map expressions…',
   automaticallyCheckForUpdates: 'Automatically Check for Updates',
   checkForUpdates: 'Check for Updates…',
-  uninstallLares: 'Uninstall Lares…',
   quit: 'Quit',
   language: 'Language',
   // Self-referential language names — always shown in their own script so a
@@ -71,6 +71,7 @@ export const en = {
 export const zhCN: typeof en = {
   characters: '角色',
   importCharacter: '导入角色…',
+  openCharacterFolder: '打开角色目录',
   scale: '缩放',
   doNotDisturb: '勿扰模式',
   launchAtLogin: '开机启动',
@@ -79,7 +80,6 @@ export const zhCN: typeof en = {
   mapExpressions: '映射表情…',
   automaticallyCheckForUpdates: '自动检查更新',
   checkForUpdates: '检查更新…',
-  uninstallLares: '卸载 Lares…',
   quit: '退出',
   language: '语言',
   languageSystem: 'System',

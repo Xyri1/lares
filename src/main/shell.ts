@@ -26,6 +26,7 @@ export interface TrayShellDependencies {
   switchCharacter(manifestPath: string): Promise<Result>
   importCharacter(source: string): Result
   discardImportedCharacter(manifestPath: string): void
+  openCharacterFolder(): void
   pickImportDirectory(): Promise<string | null>
   setMenu(menu: ShellMenuItem[]): void
   persist(config: AppConfig): Promise<void>
@@ -40,7 +41,6 @@ export interface TrayShellDependencies {
   onMapExpressions?: () => void | Promise<void>
   onAutomaticUpdatesChanged?: (enabled: boolean) => void | Promise<void>
   onCheckForUpdates?: () => void | Promise<void>
-  onUninstall?: () => void | Promise<void>
   onLanguageChanged?: (language: Language) => void | Promise<void>
   quit(): void
 }
@@ -172,14 +172,6 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     refresh()
   }
 
-  const uninstall = async (): Promise<void> => {
-    try {
-      await deps.onUninstall?.()
-    } catch (error) {
-      deps.showError(L.laresCouldNotBeUninstalled, errorMessage(error))
-    }
-  }
-
   function refresh(): void {
     const active = deps.activeCharacter()
     deps.setMenu([
@@ -195,7 +187,8 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
             }
           })),
           { type: 'separator' },
-          { label: L.importCharacter, click: importCharacter }
+          { label: L.importCharacter, click: importCharacter },
+          { label: L.openCharacterFolder, click: deps.openCharacterFolder }
         ]
       },
       {
@@ -267,11 +260,6 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
         ]
       },
       { type: 'separator' },
-      {
-        label: L.uninstallLares,
-        enabled: deps.onUninstall !== undefined,
-        click: uninstall
-      },
       { label: L.quit, click: deps.quit }
     ])
   }
