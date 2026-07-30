@@ -7,8 +7,8 @@
 Open-source desktop companion that gives AI agents a face. A Live2D character (a **Lar**) expresses the emotional arc of the agent sessions it watches — thinking, stuck, recovering — through continuously driven animation, not pre-baked clips.
 
 Agents report feelings in the first person (MCP / local HTTP). Deterministic
-hooks supply the baseline heartbeat. Nothing leaves the machine except the
-disclosed GitHub update check.
+hooks supply the baseline heartbeat. At runtime, nothing leaves the machine
+except the disclosed GitHub update check; plugin downloads are user-initiated.
 
 **Status:** M5a implementation complete; clean-machine macOS/Windows gate
 pending — see [`sdd/slices/008-ship/`](sdd/slices/008-ship/).

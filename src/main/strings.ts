@@ -17,6 +17,7 @@ export const en = {
   mapExpressions: 'Map expressions…',
   automaticallyCheckForUpdates: 'Automatically Check for Updates',
   checkForUpdates: 'Check for Updates…',
+  configureAgentIntegrations: 'Configure Agent Integrations…',
   quit: 'Quit',
   language: 'Language',
   // Self-referential language names — always shown in their own script so a
@@ -61,6 +62,26 @@ export const en = {
   upToDate: (version: string): string => `You are running the latest Lares release (${version}).`,
   updateCheckFailed: 'Update check failed',
 
+  // Agent integrations
+  agentIntegrationsConfirmTitle: 'Configure Agent Integrations',
+  agentIntegrationsConfirmMessage: 'Configure the Lares marketplace plugin where Claude Code or Codex is available?',
+  agentIntegrationsConfirmDetail:
+    'Lares will download its public marketplace plugin and install hooks plus the local MCP connection. Each harness may still ask you to review and trust its hooks.',
+  agentIntegrationsCancel: 'Cancel',
+  agentIntegrationsConfigure: 'Configure',
+  agentIntegrationsResultTitle: 'Agent Integrations',
+  agentIntegrationConfigured: (harness: string): string => `${harness}: configured`,
+  agentIntegrationAlreadyConfigured: (harness: string): string => `${harness}: already configured`,
+  agentIntegrationMissing: (harness: string): string => `${harness}: CLI not found`,
+  agentIntegrationFailed: (harness: string, error: string): string => `${harness}: ${error}`,
+  agentIntegrationsUnknownError: 'Unknown error',
+  agentIntegrationsVerificationFailed: 'Lares was not listed after installation',
+  agentIntegrationsClaudeNext: 'Claude Code: start a new session or run /reload-plugins.',
+  agentIntegrationsCodexNext:
+    'Codex: start a new task in the CLI or ChatGPT desktop app, then review and trust hooks with /hooks.',
+  agentIntegrationsCopyCommands: 'Copy Manual Commands',
+  agentIntegrationsDone: 'Done',
+
   // Calibration status line (tray)
   calibrationNotMapped: '🔴 Expressions not mapped',
   calibrationLeft: (remaining: number): string =>
@@ -80,6 +101,7 @@ export const zhCN: typeof en = {
   mapExpressions: '映射表情…',
   automaticallyCheckForUpdates: '自动检查更新',
   checkForUpdates: '检查更新…',
+  configureAgentIntegrations: '配置 Agent 集成…',
   quit: '退出',
   language: '语言',
   languageSystem: 'System',
@@ -102,7 +124,7 @@ export const zhCN: typeof en = {
   importCharacterDialogTitle: '导入角色',
 
   uninstallConfirmTitle: '卸载 Lares',
-  uninstallConfirmMessage: '移除 Lares 及其代理集成？',
+  uninstallConfirmMessage: '移除 Lares 及其 Agent 集成？',
   uninstallConfirmDetail: '除非勾选下方选项，已导入的角色和创作内容将被保留。',
   uninstallConfirmCancel: '取消',
   uninstallConfirmUninstall: '卸载',
@@ -113,6 +135,25 @@ export const zhCN: typeof en = {
   upToDateTitle: 'Lares 已是最新版本',
   upToDate: (version: string): string => `当前已是最新版本（${version}）。`,
   updateCheckFailed: '更新检查失败',
+
+  agentIntegrationsConfirmTitle: '配置 Agent 集成',
+  agentIntegrationsConfirmMessage: '要在可用的 Claude Code 或 Codex 中配置 Lares 市场插件吗？',
+  agentIntegrationsConfirmDetail:
+    'Lares 将下载其公开市场插件，并安装钩子和本地 MCP 连接。每个工具仍可能要求你审核并信任其钩子。',
+  agentIntegrationsCancel: '取消',
+  agentIntegrationsConfigure: '配置',
+  agentIntegrationsResultTitle: 'Agent 集成',
+  agentIntegrationConfigured: (harness: string): string => `${harness}：已配置`,
+  agentIntegrationAlreadyConfigured: (harness: string): string => `${harness}：已配置`,
+  agentIntegrationMissing: (harness: string): string => `${harness}：未找到 CLI`,
+  agentIntegrationFailed: (harness: string, error: string): string => `${harness}：${error}`,
+  agentIntegrationsUnknownError: '未知错误',
+  agentIntegrationsVerificationFailed: '安装后未列出 Lares',
+  agentIntegrationsClaudeNext: 'Claude Code：启动新会话或运行 /reload-plugins。',
+  agentIntegrationsCodexNext:
+    'Codex：在 CLI 或 ChatGPT 桌面应用中新建任务，然后通过 /hooks 审核并信任钩子。',
+  agentIntegrationsCopyCommands: '复制手动命令',
+  agentIntegrationsDone: '完成',
 
   calibrationNotMapped: '🔴 表情尚未映射',
   calibrationLeft: (remaining: number): string => `🟡 还剩 ${remaining} 个表情`,

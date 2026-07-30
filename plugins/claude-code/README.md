@@ -4,9 +4,12 @@ The plugin provides Lares's baseline lifecycle hooks and its local MCP server; s
 
 ## Install
 
+In Lares, choose **Configure Agent Integrations…** from the tray and
+confirm. If the Claude Code CLI is not discoverable from Lares, run:
+
 ```
-/plugin marketplace add Xyri1/lares
-/plugin install lares@lares
+claude plugin marketplace add Xyri1/lares --scope user
+claude plugin install lares@lares --scope user
 ```
 
 Start the Lares app, then restart Claude Code (or run `/reload-plugins`) so the hooks and MCP server load.

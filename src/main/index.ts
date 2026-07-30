@@ -73,6 +73,13 @@ import { DensityLog } from './densityLog'
 import { errorMessage } from './errors'
 import { L, resolveLocale, setLocale } from './strings'
 import {
+  configureAgentIntegrations,
+  manualCommands,
+  runAgentIntegrationCommand,
+  type AgentIntegrationReport,
+  type Harness
+} from './integrations'
+import {
   Nerves,
   parseInventory,
   type ParamInfo,
@@ -418,7 +425,7 @@ async function syncAdapters(): Promise<void> {
     })
       .then((result) => {
         if (result.settings === 'updated' || result.mcp === 'updated') {
-          console.log('[lares] legacy Claude Code registration removed; install the Lares plugin via /plugin marketplace add Xyri1/lares')
+          console.log('[lares] legacy Claude Code registration removed; use Configure Agent Integrations from the Lares tray')
         }
       })
       .catch((error) => console.error('[lares] Claude Code legacy cleanup failed', error)),
@@ -991,6 +998,73 @@ const positionFile = (): string => join(app.getPath('userData'), 'window.json')
 const configFile = (): string => join(app.getPath('userData'), 'config.json')
 const updateCacheFile = (): string => join(app.getPath('userData'), 'updates.json')
 
+function integrationLabel(harness: Harness): string {
+  return harness === 'claude' ? 'Claude Code' : 'Codex'
+}
+
+function integrationResult(report: AgentIntegrationReport): {
+  message: string
+  detail: string
+  manualCommands: string[]
+} {
+  const manual: string[] = []
+  const messages = report.harnesses.map((result) => {
+    const label = integrationLabel(result.harness)
+    if (result.status === 'configured') return L.agentIntegrationConfigured(label)
+    if (result.status === 'already-configured') return L.agentIntegrationAlreadyConfigured(label)
+    manual.push(...manualCommands(result.harness))
+    return result.status === 'missing'
+      ? L.agentIntegrationMissing(label)
+      : L.agentIntegrationFailed(
+          label,
+          result.error ??
+            (result.reason === 'verification'
+              ? L.agentIntegrationsVerificationFailed
+              : L.agentIntegrationsUnknownError)
+        )
+  })
+  const next = report.harnesses
+    .filter((result) => result.status === 'configured' || result.status === 'already-configured')
+    .map((result) =>
+      result.harness === 'claude' ? L.agentIntegrationsClaudeNext : L.agentIntegrationsCodexNext
+    )
+  return { message: messages.join('\n'), detail: next.join('\n'), manualCommands: manual }
+}
+
+async function configureIntegrationsFromTray(): Promise<void> {
+  const report = await configureAgentIntegrations({
+    confirm: async () => {
+      const choice = await dialog.showMessageBox({
+        type: 'question',
+        title: L.agentIntegrationsConfirmTitle,
+        message: L.agentIntegrationsConfirmMessage,
+        detail: L.agentIntegrationsConfirmDetail,
+        buttons: [L.agentIntegrationsCancel, L.agentIntegrationsConfigure],
+        defaultId: 0,
+        cancelId: 0
+      })
+      return choice.response === 1
+    },
+    run: runAgentIntegrationCommand
+  })
+  if (!report.confirmed) return
+  const result = integrationResult(report)
+  const choice = await dialog.showMessageBox({
+    type: result.manualCommands.length ? 'warning' : 'info',
+    title: L.agentIntegrationsResultTitle,
+    message: result.message,
+    detail: result.detail,
+    buttons: result.manualCommands.length
+      ? [L.agentIntegrationsCopyCommands, L.agentIntegrationsDone]
+      : [L.agentIntegrationsDone],
+    defaultId: result.manualCommands.length ? 1 : 0,
+    cancelId: result.manualCommands.length ? 1 : 0
+  })
+  if (result.manualCommands.length && choice.response === 0) {
+    clipboard.writeText(result.manualCommands.join('\n'))
+  }
+}
+
 async function syncCalibrationAfterAuthoring(): Promise<void> {
   if (reconcileActiveCalibration()) {
     try {
@@ -1374,6 +1448,10 @@ function createTray(): void {
     },
     onAutomaticUpdatesChanged: () => updateChecks?.automaticPreferenceChanged(),
     onCheckForUpdates: () => updateChecks?.manual(),
+    onConfigureAgentIntegrations: () =>
+      configureIntegrationsFromTray().catch((error) =>
+        dialog.showErrorBox(L.agentIntegrationsResultTitle, errorMessage(error))
+      ),
     onLanguageChanged: (language) => {
       setLocale(resolveLocale(language, app.getLocale()))
     },

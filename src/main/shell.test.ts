@@ -64,6 +64,9 @@ function setup(overrides: Partial<TrayShellDependencies> = {}) {
     onCheckForUpdates: () => {
       effects.push('check')
     },
+    onConfigureAgentIntegrations: () => {
+      effects.push('integrations')
+    },
     quit: () => effects.push('quit'),
     ...overrides
   }
@@ -88,7 +91,7 @@ describe('tray shell', () => {
     for (const label of ['Import Character…', 'Open Character Folder', '50%', '75%', '100%',
       '125%', '150%', 'Do Not Disturb', 'Launch at Login', 'Reset Position',
       '🔴 Expressions not mapped', 'Map expressions…', 'Automatically Check for Updates',
-      'Check for Updates…', 'Quit']) {
+      'Check for Updates…', 'Configure Agent Integrations…', 'Quit']) {
       expect(item(state.menu, label)).toBeTruthy()
     }
     expect(item(state.menu, 'Map expressions…').checked).toBe(true)
@@ -105,6 +108,7 @@ describe('tray shell', () => {
     await item(state.menu, 'Reset Position').click!()
     await item(state.menu, 'Map expressions…').click!()
     await item(state.menu, 'Check for Updates…').click!()
+    await item(state.menu, 'Configure Agent Integrations…').click!()
     await item(state.menu, 'Open Character Folder').click!()
     await item(state.menu, 'Quit').click!()
 
@@ -119,7 +123,7 @@ describe('tray shell', () => {
       'scale:1.25', 'persist',
       'visible:false', 'persist',
       'login:true', 'persist',
-      'persist', 'automatic:false', 'reset', 'map', 'check', 'openFolder', 'quit'
+      'persist', 'automatic:false', 'reset', 'map', 'check', 'integrations', 'openFolder', 'quit'
     ])
   })
 
@@ -163,10 +167,12 @@ describe('tray shell', () => {
   it('keeps unavailable later-task actions disabled while retaining typed callbacks', () => {
     const state = setup({
       onMapExpressions: undefined,
-      onCheckForUpdates: undefined
+      onCheckForUpdates: undefined,
+      onConfigureAgentIntegrations: undefined
     })
     expect(item(state.menu, 'Map expressions…').enabled).toBe(false)
     expect(item(state.menu, 'Check for Updates…').enabled).toBe(false)
+    expect(item(state.menu, 'Configure Agent Integrations…').enabled).toBe(false)
   })
 
   it('recomputes calibration status after mapping and disables completed packages', async () => {

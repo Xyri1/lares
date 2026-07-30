@@ -4,11 +4,15 @@ The plugin provides Lares's baseline lifecycle hooks and its local MCP server; s
 
 ## Install
 
+In Lares, choose **Configure Agent Integrations…** from the tray and
+confirm. If the Codex CLI is not discoverable from Lares, run:
+
 ```sh
-codex plugin marketplace add Xyri1/lares
+codex plugin marketplace add Xyri1/lares --json
+codex plugin add lares@lares --json
 ```
 
-Start the Lares app, then use `/plugins` to install and enable Lares in Codex. At the next session start, trust the Lares hooks when Codex asks, or review them with `/hooks`.
+Start a new task in the Codex CLI or the ChatGPT desktop app, then trust the Lares hooks when Codex asks or review them with `/hooks`.
 
 ## Uninstall
 

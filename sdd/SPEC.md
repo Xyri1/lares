@@ -167,6 +167,20 @@ preserves sessions, affect/mood, position, scale, and DND.
 
 **Codex:** a Lares plugin — a directory with a `.codex-plugin/plugin.json` manifest bundling the hook set (same events plus PermissionRequest) and the streamable-HTTP MCP entry (`http://127.0.0.1:<port>/v1/mcp`, no token — D27), with skills deferred beyond M5a — hosted in the Lares GitHub repo as a plugin marketplace; the user adds the marketplace and installs via `/plugins`, passing Codex's own trust flow (guided, never bypassed — D29). The plugin stays thin — hook commands and the baked URL, no logic — so repo-HEAD stays compatible with any installed daemon (the wire contract froze at M3a). Plugin hook commands can't bake a per-machine app path, so they invoke a launcher shim the app maintains at a stable path (`~/.lares/bin/`), re-stamped with the current app binary on every launch (005-D8); the shim is shared with the Claude Code plugin and takes the harness as its argument, defaulting to `codex` so argument-less entries keep working (009-D5). No fallback of any kind: push-only sensing (P11, amending D15) — a Codex without the plugin is unsensed, and failure mapping degrades per §3 if recon finds no failure signal. Plugin-bundled hooks execute after Codex's trust review (the 2026-07-28 gap closed 2026-07-29, live re-smoke — D15 as amended), so the plugin delivers baseline states and emotes both. **Legacy cleanup:** pre-fold-back builds wrote a user-level `~/.codex/hooks.json`; every launch now runs the removal pass — content-recognition on the shim name, parse-abort, backup-once (006-D1) — deleting the file when only Lares entries remained. The same pass serves uninstall; the plugin itself is user-removed via `/plugins`, documented in its README.
 
+**Setup UX (008-D9):** the tray's **Configure Agent Integrations…**
+action first discloses the public download, hooks, and local MCP
+connection. Only after confirmation it calls the official CLIs with
+fixed arguments: `claude plugin marketplace add Xyri1/lares --scope
+user` then `claude plugin install lares@lares --scope user`; `codex
+plugin marketplace add Xyri1/lares --json` then `codex plugin add
+lares@lares --json`. It uses no shell and never writes harness config
+or bypasses hook trust. Exact JSON status checks make re-runs
+idempotent; missing/failing CLIs produce copyable manual commands.
+Claude needs a new session or `/reload-plugins`; Codex needs a new
+local task and `/hooks` review. A CLI install is visible to the
+ChatGPT desktop app's Codex surface when both use the same Codex home;
+ChatGPT Work/web is not an adapter target.
+
 ## 7. Scenario player
 
 Scenario file: `{ name, timeScale, events: [{ at_ms, envelope | emote }] }`. Player injects through the same ingress path as real traffic (in-process, past the §2 origin checks). Golden scenarios ship in-repo: `brutal-debugging-session`, `smooth-build`, `long-wait-for-input`, `recovery-arc`. UI: pick scenario, scrub, speed 1×/8×/64×, record (export via OS screen capture guidance, no built-in encoder in v1). Default Lar size — the normative judging size in §9 (S1, S5) — is the model rendered 400 logical px tall, DPI-scaled.
@@ -217,11 +231,13 @@ implementation detail of the v1 body, not a cross-body contract.
 
 Hook fire → visible reaction ≤250ms (forwarder spawn ≤120ms, POST ≤10ms, ingest ≤5ms, IPC ≤16ms, onset ≤100ms) — this budget is load-bearing for legibility and stays hard. Forwarder total ≤500ms hard budget, spawn included; the silent-exit path's ≤50ms binds in-script time only (script entry → exit, self-measured) — process startup alone exceeds 50ms on real machines (bare Node median 51.8ms, Electron-as-Node ~100–118ms; 004-D8), and the harness turn proceeds regardless. Renderer targets 30fps flat (ticker cap). Footprint numbers (idle ~3% of one core, <300MB RSS combined) are soft targets, not milestone gates — optimization is explicitly not a v1 focus; frame-rate governor and occlusion-paused rendering are parked post-v1.
 
-**Network exception (D21).** Beyond §2 loopback, the sole request is
-the disclosed GitHub Releases update check: every app launch and every
-24h while running when enabled, plus a manual action. Requests are
-conditional with a persisted ETag; M5a only notifies and opens the
-release page, never downloads or installs.
+**Network exception (D21).** Beyond §2 loopback, Lares's sole
+app-owned request is the disclosed GitHub Releases update check: every
+app launch and every 24h while running when enabled, plus a manual
+action. Requests are conditional with a persisted ETag; M5a only
+notifies and opens the release page, never downloads or installs.
+The separately confirmed §6 setup action may launch harness-owned
+plugin managers for a user-initiated public download (P3).
 
 ## 11. Installation and removal
 
@@ -239,3 +255,7 @@ hooks, MCP entries, and launcher shims. An unchecked-by-default
 **Also delete Lares data** choice additionally removes imported
 characters, authored expressions, calibration, settings, and window
 state.
+
+Harness plugins remain user-installed when Lares is removed. Their
+native plugin managers own removal; without Lares the hooks and MCP
+entry point at nothing.

@@ -41,6 +41,7 @@ export interface TrayShellDependencies {
   onMapExpressions?: () => void | Promise<void>
   onAutomaticUpdatesChanged?: (enabled: boolean) => void | Promise<void>
   onCheckForUpdates?: () => void | Promise<void>
+  onConfigureAgentIntegrations?: () => void | Promise<void>
   onLanguageChanged?: (language: Language) => void | Promise<void>
   quit(): void
 }
@@ -234,6 +235,11 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
         label: L.checkForUpdates,
         enabled: deps.onCheckForUpdates !== undefined,
         click: () => deps.onCheckForUpdates?.()
+      },
+      {
+        label: L.configureAgentIntegrations,
+        enabled: deps.onConfigureAgentIntegrations !== undefined,
+        click: () => deps.onConfigureAgentIntegrations?.()
       },
       { type: 'separator' },
       {
