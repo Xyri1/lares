@@ -78,9 +78,11 @@ writers reduced to legacy cleaners. The exit gate below runs once,
 after 009, verifying the plugin install story (marketplace add +
 `/plugin install`) in place of silent registration.
 **Configure Agent Integrations…** now makes that install story a
-consented tray action: Lares delegates to each available harness's
-official plugin CLI with fixed arguments, post-verifies exact status,
-and leaves Codex hook trust to `/hooks` (008-D9).
+consented tray action: Lares delegates to a compatible harness-owned
+plugin manager with fixed mutation arguments, finds Codex through
+either its standalone launcher or desktop-bundled manager,
+post-verifies exact status, and leaves Codex hook trust to `/hooks`
+(008-D9).
 **Exit gate:** manually transferred installers complete the documented
 Gatekeeper/SmartScreen bypass and full tray/import/restart/update/
 uninstall flow on a clean Apple Silicon Mac and clean x64 Windows

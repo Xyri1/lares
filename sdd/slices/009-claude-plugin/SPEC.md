@@ -103,10 +103,10 @@ ingests a `harness: "claude-code"` envelope (pid present on POSIX,
 absent on Windows).
 
 **A5 — Live gate (folds into 008 A8/A9).** GIVEN a clean machine WHEN
-the documented tray setup runs (app + consent + official plugin CLI)
-THEN hooks execute after plugin enablement, an emote plays over the
-plugin's MCP entry, and app uninstall plus `/plugin uninstall` leaves
-no Lares residue.
+the documented tray setup runs (app + consent + compatible
+harness-owned plugin manager) THEN hooks execute after plugin
+enablement, an emote plays over the plugin's MCP entry, and app
+uninstall plus `/plugin uninstall` leaves no Lares residue.
 
 A1–A4 headless (vitest); A5 rides the 008 clean-machine run, once,
 after this slice lands.

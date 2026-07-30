@@ -96,13 +96,21 @@ display using the existing screen-bounds guard.
 
 **Configure Agent Integrations…** discloses the user-initiated public
 download and the plugin's hooks plus local MCP connection before doing
-anything. On confirmation it invokes only the official `claude` and
-`codex` plugin CLIs with the fixed §6 commands, never a shell or
-direct harness-config writer. Exact JSON status checks skip already
-configured harnesses and post-verify changes; missing/failing CLIs
-produce copyable manual commands. Claude applies on a new session or
-`/reload-plugins`; Codex applies to a new CLI/ChatGPT-desktop Codex
-task, with `/hooks` trust still mandatory.
+anything. On confirmation it invokes a compatible harness-owned
+plugin manager with the fixed §6 commands. Codex candidates include
+standalone launchers and the manager bundled with the macOS or Windows
+desktop app; both JSON status commands are capability probes, so a
+missing, inaccessible, or outdated candidate cannot mask a later
+compatible one. Direct executables run without a shell. A fixed OS
+shell may resolve or invoke a package-manager launcher using only
+Lares-owned literal arguments, never interpolated external input.
+Lares never writes harness config or calls Codex app-server's
+under-development plugin mutation methods. Exact JSON status checks
+skip already configured harnesses and post-verify changes;
+missing/failing managers produce copyable manual commands. Claude
+applies on a new session or `/reload-plugins`; Codex applies to a new
+CLI/ChatGPT-desktop Codex task sharing that Codex home, with `/hooks`
+trust still mandatory.
 
 Quit is an ordinary exit and preserves integrations. Uninstall is a
 separate confirmed flow. It always removes Lares-owned Claude Code
@@ -204,12 +212,17 @@ artifacts are inspected THEN platform/architecture match §6; app,
 forwarder, Core, selected default character, and notices are present;
 private/unselected characters and source-only files are absent.
 
-**A7a — Agent integration setup.** GIVEN missing, already configured,
-unavailable, and failing harness CLIs WHEN the tray action is
-cancelled or confirmed THEN cancellation runs nothing; confirmation
-uses only the four fixed §6 command/argument arrays, never a shell,
-direct config write, or trust bypass; exact post-status is visible and
-manual commands are copyable for failures.
+**A7a — Agent integration setup.** GIVEN App-only, CLI-only, already
+configured, unavailable, outdated-first, and failing harness-manager
+installs WHEN the tray action is cancelled or confirmed THEN
+cancellation runs nothing; confirmation capability-probes candidates,
+uses only the four fixed §6 mutation command/argument arrays, and
+continues past incompatible candidates. Direct commands avoid a shell;
+package-manager launchers permit only the fixed resolver/invocation
+shell commands with no external interpolation. No path uses a direct
+config write, under-development Codex app-server plugin mutation, or
+trust bypass; exact post-status is visible and manual commands are
+copyable for failures.
 
 **A8 — Clean-machine gate.** GIVEN the transferred unsigned DMG and
 NSIS installer on a clean Apple Silicon Mac and x64 Windows machine

@@ -1,5 +1,13 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { configureAgentIntegrations, manualCommands, type CommandResult } from './integrations'
+import {
+  configureAgentIntegrations,
+  manualCommands,
+  runAgentIntegrationCommand,
+  type CommandResult
+} from './integrations'
 
 function marketplaceStatus(command: string, configured: boolean): string {
   if (command === 'claude') {
@@ -64,7 +72,12 @@ describe('agent integration configuration', () => {
       return result()
     })
 
-    const report = await configureAgentIntegrations({ confirm: async () => true, run, home: '/home/test' })
+    const report = await configureAgentIntegrations({
+      confirm: async () => true,
+      run,
+      home: '/home/test',
+      codexCommands: ['codex']
+    })
     expect(report.harnesses).toEqual([
       { harness: 'claude', status: 'configured' },
       { harness: 'codex', status: 'configured' }
@@ -73,14 +86,19 @@ describe('agent integration configuration', () => {
     expect(run).toHaveBeenCalledWith('codex', ['plugin', 'add', 'lares@lares', '--json'])
   })
 
-  it('skips already configured harnesses and reports missing and failed CLIs for manual setup', async () => {
+  it('skips configured harnesses and reports missing or failed managers for manual setup', async () => {
     const run = vi.fn(async (command: string, args: string[]) => {
       if (command === 'claude') return result({ stdout: args.includes('marketplace') ? marketplaceStatus(command, true) : pluginStatus(command, true) })
       if (command === 'codex' && args.includes('marketplace')) return result({ code: 1, stderr: 'authentication required' })
       return result({ code: 1, missing: true })
     })
 
-    const report = await configureAgentIntegrations({ confirm: async () => true, run, home: '/home/test' })
+    const report = await configureAgentIntegrations({
+      confirm: async () => true,
+      run,
+      home: '/home/test',
+      codexCommands: ['codex']
+    })
     expect(report.harnesses).toEqual([
       { harness: 'claude', status: 'already-configured' },
       { harness: 'codex', status: 'failed', error: 'authentication required' }
@@ -91,6 +109,203 @@ describe('agent integration configuration', () => {
       'codex plugin add lares@lares --json'
     ])
   })
+
+  it('uses a compatible Codex App manager after an outdated standalone CLI', async () => {
+    const run = vi.fn(async (command: string, args: string[]) => {
+      if (command === 'claude') return result({ code: 1, missing: true })
+      if (command === 'codex-old') {
+        return result({ code: 2, stderr: "error: unexpected argument '--json' found" })
+      }
+      if (command === 'codex-app') {
+        return result({
+          stdout: args.includes('marketplace')
+            ? marketplaceStatus('codex', true)
+            : pluginStatus('codex', true)
+        })
+      }
+      return result({ code: 1, missing: true })
+    })
+
+    const report = await configureAgentIntegrations({
+      confirm: async () => true,
+      run,
+      home: '/home/test',
+      codexCommands: ['codex-old', 'codex-app']
+    })
+
+    expect(report.harnesses[1]).toEqual({ harness: 'codex', status: 'already-configured' })
+    expect(run).toHaveBeenCalledWith('codex-app', ['plugin', 'list', '--json'])
+    expect(run).not.toHaveBeenCalledWith('codex-old', [
+      'plugin',
+      'marketplace',
+      'add',
+      'Xyri1/lares',
+      '--json'
+    ])
+  })
+
+  it('skips a Codex manager without automation JSON support', async () => {
+    const run = vi.fn(async (command: string, args: string[]) => {
+      if (command === 'claude') return result({ code: 1, missing: true })
+      if (command === 'codex-human') return result({ stdout: 'PLUGIN STATUS PATH\nlares enabled' })
+      if (command === 'codex-json') {
+        return result({
+          stdout: args.includes('marketplace')
+            ? marketplaceStatus('codex', true)
+            : pluginStatus('codex', true)
+        })
+      }
+      return result({ code: 1, missing: true })
+    })
+
+    const report = await configureAgentIntegrations({
+      confirm: async () => true,
+      run,
+      home: '/home/test',
+      codexCommands: ['codex-human', 'codex-json']
+    })
+
+    expect(report.harnesses[1]).toEqual({ harness: 'codex', status: 'already-configured' })
+    expect(run).not.toHaveBeenCalledWith('codex-human', [
+      'plugin',
+      'marketplace',
+      'add',
+      'Xyri1/lares',
+      '--json'
+    ])
+  })
+
+  it('configures Codex through the macOS App when no standalone CLI is installed', async () => {
+    const appCommand = '/Applications/ChatGPT.app/Contents/Resources/codex'
+    const run = vi.fn(async (command: string, args: string[]) => {
+      if (command === appCommand) {
+        return result({
+          stdout: args.includes('marketplace')
+            ? marketplaceStatus('codex', true)
+            : pluginStatus('codex', true)
+        })
+      }
+      return result({ code: 1, missing: true })
+    })
+
+    const report = await configureAgentIntegrations({
+      confirm: async () => true,
+      run,
+      platform: 'darwin',
+      home: '/Users/test'
+    })
+
+    expect(report.harnesses[1]).toEqual({ harness: 'codex', status: 'already-configured' })
+    expect(run).toHaveBeenCalledWith(appCommand, ['plugin', 'marketplace', 'list', '--json'])
+  })
+
+  it('configures Codex through a macOS shell-managed standalone CLI', async () => {
+    const shellCommand = '/Users/test/.local/state/fnm/bin/codex'
+    vi.stubEnv('SHELL', '/bin/zsh')
+    try {
+      const run = vi.fn(async (command: string, args: string[]) => {
+        if (command === '/bin/zsh') return result({ stdout: `${shellCommand}\n` })
+        if (command === shellCommand) {
+          return result({
+            stdout: args.includes('marketplace')
+              ? marketplaceStatus('codex', true)
+              : pluginStatus('codex', true)
+          })
+        }
+        return result({ code: 1, missing: true })
+      })
+
+      const report = await configureAgentIntegrations({
+        confirm: async () => true,
+        run,
+        platform: 'darwin',
+        home: '/Users/test'
+      })
+
+      expect(report.harnesses[1]).toEqual({ harness: 'codex', status: 'already-configured' })
+      expect(run).toHaveBeenCalledWith('/bin/zsh', ['-lic', 'command -v codex'])
+      expect(run).toHaveBeenCalledWith(shellCommand, ['plugin', 'marketplace', 'list', '--json'])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.runIf(process.platform === 'win32')(
+    'configures Codex through the Windows App when no standalone CLI is installed',
+    async () => {
+      const localAppData = await mkdtemp(join(tmpdir(), 'lares-codex-app-'))
+      const appCommand = join(localAppData, 'OpenAI', 'Codex', 'bin', 'current', 'codex.exe')
+      await mkdir(join(appCommand, '..'), { recursive: true })
+      await writeFile(appCommand, '')
+      vi.stubEnv('LOCALAPPDATA', localAppData)
+      try {
+        const run = vi.fn(async (command: string, args: string[]) => {
+          if (command === appCommand) {
+            return result({
+              stdout: args.includes('marketplace')
+                ? marketplaceStatus('codex', true)
+                : pluginStatus('codex', true)
+            })
+          }
+          return result({ code: 1, missing: true })
+        })
+
+        const report = await configureAgentIntegrations({
+          confirm: async () => true,
+          run,
+          platform: 'win32',
+          home: 'C:\\Users\\test'
+        })
+
+        expect(report.harnesses[1]).toEqual({ harness: 'codex', status: 'already-configured' })
+        expect(run).toHaveBeenCalledWith(appCommand, [
+          'plugin',
+          'marketplace',
+          'list',
+          '--json'
+        ])
+      } finally {
+        vi.unstubAllEnvs()
+        await rm(localAppData, { recursive: true, force: true })
+      }
+    }
+  )
+
+  it.runIf(process.platform === 'win32')(
+    'configures Codex through a Windows standalone CLI launcher',
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'lares-codex-cli-'))
+      const launcher = join(directory, 'codex.cmd')
+      await writeFile(launcher, '')
+      vi.stubEnv('LOCALAPPDATA', directory)
+      vi.stubEnv('PATH', directory)
+      try {
+        const run = vi.fn(async (command: string, args: string[]) => {
+          if (command === launcher) {
+            return result({
+              stdout: args.includes('marketplace')
+                ? marketplaceStatus('codex', true)
+                : pluginStatus('codex', true)
+            })
+          }
+          return result({ code: 1, missing: true })
+        })
+
+        const report = await configureAgentIntegrations({
+          confirm: async () => true,
+          run,
+          platform: 'win32',
+          home: 'C:\\Users\\test'
+        })
+
+        expect(report.harnesses[1]).toEqual({ harness: 'codex', status: 'already-configured' })
+        expect(run).toHaveBeenCalledWith(launcher, ['plugin', 'marketplace', 'list', '--json'])
+      } finally {
+        vi.unstubAllEnvs()
+        await rm(directory, { recursive: true, force: true })
+      }
+    }
+  )
 
   it('does not mistake an unrelated Claude plugin path for the Lares plugin', async () => {
     let installed = false
@@ -119,7 +334,8 @@ describe('agent integration configuration', () => {
       confirm: async () => true,
       run,
       platform: 'win32',
-      home: '/home/test'
+      home: '/home/test',
+      codexCommands: ['codex']
     })
     expect(report.harnesses[0]).toEqual({ harness: 'claude', status: 'configured' })
     expect(run).toHaveBeenCalledWith('claude', ['plugin', 'install', 'lares@lares', '--scope', 'user'])
@@ -156,7 +372,8 @@ describe('agent integration configuration', () => {
       confirm: async () => true,
       run,
       platform: 'win32',
-      home: '/home/test'
+      home: '/home/test',
+      codexCommands: ['codex']
     })
     expect(report.harnesses).toEqual([
       { harness: 'claude', status: 'configured' },
@@ -199,7 +416,7 @@ describe('agent integration configuration', () => {
     })
   })
 
-  it('reports a CLI missing after its known locations are exhausted', async () => {
+  it('reports a manager missing after its known locations are exhausted', async () => {
     const run = vi.fn(async () => result({ code: 1, missing: true }))
     const report = await configureAgentIntegrations({
       confirm: async () => true,
@@ -212,5 +429,21 @@ describe('agent integration configuration', () => {
       { harness: 'codex', status: 'missing' }
     ])
     expect(run).toHaveBeenCalledWith('/usr/local/bin/codex', ['plugin', 'marketplace', 'list', '--json'])
+  })
+
+  it.runIf(process.platform === 'win32')('runs fixed Windows CLI launchers', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'lares codex cmd-'))
+    const launcher = join(directory, 'codex.cmd')
+    await writeFile(launcher, '@echo off\r\necho %*\r\n')
+    try {
+      await expect(
+        runAgentIntegrationCommand(launcher, ['plugin', 'list', '--json'])
+      ).resolves.toMatchObject({
+        code: 0,
+        stdout: 'plugin list --json\r\n'
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 })

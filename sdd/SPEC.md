@@ -169,17 +169,25 @@ preserves sessions, affect/mood, position, scale, and DND.
 
 **Setup UX (008-D9):** the tray's **Configure Agent Integrations…**
 action first discloses the public download, hooks, and local MCP
-connection. Only after confirmation it calls the official CLIs with
-fixed arguments: `claude plugin marketplace add Xyri1/lares --scope
-user` then `claude plugin install lares@lares --scope user`; `codex
-plugin marketplace add Xyri1/lares --json` then `codex plugin add
-lares@lares --json`. It uses no shell and never writes harness config
-or bypasses hook trust. Exact JSON status checks make re-runs
-idempotent; missing/failing CLIs produce copyable manual commands.
-Claude needs a new session or `/reload-plugins`; Codex needs a new
-local task and `/hooks` review. A CLI install is visible to the
-ChatGPT desktop app's Codex surface when both use the same Codex home;
-ChatGPT Work/web is not an adapter target.
+connection. Only after confirmation it calls a compatible
+harness-owned plugin manager with fixed arguments: `claude plugin
+marketplace add Xyri1/lares --scope user` then `claude plugin install
+lares@lares --scope user`; `codex plugin marketplace add Xyri1/lares
+--json` then `codex plugin add lares@lares --json`. Codex discovery
+covers standalone launchers and the manager bundled with the macOS or
+Windows desktop app; every candidate must pass both exact JSON status
+probes, and an absent, inaccessible, or outdated candidate never masks
+a later compatible one. Direct executables run without a shell.
+Package-manager discovery or launch may use the user's fixed OS shell
+with Lares-owned literal arguments only — no external input is
+interpolated. Lares never writes harness config, calls Codex
+app-server's under-development plugin mutation methods, or bypasses
+hook trust. Exact post-status checks make re-runs idempotent;
+missing/failing managers produce copyable manual commands. Claude
+needs a new session or `/reload-plugins`; Codex needs a new local task
+and `/hooks` review. Codex App, CLI, and IDE surfaces sharing the same
+Codex home see the same install; ChatGPT Work/web is not an adapter
+target.
 
 ## 7. Scenario player
 

@@ -84,12 +84,19 @@ by the maintainer.
 
 **008-D9 — Tray-triggered harness-native integration setup.**
 *Chosen:* **Configure Agent Integrations…** is an explicit consent
-gate, then Lares invokes the official Claude Code and Codex plugin
-CLIs with fixed argument arrays and post-verifies exact JSON status.
-Missing or failed CLIs get copyable manual commands; Claude reload/new
-session and Codex new-task plus `/hooks` guidance remain visible.
-*Rejected:* direct harness-config writes; shell interpolation; startup
-or background installation; bypassing hook trust; a settings window.
-*Rationale:* one tray action removes four manual setup commands while
-the harnesses still own plugin storage, policy, and trust. *Status:*
-decided by the maintainer.
+gate, then Lares invokes a compatible harness-owned plugin manager
+with fixed argument arrays and post-verifies exact JSON status. Codex
+manager discovery spans standalone launchers and the manager bundled
+with either desktop app; capability probes continue past missing,
+inaccessible, or outdated candidates. Direct executables remain
+shell-free. A package-manager launcher may be resolved or invoked by a
+fixed OS shell command containing only Lares-owned literal arguments.
+Missing or failed managers get copyable manual commands; Claude
+reload/new session and Codex new-task plus `/hooks` guidance remain
+visible. *Rejected:* first-PATH-hit or version-only selection; arbitrary
+shell interpolation; direct harness-config writes; Codex app-server's
+under-development plugin mutation methods; bundling Codex; startup or
+background installation; bypassing hook trust; a settings window.
+*Rationale:* one tray action covers App-only and CLI-only installs on
+both platforms while Codex still owns the shared home, plugin storage,
+policy, and trust. *Status:* amended by the maintainer 2026-07-30.

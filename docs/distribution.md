@@ -69,7 +69,7 @@ manifests, and `.cmo3`/`.can3` source files.
 These scripts never download. The artifact path is supplied explicitly.
 
 ```sh
-./scripts/install-local.sh install "/absolute/path/Lares-0.1.0-alpha.1-macOS-universal-unsigned.dmg"
+./scripts/install-local.sh install "/absolute/path/Lares-0.1.0-alpha.2-macOS-universal-unsigned.dmg"
 ./scripts/install-local.sh uninstall
 ```
 
@@ -78,7 +78,7 @@ Lares data** is unchecked by default. If Lares is already running, use
 **Uninstall Lares…** from its tray instead.
 
 ```powershell
-.\scripts\install-local.ps1 install "C:\local\Lares-0.1.0-alpha.1-Windows-x64-unsigned.exe"
+.\scripts\install-local.ps1 install "C:\local\Lares-0.1.0-alpha.2-Windows-x64-unsigned.exe"
 .\scripts\install-local.ps1 uninstall
 .\scripts\install-local.ps1 uninstall -DeleteData
 ```
