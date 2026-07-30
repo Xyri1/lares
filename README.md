@@ -22,45 +22,55 @@
 ## What it is
 
 Lares turns an agent session into a continuously animated desktop character —
-a **Lar**. You can see it thinking, getting stuck, waiting, recovering, and
-finishing without opening another activity panel.
+a **Lar**. You can see it think, get stuck, wait, recover, and finish. You do
+not need to open another activity panel.
 
-Instead of reading transcripts or guessing sentiment, Lares lets agents report
-feelings in the first person over MCP. Deterministic lifecycle hooks provide the
-baseline heartbeat, while emotion and mood carry history across the session.
+Lares does not read transcripts. It does not guess sentiment. Agents report
+feelings in the first person over MCP. Deterministic lifecycle hooks give the
+baseline heartbeat. Emotion and mood keep history across the session.
 
 `agent hooks + MCP → local affect engine → Live2D performance`
 
 > [!IMPORTANT]
-> Lares is early alpha. M5a is implemented, but clean-machine acceptance on
-> macOS and Windows is still pending. Installers are intentionally unsigned.
+> Lares is early alpha. M5a is complete, but clean-machine acceptance on macOS
+> and Windows is not complete yet.
 
 ## How to use
 
-1. Start Lares. Your Lar appears on the desktop and its controls live in the
-   tray.
-2. Choose **Configure Agent Integrations…** and confirm the Claude Code or
-   Codex plugin installation.
-3. Start a new agent session so its hooks and local MCP connection load.
-   Claude Code can reload with `/reload-plugins`; Codex will ask you to review
-   and trust the Lares hooks.
-4. Work normally. The Lar follows the session's state and the agent's
-   first-person emotes; use the tray to change characters, scale, or DND.
+Start Lares. Your Lar shows on the desktop. The tray holds the controls.
 
-See the [Claude Code](plugins/claude-code/README.md) and
-[Codex](plugins/codex/README.md) plugin guides for manual setup.
+The release installers are not signed. On macOS, Gatekeeper will warn you. On
+Windows, SmartScreen will warn you. That is expected. The developer cannot
+afford the Apple Developer Program subscription (99 USD each year), so the
+builds stay unsigned — broke-ass economics, not a security feature. Use the
+bypass steps in the [distribution guide](docs/distribution.md) when you
+install.
+
+From the tray, choose **Configure Agent Integrations…**. Confirm the Claude
+Code plugin or the Codex plugin when the installer asks.
+
+Start a new agent session so the hooks and the local MCP connection can load.
+Claude Code can reload plugins with `/reload-plugins`. Codex will ask you to
+review the Lares hooks. Trust them when Codex asks.
+
+Then work as usual. The Lar follows the session state and the agent's
+first-person emotes. Use the tray to change the character, the scale, or Do
+Not Disturb.
+
+For manual setup, see the [Claude Code](plugins/claude-code/README.md) and
+[Codex](plugins/codex/README.md) plugin guides.
 
 ## What it does
 
 - Lives on your desktop in a transparent, draggable, always-on-top overlay.
 - Connects to Claude Code and Codex through their native plugin systems.
-- Keeps the runtime local: the daemon binds only to loopback and no transcript
+- Keeps the runtime local. The daemon binds only to loopback. No transcript
   leaves your machine.
 - Imports extracted VTube Studio-style Cubism SDK 3.0–4.2 model folders and
   maps their expressions into a portable Lar package.
 
 The only app-initiated network request is the disclosed GitHub update check.
-Agent plugin downloads happen only after you request and confirm them.
+Agent plugin downloads start only after you request them and confirm them.
 
 ## Run from source
 
@@ -70,14 +80,15 @@ pnpm fetch-assets
 pnpm dev
 ```
 
-`fetch-assets` downloads Live2D Cubism Core and the Haru sample into gitignored
-paths. The Electron renderer runs on `127.0.0.1:5300` during development.
+`fetch-assets` downloads Live2D Cubism Core and the Haru sample into
+gitignored paths. During development, the Electron renderer runs on
+`127.0.0.1:5300`.
 
 ## Bring your own Lar
 
-Choose **Import Character…** from the tray and select an extracted Live2D model
-folder. Lares copies it into the managed character library, validates it before
-switching, and leaves the original untouched.
+From the tray, choose **Import Character…**. Select an extracted Live2D model
+folder. Lares copies it into the managed character library. It validates the
+package before it switches. It does not change the original folder.
 
 See the [character package guide](docs/character-format.md) for compatibility,
 the `lares/1` manifest, expression mapping, and the command-line import flow.
@@ -107,5 +118,5 @@ Product and design truth lives under [`sdd/`](sdd/):
 
 ## License
 
-[Apache 2.0](LICENSE). Live2D Cubism Core and bundled character assets retain
-their own terms; see [NOTICE](NOTICE).
+[Apache 2.0](LICENSE). Live2D Cubism Core and bundled character assets keep
+their own terms. See [NOTICE](NOTICE).
