@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+    paths: [package.json]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Detect version bump
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: version
+        name: Compare package versions
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          node <<'NODE'
+          const { execFileSync, spawnSync } = require('node:child_process')
+          const { appendFileSync, readFileSync } = require('node:fs')
+
+          const current = JSON.parse(readFileSync('package.json', 'utf8')).version
+          const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+          if (!semver.test(current)) throw new Error(`Invalid package version: ${current}`)
+
+          const before = process.env.BEFORE
+          const previous = /^0+$/.test(before)
+            ? null
+            : JSON.parse(execFileSync('git', ['show', `${before}:package.json`], { encoding: 'utf8' })).version
+          const changed = previous !== current
+
+          if (changed) {
+            const tag = spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/tags/v${current}`])
+            if (tag.status === 0) throw new Error(`Release tag already exists: v${current}`)
+            if (tag.status !== 1) throw new Error(`Unable to check release tag v${current}`)
+          }
+
+          appendFileSync(process.env.GITHUB_OUTPUT, [
+            `changed=${changed}`,
+            `prerelease=${current.includes('-')}`,
+            `version=${current}`,
+            ''
+          ].join('\n'))
+          console.log(previous === null ? `initial version ${current}` : `${previous} -> ${current}`)
+          NODE
+
+  test:
+    name: Test
+    needs: detect
+    if: needs.detect.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.17.0
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.18.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  package:
+    name: Package ${{ matrix.name }}
+    needs: [detect, test]
+    if: needs.detect.outputs.changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS universal
+            os: macos-latest
+            command: package:mac
+            inspect_target: dist/mac-universal/Lares.app
+            inspect_platform: darwin
+            inspect_arch: universal
+            artifact_suffix: macOS-universal-unsigned.dmg
+            upload_name: macos
+          - name: Windows x64
+            os: windows-latest
+            command: package:win
+            inspect_target: dist/win-unpacked
+            inspect_platform: win32
+            inspect_arch: x64
+            artifact_suffix: Windows-x64-unsigned.exe
+            upload_name: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.17.0
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.18.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm fetch-assets
+      - run: pnpm run ${{ matrix.command }}
+      - run: pnpm run package:inspect -- ${{ matrix.inspect_target }} ${{ matrix.inspect_platform }} ${{ matrix.inspect_arch }}
+      - name: Write SHA-256
+        shell: bash
+        env:
+          ARTIFACT: dist/Lares-${{ needs.detect.outputs.version }}-${{ matrix.artifact_suffix }}
+        run: |
+          node <<'NODE'
+          const { createHash } = require('node:crypto')
+          const { existsSync, readFileSync, writeFileSync } = require('node:fs')
+          const { basename } = require('node:path')
+
+          const artifact = process.env.ARTIFACT
+          if (!existsSync(artifact)) throw new Error(`Missing release artifact: ${artifact}`)
+          const digest = createHash('sha256').update(readFileSync(artifact)).digest('hex')
+          writeFileSync(`${artifact}.sha256`, `${digest}  ${basename(artifact)}\n`)
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lares-${{ matrix.upload_name }}-${{ needs.detect.outputs.version }}
+          if-no-files-found: error
+          path: |
+            dist/Lares-${{ needs.detect.outputs.version }}-${{ matrix.artifact_suffix }}
+            dist/Lares-${{ needs.detect.outputs.version }}-${{ matrix.artifact_suffix }}.sha256
+
+  publish:
+    name: Publish GitHub Release
+    needs: [detect, package]
+    if: needs.detect.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          merge-multiple: true
+          path: release
+          pattern: lares-*-${{ needs.detect.outputs.version }}
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PRERELEASE: ${{ needs.detect.outputs.prerelease }}
+          SHA: ${{ github.sha }}
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          set -euo pipefail
+          notes='## Unsigned installers
+
+          These installers are intentionally unsigned. Verify the matching SHA-256 file before opening.
+
+          - macOS: after the first blocked launch, open **System Settings → Privacy & Security**, choose **Open Anyway**, authenticate, then choose **Open**.
+          - Windows: if SmartScreen offers it, choose **More info → Run anyway**. Managed systems may block unsigned apps without an override.'
+          args=(--target "$SHA" --title "Lares $VERSION" --generate-notes --notes "$notes")
+          if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
+          gh release create "v$VERSION" release/* "${args[@]}"

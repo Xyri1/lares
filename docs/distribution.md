@@ -1,9 +1,18 @@
-# M5a local distribution gate
+# Distribution
 
-M5a artifacts are manually built, unsigned, and for clean-machine testing
-only. They are not a public release. Gatekeeper and SmartScreen warnings are
-expected; M5b owns signing, notarization, publication, and production
-one-line URLs.
+Lares installers are intentionally unsigned. Gatekeeper and SmartScreen
+warnings are expected and their exact bypasses are documented below. M5a
+artifacts are built manually for clean-machine testing; M5b publishes the
+same unsigned artifact shape through GitHub Releases.
+
+## Automated public release
+
+A `package.json` version change pushed to `master` is the sole automatic
+release signal. Other code, dependency, and documentation pushes do not
+package. After tests and both native package inspections pass, GitHub Actions
+creates `v<version>` at that commit, publishes both installers with SHA-256
+files, and marks versions containing `-` as prereleases. An existing tag
+fails rather than being moved or overwritten.
 
 ## Build and inspect
 

@@ -88,16 +88,17 @@ machine. No warning-free or public-release claim at M5a.
 
 ## M5b — Launch
 
-Production signing/notarization and Windows code-signing; GitHub
-Actions builds and publishes the public GitHub Release; production
-one-line installer URLs complete D30. Full §9 emotion criteria pass on
-recording (D28 — the deferred half of the M2b gate; the one item that
-can bounce work back into tuning). Bilingual README and docs (en, zh-CN, no
-preference); app-UI strings already bilingual per amended D22, leaving
-installer strings to localize with packaging here. Demo recordings cut
-from the scenario player.
-Launch-channel prioritization decided now, per D22. Launch.
-**Exit gate:** §9 criteria on recording; public release.
+GitHub Actions builds and publishes intentionally unsigned macOS and
+Windows installers to the public GitHub Release page, the sole public
+distribution channel. Release notes publish SHA-256 checksums, disclose
+the unsigned artifacts, and document the exact Gatekeeper/SmartScreen
+bypasses; production one-line installer URLs complete D30. Full §9
+emotion criteria pass on recording (D28 — the deferred half of the M2b
+gate; the one item that can bounce work back into tuning). Bilingual
+README and docs (en, zh-CN, no preference); app-UI strings already
+bilingual per amended D22, leaving installer strings to localize with
+packaging here. Demo recordings cut from the scenario player. Launch.
+**Exit gate:** §9 criteria on recording; public GitHub Release.
 
 ## Parking lot (post-v1, in no order)
 

@@ -246,9 +246,11 @@ Windows 10/11 x64 NSIS installer, built manually on their native OS.
 Gatekeeper/SmartScreen bypass is documented and expected. Packaging
 explicitly includes the forwarder, fetched Cubism Core, one selected
 cleared default character, and required notices; it never globs the
-local character tree. Signing/notarization, GitHub Actions/public
-Release publication, and production one-line install URLs land at
-M5b (D30).
+local character tree. M5b keeps both installers intentionally unsigned:
+GitHub Actions publishes `-unsigned` Release assets with SHA-256
+checksums, and release documentation discloses the OS warnings and
+exact bypasses. Production one-line install URLs also land at M5b
+(D30).
 
 Supported uninstall always removes the app and Lares-owned adapter
 hooks, MCP entries, and launcher shims. An unchecked-by-default
