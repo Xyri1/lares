@@ -97,8 +97,8 @@ describe('GitHub latest-release client', () => {
                 html_url: 'https://github.com/Xyri1/lares/releases/tag/v1.0.0'
               })
             : JSON.stringify({
-                tag_name: 'v2.0.0',
-                html_url: 'https://github.com/Xyri1/lares/releases/tag/v2.0.0',
+                tag_name: 'v2.0.0-alpha.1',
+                html_url: 'https://github.com/Xyri1/lares/releases/tag/v2.0.0-alpha.1',
                 body: 'must not persist',
                 assets: [{ browser_download_url: 'https://evil.example/payload.exe' }]
               })
@@ -116,7 +116,7 @@ describe('GitHub latest-release client', () => {
     )
   })
 
-  it('persists the minimal 200 response, compares it, and sends ETag on 304', async () => {
+  it('persists the minimal prerelease response, compares it, and sends ETag on 304', async () => {
     const first = await checkLatestRelease({
       endpoint,
       currentVersion: '1.0.0',
@@ -125,11 +125,11 @@ describe('GitHub latest-release client', () => {
     })
     expect(first).toEqual({
       newer: true,
-      tag: 'v2.0.0',
-      url: 'https://github.com/Xyri1/lares/releases/tag/v2.0.0',
+      tag: 'v2.0.0-alpha.1',
+      url: 'https://github.com/Xyri1/lares/releases/tag/v2.0.0-alpha.1',
       cache: {
-        tag: 'v2.0.0',
-        url: 'https://github.com/Xyri1/lares/releases/tag/v2.0.0',
+        tag: 'v2.0.0-alpha.1',
+        url: 'https://github.com/Xyri1/lares/releases/tag/v2.0.0-alpha.1',
         etag: '"release-v2"',
         lastCheckAt: 100
       }

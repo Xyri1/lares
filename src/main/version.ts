@@ -1,5 +1,11 @@
+const VERSION_PATTERN = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/
+
+export function isVersion(version: string): boolean {
+  return VERSION_PATTERN.test(version)
+}
+
 function versionParts(version: string): { core: bigint[]; prerelease: string[] } {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(version)
+  const match = VERSION_PATTERN.exec(version)
   if (!match) throw new Error(`Invalid version: ${version}`)
   return {
     core: match.slice(1, 4).map(BigInt),

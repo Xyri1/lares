@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { errorMessage } from './errors'
 import { atomicWrite } from './fs'
-import { compareVersions } from './version'
+import { compareVersions, isVersion } from './version'
 
 export { compareVersions } from './version'
 
@@ -44,7 +44,7 @@ export function isLaresReleaseUrl(value: string): boolean {
 
 function isMatchingRelease(tag: string, url: string): boolean {
   return (
-    /^v?\d+\.\d+\.\d+$/.test(tag) &&
+    isVersion(tag) &&
     isLaresReleaseUrl(url) &&
     new URL(url).pathname === `/Xyri1/lares/releases/tag/${tag}`
   )
