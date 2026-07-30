@@ -28,7 +28,8 @@ describe('Claude Code plugin', () => {
       '.claude-plugin',
       '.mcp.json',
       'README.md',
-      'hooks'
+      'hooks',
+      'skills'
     ])
     expect(await json('.claude-plugin/plugin.json')).toMatchObject({ name: 'lares' })
     expect(await json('.mcp.json')).toEqual({
@@ -61,5 +62,14 @@ describe('Claude Code plugin', () => {
         }
       ])
     }
+  })
+
+  it('ships the emoting skill as emote-only reinforcement', async () => {
+    expect(await readdir(resolve(root, 'skills'))).toEqual(['emoting'])
+    const skill = await readFile(resolve(root, 'skills/emoting/SKILL.md'), 'utf8')
+    expect(skill).toMatch(/^---\nname: emoting\ndescription: >-\n/)
+    expect(skill).toContain('Never emote per tool call')
+    // D32: calibration is pull-only — the skill must not surface authoring.
+    expect(skill).not.toMatch(/list_parameters|preview_expression|save_expression|update_expression|calibrat/i)
   })
 })

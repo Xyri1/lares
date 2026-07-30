@@ -1,6 +1,6 @@
 # Lares for Claude Code
 
-The plugin provides Lares's baseline lifecycle hooks and its local MCP server; skills arrive later. The hooks call the `~/.lares/bin/lares-forwarder` shim the desktop app maintains, so the plugin works across app updates without machine-specific paths.
+The plugin provides Lares's baseline lifecycle hooks, its local MCP server, and an `emoting` skill that reinforces the server's emote guidance. The hooks call the `~/.lares/bin/lares-forwarder` shim the desktop app maintains, so the plugin works across app updates without machine-specific paths.
 
 ## Install
 
