@@ -3,15 +3,25 @@
   "version": "0.1.0",
   "description": "Give Codex sessions a local Lares companion.",
   "author": {
-    "name": "Lares contributors"
+    "name": "Lares contributors",
+    "url": "https://github.com/Xyri1/lares"
   },
+  "homepage": "https://github.com/Xyri1/lares",
+  "repository": "https://github.com/Xyri1/lares",
+  "license": "Apache-2.0",
+  "keywords": ["live2d", "companion", "emotion", "mcp", "hooks"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Lares",
-    "shortDescription": "Give Codex sessions a local companion.",
-    "longDescription": "Lares forwards Codex lifecycle events to the local Lares app.",
-    "developerName": "Lares contributors",
+    "shortDescription": "Give Codex sessions a local Live2D companion.",
+    "longDescription": "Lares turns a Codex session into a continuously animated desktop character — a Lar. Lifecycle hooks provide the baseline heartbeat; first-person MCP emotes drive feeling. Nothing leaves the machine, and Lares never reads transcripts or guesses sentiment.",
+    "developerName": "Tsui Cyril",
     "category": "Productivity",
-    "capabilities": []
-  },
-  "mcpServers": "./.mcp.json"
+    "capabilities": ["Interactive"],
+    "websiteURL": "https://github.com/Xyri1/lares",
+    "brandColor": "#8050D0",
+    "composerIcon": "./assets/logo.png",
+    "logo": "./assets/logo.png"
+  }
 }
