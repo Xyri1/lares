@@ -1,123 +1,89 @@
-# Slice 011 — Interjection · DECISIONS
+# Slice 011 — Agent self-expression · DECISIONS
 
-Slice 011 extends the M3a emote protocol and D26 adoption copy. It does
-not replace either. Every row below is **proposed** — none carries
-*decided* until the maintainer says so.
+Design reset, 2026-07-31. This is intentionally the slice's only artifact. The
+discarded SPEC, PLAN and decisions prematurely specified a fixed interjection
+table and a third emote branch before establishing that either belonged in the
+product. No implementation is approved by this record.
+
+Research is consolidated in `sdd/research/reasoning-tokens.md`; harness
+instruction delivery remains documented in
+`sdd/research/mcp-instruction-delivery.md`.
 
 ---
 
-**011-D1 — Tokens nudge; they never enqueue.** *Chosen:* the token
-branch applies an affect nudge and returns `status: "nudged"` without
-touching the expression queue. An interjection is a modulation, not a
-performance: it tilts affect and lets the body's continuous synth carry
-it. *Rejected:* enqueueing the nearest cue by affect distance (gives a
-discrete visible beat, but makes an ambient signal compete with
-deliberate beats for a four-deep stack, and lets a filler word preempt a
-real one); a separate shallow token stack (a second queue for one
-feature). *Rationale:* this is D01's parametric thesis in its purest
-form and it is the smallest possible change — the branch is exactly the
-existing coalesced path, always. *Known limitation, accepted:* a token
-is then visible only through §4's continuous mapping, so a character
-with a thin `performance` block shows cue emotes and not token emotes —
-a real M2b dependency the `cue` branch does not carry. *Status:*
-proposed.
+**011-D1 — The callable emote interface is the first-person reporting seam.**
+*Chosen:* Lares provides a means for an agent to express its own emotional or
+epistemic appraisal; the agent deliberately emits the tool call and Lares
+validates, applies history and renders it. The call is the complete ingress
+signal. *Rejected:* Lares determining that an emotion occurred, whether by
+transcript sentiment, an observer model, hooks, logs or renderer-side inference.
+*Rationale:* this is the smallest interface shared by different models and
+harnesses, and it preserves P2, P4 and P11. *Status:* decided by the maintainer.
 
-**011-D2 — A fixed, closed token table, character-independent.**
-*Chosen:* ~12 entries beside `BASELINE_NUDGES` in the affect constants,
-covering the measured reflection and transition vocabulary — *wait, hold
-on, hmm, huh, actually, maybe, perhaps, alternatively, okay, oh, aha,
-ugh, oh no* — with magnitudes scaled inversely with trace frequency and
-every number a tunable default
-(`sdd/research/reasoning-tokens.md` for the taxonomy and the measured
-frequencies). *Rejected:* embedding or similarity lookup
-(puts a model and an inference step in the ingest path for what a dozen
-literals answer, and P4-adjacent even at ingest); an open vocabulary
-where the agent supplies its own coordinates (the turn-1 `feeling`
-proposal — superseded: an interjection is cheaper than a self-classified
-emotion word because the agent echoes a token it already wrote instead
-of stopping to classify itself); per-character token tables (identity
-lives above the renderer, and an interjection means the same thing
-whoever the Lar is — P5). *Open challenge, recorded deliberately:* this
-is the same closed-vocabulary shape that slice 011's own analysis
-faulted in the cue set. The defense is that the token distribution is
-top-heavy and measured rather than open-ended, so a short table covers
-the mass; if that stops being true the table grows, which is a constant
-edit. *Known weakness in the evidence:* those frequencies come from
-models that expose their reasoning traces. The harnesses Lares supports
-never return raw reasoning tokens, so the real distribution for the
-target population is **unmeasurable from outside** — the table is seeded
-from an adjacent population, and the vocabulary may be wrong in ways no
-amount of tuning the magnitudes will fix. Watch refusal rate at the gate
-for the first evidence either way. *Status:* proposed.
+**011-D2 — Private reasoning may inform the call; exposed reasoning may not
+drive it.** *Chosen:* a model may use any private computation available to it
+when deciding to call `emote`; Lares requires no access to that computation.
+Models that expose chain of thought may permit better-timed optional adapters,
+but the product must behave coherently without them. *Rejected:* reading,
+tailing, requesting or classifying chain of thought as the portable trigger;
+making visible reasoning a compatibility requirement; fine-tuning models as a
+Lares dependency. *Rationale:* many target models hide or summarize reasoning,
+and Lares must work across them without owning inference or training. *Status:*
+decided by the maintainer.
 
-**011-D3 — Unresolvable tokens are refused, with the vocabulary in the
-error.** *Chosen:* a token that resolves to no table entry returns a
-tool error naming the accepted set, so one failed call teaches the
-vocabulary. *Rejected:* accepting with a zero nudge (a silent no-op the
-agent reads as success while the Lar does not move); mapping unknown
-tokens to a generic arousal bump (fabricates affect the agent did not
-express, and is inference by another name). *Risk, accepted:* an error
-may discourage a channel we are already short on — mitigated by naming
-the vocabulary in `instructions` so a refusal should be rare. *Status:*
-proposed.
+**011-D3 — Appraisal is semantic; interjections are examples, never protocol
+keys.** *Chosen:* instruction copy describes meaningful changes in the agent's
+own appraisal — discovery, uncertainty, concern, frustration, relief,
+satisfaction — and applies regardless of response language. A call may happen
+before, after or without *aha*, *wait*, or any translated equivalent.
+*Rejected:* word matching; a multilingual interjection lexicon; a `token`
+parameter or fixed token-to-affect table; nearest-neighbor lookup over raw token
+embeddings; an external multilingual embedding model at ingress. *Rationale:*
+equivalent meanings often align in contextual model representations, especially
+in middle layers, but raw token embeddings and tokenization are not a portable
+semantic interface. Let the generating model perform the multilingual mapping
+it already knows. *Status:* decided by the maintainer.
 
-**011-D4 — No rate gate on the token branch.** *Chosen:* the token
-branch bypasses the 2s per-source emote spacing entirely; §4 saturation
-(`0.5^(n-1)` inside the window) and the affect clamp bound repeated
-tokens by construction. *Rejected:* reusing the cue spacing (a token
-would then block a subsequent cue for 2s, and the two are different
-channels); a separate token bucket (a second map and its sweep for a
-case saturation already answers). *Rationale:* P7's obligation is that
-ingress is bounded server-side regardless of client behavior, and it is
-— provably, in affect terms. *Residual, accepted:* affect is bounded but
-*tool calls* are not; a chatty agent can spend the user's tokens on
-emotes that change nothing visible. The density bound is instruction
-copy, not a server cap. Revisit if observed density is bad. *Status:*
-proposed.
+**011-D4 — Test the existing cue interface before changing the wire contract.**
+*Chosen:* the first experiment uses `emote(cue=...)` unchanged. It tests whether
+a language-independent first-person disposition improves voluntary use; it
+does not add a protocol branch. *Rejected now:* special control tokens, an
+appraisal classifier, another model, or a new structured field before the
+existing interface is shown inadequate. *Open fork:* if models reliably detect
+their appraisal but cannot map it cleanly onto character-facing cue semantics,
+a future decision may introduce an `appraisal` event above the cue mapping.
+That fork is not approved here. *Status:* proposed.
 
-**011-D5 — `instructions` becomes a standing disposition that also
-pulls the tools into context.** *Chosen:* replace the five-milestone
-checklist with (a) an explicit call-`list_cues`-at-session-start
-directive, (b) the token channel and its vocabulary with a
-once-or-twice-a-turn density bound, (c) the cue trigger stated as
-divergence from the event log, (d) the existing silent-on-refusal line.
-*Rejected:* keeping the checklist and adding tokens to it (the checklist
-asks for four things the hook stream already reports, and a list decays
-in long context where a rule of thumb survives); relying on tool
-descriptions as triggers (D26's assumption — measurably weaker now that
-both harnesses defer tool definitions behind a relevance-driven search
-that never fires for a non-instrumental tool); moving the load-bearing
-copy into the skill (per-harness, lazily loaded, invisible to future
-harnesses — D26 rejected this once already and the reasoning stands).
-*Rationale:* the delivery mechanism is the constraint
-(`sdd/research/mcp-instruction-delivery.md`). `instructions` arrives
-once at MCP connect, is truncated at 2KB, and must fire hours later;
-that is a disposition, not a checklist, and it is the only Lares text
-guaranteed to be in context at all. *Open item carried from the
-research:* whether the Codex builds D15 pins consume `server_instructions`
-at all is unverified — if they predate support, this copy reaches Claude
-Code only and the Codex half rides on the skill. *Status:* proposed.
+**011-D5 — One semantic disposition, reinforced through available harness
+channels.** *Chosen:* once a tool is surfaced, its description and argument
+descriptions are self-contained about first-person, semantic, language-neutral
+use. MCP server instructions carry proactive discovery and the standing
+disposition where the client honors them; harness-native skills reinforce the
+same behavior. *Rejected:* putting the only authoritative behavior in a
+harness-specific skill; assuming optional server instructions reach every
+model; using literal interjections to make deferred tool search relevant.
+*Rationale:* delivery varies, so each adapter may strengthen adoption while the
+tool interface stays one deep, vendor-neutral seam. *Status:* proposed pending
+copy and live delivery evidence.
 
-**011-D6 — Token guidance is authoritative in `instructions`; the
-plugin skill stays defensive.** *Chosen:* the daemon's `instructions`
-carry the token vocabulary and always match the running daemon by
-construction. The plugin skill describes the branch but tells the agent
-to fall back to `cue` if the server refuses `token`. *Rejected:* leaving
-the skill silent on tokens (loses the reinforcement D15/009-D3 ships it
-for); bumping `protocol_version` and having the skill gate on `status()`
-(a round trip before the first emote, to defend against a skew window
-that closes as installs update). *Rationale:* plugins are user-installed
-through a marketplace and the daemon is the app; they version
-independently, so a new skill can meet an old daemon and get *exactly
-one of cue or params is required*. Instructions cannot skew — they are
-generated by the daemon answering the call. *Status:* proposed.
+**011-D6 — Compatibility is behavioral, not merely transport-level.** *Chosen:*
+Lares can claim the tool transport works when a harness exposes the interface,
+but proactive emoting is supported only when the model also chooses to call it.
+Exact mid-reasoning or token-adjacent timing is a bonus; the portable baseline
+is a call at the model's first available tool-decision point. A combination
+that never calls still receives the hooks-only baseline and is not repaired by
+daemon-side inference. *Rejected:* promising identical timing or adoption
+across arbitrary models and harnesses; violating P2 to manufacture that claim.
+*Status:* decided by the maintainer.
 
-**011-D7 — The token axis gets scenario and diagnostic coverage, not a
-launch gate.** *Chosen:* `EmoteEvent` gains an optional `token`; one
-golden (`brutal-debugging-session`) carries tokens; new S11 records that
-the same event under different tokens must read differently, as
-diagnostic instrumentation. *Rejected:* leaving the branch
-scenario-invisible (M2b tunes against the player, so an untunable
-channel is an unshipped one); making S11 launch-blocking (S1 is the
-P8/D28 gate and adding a second aesthetic gate re-opens exactly the
-black hole D28 closed). *Status:* proposed.
+**011-D7 — Multilingual behavioral evidence precedes another SPEC or PLAN.**
+*Chosen:* A/B the existing instruction against a semantic disposition across
+hidden-reasoning, visible-reasoning and ordinary models; supported harnesses;
+multiple languages and scripts; code-switching; appraisal shifts without
+interjections; and quoted-word negative cases. Record call precision, density,
+cue choice, timing and task interference. *Rejected:* treating successful MCP
+connection, English examples, exposed reasoning traces, or literature
+frequencies as proof of voluntary self-expression. *Gate:* no implementation
+SPEC or PLAN until the experiment shows which failure is real — discovery,
+instruction following, semantic cue mapping, or harness timing. *Status:*
+decided by the maintainer.

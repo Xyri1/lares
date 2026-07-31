@@ -7,9 +7,13 @@ harness behavior here changed within the last year and one item below is
 explicitly unverified against the builds D15 pins. Re-read before relying on it
 after a harness upgrade.
 
-The short version: `instructions` is the only Lares text guaranteed to be in an
-agent's context, tool descriptions are not, and nobody outside the model can see
-a chain of thought. Those three facts set the shape of 011-D5 and D34.
+The short version: server instructions, deferred tool descriptions and
+harness-native skills have different delivery guarantees, and no one of them is
+portable across arbitrary harnesses. Some target models also hide raw chain of
+thought. The emote interface must therefore be self-contained once surfaced,
+while every available instruction channel reinforces the same semantic
+disposition; exposed reasoning can only be an optional enhancement. Those facts
+set the shape of 011-D5 and D34.
 
 ## The protocol
 
@@ -59,18 +63,18 @@ This reconciles with the Claude Code statement above: definitions are excluded
 from the prefix, while the harness surfaces bare tool *names* alongside the
 server instructions.
 
-The optimization advice in that page is worth recording because Lares can act on
-none of it: *keep your 3–5 most frequently used tools non-deferred* (a harness
-decision, not a server one), *add common keywords to descriptions to improve
-discoverability*, and *use consistent namespacing*. Every one of those is
-downstream of a search firing.
+The optimization advice in that page is worth recording: *keep your 3–5 most
+frequently used tools non-deferred* (a harness decision, not a server one), *add
+common keywords to descriptions to improve discoverability*, and *use consistent
+namespacing*. The latter two help only after the model elects to search.
 
-**And for Lares no search fires.** Retrieval is just-in-time and task-driven. A
-task that mentions a database surfaces `supabase`; no task mentions the desktop
-companion, no tool name matches a task keyword, and — the root cause D26 already
-named — searching for `emote` never helps the agent finish. So the `emote` tool
-description at the ingress is reachable by search and never reached, which makes
-D26's "tool descriptions double as triggers" substantially weaker than written.
+Lares therefore carries a retrieval risk, not a proven universal failure.
+Search is task-driven, while emoting is not instrumental to finishing the task.
+A database request naturally retrieves `supabase`; an ordinary task may never
+make `emote` relevant enough to retrieve. Whether a standing semantic
+disposition changes that behavior is a live gate for slice 011. Until measured,
+D26's "tool descriptions double as triggers" is weaker than written but not
+disproved.
 
 ## Codex
 
@@ -89,24 +93,25 @@ tools payload each request rather than the system prompt. Codex also carries
 `tool_search` and `tool_search_always_defer_mcp_tools` feature flags, and its
 namespace descriptions survive deferral the way Claude Code's do.
 
-**Net:** both harnesses converge on the same shape — server instructions visible
-upfront, tool schemas deferred — so one harness-neutral instructions string
-serves both, which is what 011-D5 assumes.
+**Net for the versions inspected:** both harnesses converge on the same shape —
+server instructions visible before deferred tool schemas — so one
+harness-neutral disposition can reinforce both. It does not remove the need for
+a self-contained tool interface or live verification, which is what 011-D5
+requires.
 
-## Raw chain of thought is never returned
+## Raw chain of thought cannot be a compatibility requirement
 
-Current models do not return raw reasoning tokens through the API at all.
-`thinking.display` defaults to `"omitted"`; `"summarized"` returns a readable
-summary rather than the token stream
+Some models and harnesses expose reasoning text, while others hide it or return
+only a summary. For example, Claude's `thinking.display` defaults to
+`"omitted"`; `"summarized"` returns a readable summary rather than the raw token
+stream
 ([Claude API — adaptive thinking](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking)).
 
-This matters beyond the P2/P11 fence. Even a harness that *wanted* to detect
-reasoning interjections could not: the tokens never leave the model. Any design
-that reads interjections must therefore be a **prompting strategy addressed to
-the model about its own output**, never a detector anywhere downstream. That is
-the constraint that turned the slice-011 idea from an architecture into
-instruction copy, and it is recorded in D34's rejected list as *moot*, not
-merely fenced.
+This matters beyond the P2/P11 fence: any design that requires inspecting raw
+reasoning excludes those models by construction. The portable route is a
+semantic instruction addressed to the model and a deliberate tool call emitted
+by it. A visible-reasoning adapter may improve timing for a particular harness,
+but it cannot drive Lares' core behavior.
 
 ## Open items
 
@@ -116,10 +121,10 @@ merely fenced.
   `instructions` were invisible on Codex during that gate and only the skill and
   tool names carried adoption. Check against the maintainer's installed binary
   before crediting Codex with instruction delivery.
-- **Not measured: whether the rewritten copy actually changes behavior.** Every
-  claim here is about delivery mechanics. That an agent reads the string and
-  calls `list_cues` unprompted is the slice-011 exit gate, not a documented
-  fact — and it is the one result that bounces the slice rather than tuning it.
+- **Not measured: whether a semantic disposition changes behavior.** Every
+  claim here is about delivery mechanics. Whether an agent discovers the tools
+  and voluntarily reports an appraisal is slice 011's behavioral gate, not a
+  documented fact.
 - **Version-sensitive throughout.** Tool-search defaults, the 2KB cap, and the
   Codex mapping are all current-build observations. Re-read after any harness
   upgrade that touches MCP.

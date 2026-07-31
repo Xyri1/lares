@@ -1,119 +1,136 @@
-# Reasoning tokens as an affect signal
+# Reasoning interjections and model-owned emote actions
 
-Research for slice 011 (`sdd/slices/011-interjection/`), 2026-07-31. Sources are
-published papers on reasoning-model behavior. They establish that reasoning
-interjections are measurable, categorizable, and causally load-bearing in the
-models that expose their traces. They do **not** establish that any specific
-production model emits them at the rates below, and they say nothing about
-emotional valence — see *What this does not establish* at the end, which is the
-half that constrains 011-D2.
+Research for slice 011 (`sdd/slices/011-interjection/`), revised
+2026-07-31. This replaces the earlier fixed-token-table conclusion.
 
-## The tokens are real, emergent, and named
+## Conclusion
 
-DeepSeek-R1's training report documents an "aha moment" that emerged from
-reinforcement learning without being programmed: mid-derivation, the model
-writes *"Wait, wait. That's an aha moment I can flag here. Let's reevaluate this
-step-by-step"* and then re-derives
-([DeepSeek-R1](https://arxiv.org/html/2501.12948v1)). The relevant point for
-Lares is not the anthropomorphic framing but that the marker arose on its own as
-a reasoning behavior, rather than being a stylistic tic copied from training
-prose.
+Reasoning interjections such as *wait* and *aha* are evidence that some
+models externalize changes in epistemic state. They are not a portable
+emotion interface. Lares should condition the agent to report its own
+meaningful appraisal shifts through the existing emote tool; it should not
+observe, match, embed, or translate the words the model happens to emit.
 
-## They are causally load-bearing, not decoration
+The distinction is causal: the model's private computation may cause a tool
+call even when the harness never exposes that computation. Lares depends only
+on the deliberate call that crosses its ingress.
 
-The s1 paper's *budget forcing* controls test-time compute by suppressing the
-end-of-thinking token and **appending the literal string "Wait"** to make the
-model continue. This reliably produces re-checking and repairs incorrect
-reasoning steps ([s1: Simple test-time scaling](https://arxiv.org/abs/2501.19393)).
+## What the reasoning-token literature establishes
 
-The token is therefore not merely correlated with reconsideration — injecting it
-*causes* reconsideration. Whatever these words are, they are load-bearing in the
-computation, not ornamentation on top of it.
+DeepSeek-R1 reports an emergent "aha moment" in one reinforcement-learning
+trajectory. This is an example of reflection behavior, not evidence of emotion
+or a stable protocol
+([DeepSeek-R1](https://arxiv.org/abs/2501.12948)).
 
-## Taxonomy and frequency
+The s1 paper extends test-time reasoning by suppressing the end-of-thinking
+token and appending the literal string *Wait*. In that model and decoding
+setup, the injected text can cause continued checking. It does not establish
+that *Wait* has the same causal role across models or languages
+([s1: Simple test-time scaling](https://arxiv.org/abs/2501.19393)).
 
-The clearest categorization splits what it calls *thinking tokens* into
-**reflection tokens** (*wait, hmm, hold on, okay*) and **thought transition
-tokens** (*alternatively, maybe, but, however*), and reports measured epistemic
-frequencies across reasoning traces
-([Do Thinking Tokens Help or Trap?](https://arxiv.org/html/2506.23840)):
+*Understanding Reasoning in LLMs through Strategic Information Allocation
+under Uncertainty* calls these markers **epistemic verbalizations**: surface
+manifestations of uncertain or shifting internal computation that can become
+conditionable tokens. Its appendix explicitly discusses using them as dispatch
+signals toward tool calls
+([paper](https://arxiv.org/abs/2603.15500)). This supports teaching the model an
+appraisal-to-action association. It does not support a downstream lexical
+detector.
 
-| Token | Frequency | Token | Frequency |
-|---|---|---|---|
-| wait | 73.0% | perhaps | 8.2% |
-| maybe | 32.9% | might | 6.6% |
-| actually | 12.4% | seems | 3.3% |
-| check | 10.5% | alternatively | 1.2% |
-| hmm | 8.3% | | |
+The earlier version of this note attributed the reported *wait* 73.0%, *maybe*
+32.9%, and related frequency table to *Do Thinking Tokens Help or Trap?* The
+table belongs to the strategic-information-allocation paper above. In either
+case the figures describe sampled reasoning traces from a particular research
+population, not the hidden reasoning of the production models Lares watches.
+They cannot justify a product vocabulary or affect magnitudes.
 
-Two things follow for slice 011. First, the distribution is **extremely
-top-heavy** — a handful of tokens covers the mass, which is what makes a fixed
-table of roughly a dozen entries defensible where a fixed table of *emotion
-words* would not be (011-D2). Second, magnitudes should scale **inversely** with
-frequency: a token appearing in 73% of traces cannot carry the same nudge as one
-appearing in 1% without drowning the signal.
+## The multilingual correction
 
-## They carry information, and they mark uncertainty
+"Equivalent words are close in vector space" combines three different things:
 
-Information-theoretic analysis finds these tokens sit at *information peaks* —
-points of high mutual information with the correct answer — and argues that
-externalizing uncertainty this way is the mechanism by which self-correction
-becomes possible
-([Demystifying Reasoning Dynamics with Mutual Information](https://arxiv.org/html/2506.02867v2)).
+1. **Raw vocabulary embeddings are not a dependable multilingual lookup.** A
+   meaning may span different subword sequences, scripts and token counts, and
+   equivalent vocabulary rows are not guaranteed to be neighbors. Contextual
+   representations also differ substantially from static token embeddings
+   ([Ethayarajh 2019](https://arxiv.org/abs/1909.00512)).
+2. **Contextual hidden states often align by meaning across languages.** Current
+   multilingual-model studies find the strongest cross-lingual alignment in
+   middle layers rather than in literal token identity
+   ([EACL 2026](https://aclanthology.org/2026.eacl-long.225/)). This makes a
+   semantic instruction plausibly portable across languages, but hosted APIs do
+   not expose those states as a Lares interface.
+3. **Dedicated multilingual embedding models deliberately align translated
+   text.** LaBSE is an example
+   ([LaBSE](https://arxiv.org/abs/2007.01852)). It is a separate inference model
+   operating on observed text, not the generating model's private state.
 
-Separately, lexical markers of uncertainty in a reasoning chain (*guess, stuck,
-hard*) are reported as the **strongest lexical predictor of an incorrect final
-answer**, with hedging and trace length correlating with model uncertainty
-([Lexical Hints of Accuracy in LLM Reasoning Chains](https://arxiv.org/html/2508.15842v1)).
+Therefore vector-space alignment is a reason to let the multilingual agent
+interpret one semantic tool-use instruction. It is not a reason to add an
+embedding model to the daemon.
 
-There is also work probing the internal states immediately preceding *wait*,
-which treats the marker as downstream of a distinguishable internal state rather
-than as free-floating text
-([Internal states before wait modulate reasoning patterns](https://arxiv.org/pdf/2510.04128)).
+## Available engineering routes
 
-## The counterpoint, and why it favors Lares
+### Portable product route
 
-A recurring criticism is that markers like *wait* emerge from **high-entropy
-prediction states** and correlate only weakly with actual performance gains.
-That is damaging to anyone claiming the token signals *productive* reasoning.
+Give the model a standing, language-independent disposition: when its own
+appraisal changes meaningfully — discovery, uncertainty, concern, frustration,
+relief or satisfaction — it calls the emote tool. The call may precede, follow,
+or occur without a visible interjection. Tool descriptions, MCP server
+instructions and harness-native skills can carry and reinforce the same
+semantics according to what each harness loads
+(`sdd/research/mcp-instruction-delivery.md`).
 
-It is favorable here. Lares does not care whether the reconsideration helped; it
-cares whether the model was uncertain. High entropy *is* uncertainty, so on this
-reading the token is a more honest uncertainty signal than a self-reported
-confidence label would be — and P1 only asks that the expression encode
-something the user can act on.
+This route requires neither exposed reasoning nor fine-tuning. It works only to
+the extent that a model and harness can voluntarily issue the available tool
+call; that behavioral support must be measured rather than inferred from
+transport compatibility.
 
-## The finding that shaped the design
+### Non-portable research routes
 
-The vocabulary is **epistemic, not emotional**. Scan the taxonomy — *wait, hmm,
-maybe, perhaps, alternatively, actually, however, hold on*. Every entry encodes
-doubt, arrest, or a turn. There is no *delighted* token, and the positive end
-(*aha*, *oh*) is both rarer and less studied.
+With control of model inference, a probe or auxiliary head could classify
+contextual hidden states and steer or emit a tool call. Tool-use intention has
+been shown to be linearly readable and steerable in model activations
+([Tool Calling is Linearly Readable and
+Steerable](https://arxiv.org/abs/2605.07990)). This is the route closest to the
+original vector-space intuition, but it is model-specific and cannot be Lares'
+compatibility baseline.
 
-So reasoning tokens supply **arousal and epistemic state cheaply, and almost no
-valence** — which is exactly the half Lares already gets for free from the other
-direction. Hook baseline transitions know a tool failed, a turn ended, input is
-wanted: that is valence. The two channels are near-orthogonal on the §4 axes,
-and neither alone distinguishes *"ah, of course"* from *"wait — that shouldn't
-fail"* on the same `error` event. This is the D34 division of labour, and it is
-a finding from the literature rather than a design preference.
+A rolling multilingual embedding or observer model over visible output is also
+technically possible. It is rejected for the product: it arrives after the
+model expressed itself, guesses from text, creates quotation and reporting
+false positives, and violates P2's first-person rule. It remains useful only as
+offline evaluation instrumentation.
 
-## What this does not establish
+Fine-tuning multilingual tool-use trajectories could strengthen the
+appraisal-to-call association, but requiring users or model providers to train
+models is outside the product contract.
 
-- **Not measured on the models Lares actually watches.** Every frequency above
-  comes from open reasoning models that expose their traces. Production Claude
-  and Codex models never return raw reasoning tokens through the API
-  (`sdd/research/mcp-instruction-delivery.md`), so **the real distribution for
-  the harnesses Lares supports is unmeasurable from outside**. The table is
-  seeded from adjacent evidence, not from the target population.
-- **Nothing about magnitudes.** No source assigns affect coordinates to any of
-  these tokens. Every number in `TOKEN_NUDGES` is an authored default, which is
-  why 011-D2 declares them M2b's to move rather than contract.
-- **Nothing about whether an agent will report the token when asked.** The
-  literature observes tokens inside traces. Slice 011 depends on the agent
-  *choosing to send one over MCP*, which is an adoption question the papers do
-  not touch — it is 011-D5's problem, and the slice gate tests it directly.
-- **Nothing about qualia, and the product does not need it.** Whether the token
-  corresponds to anything felt is out of scope. P1 sets the bar at legibility:
-  if the marker tracks a high-entropy state and the Lar reads as hesitant, the
-  user learns something true and actionable.
+## Product consequences
+
+- The emote tool call is the signal; an interjection is neither required nor
+  parsed.
+- The core trigger is a semantic appraisal transition, independent of response
+  language.
+- Exposed chain of thought and model-specific activation access are optional
+  timing enhancements, never drivers.
+- No `token` branch, token table, translated lexicon, embedding dependency, or
+  transcript classifier belongs in the portable path.
+- Exact token-level timing cannot be promised across harnesses. The portable
+  expectation is a call at the model's first available tool-decision point.
+- A model/harness combination that will not proactively call the tool cannot be
+  repaired by daemon-side inference without abandoning first-person emotion.
+
+## Evidence still needed
+
+Before a new SPEC or PLAN, compare the existing emote behavior with and without
+a semantic disposition across:
+
+- hidden-reasoning, visible-reasoning and ordinary models;
+- supported harnesses and their actual instruction-delivery paths;
+- multiple languages, scripts and code-switched prompts;
+- appraisal shifts both with and without interjections;
+- negative cases that quote or discuss interjections and emotions.
+
+Measure call precision, call rate, cue choice, timing relative to visible
+output, and interference with task completion. The experiment tests voluntary
+self-expression, not whether a vocabulary detector can recognize prose.
