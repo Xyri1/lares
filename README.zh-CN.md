@@ -3,9 +3,10 @@
 </p>
 
 <h1 align="center">Lares</h1>
+<p align="center"><em>/ˈlɛəriːz/</em> · LAIR-eez</p>
 
 <p align="center">
-  <strong>让你的 AI 智能体拥有一张脸。</strong><br>
+  <strong>给你的 AI 智能体一张脸。</strong><br>
   适用于 Claude Code 和 Codex 的本地 Live2D 桌面伙伴。
 </p>
 
@@ -21,50 +22,47 @@
 
 ## 它是什么
 
-Lares 将智能体会话变成桌面上持续动画的角色——一个 **Lar**。
-你可以看见它思考、卡住、等待、恢复和完成。你不必另开活动面板。
+Lares 把智能体会话变成桌面上一个时刻都在动的角色——一个 **Lar**。
+它思考、卡壳、等待、缓过来、完工，你都看在眼里，不用再另开一个活动面板盯进度。
 
-Lares 不读取对话记录。它也不猜测情绪。智能体通过 MCP 以第一人称报告感受。
-确定性的生命周期钩子提供基础心跳。情绪和心境在整个会话中保留历史。
+Lares 不读对话记录，也不揣测情绪——感受由智能体自己通过 MCP 以第一人称汇报，
+确定性的生命周期钩子则提供基础心跳。情绪与心境在整个会话中带着历史延续。
 
 `智能体钩子 + MCP → 本地情感引擎 → Live2D 表演`
 
+## 快速上手
+
+从[最新发行版](https://github.com/Xyri1/lares/releases/latest)下载安装包，
+安装后启动 Lares。你的 Lar 就会出现在桌面上，各项控制都在系统托盘里。
+
 > [!IMPORTANT]
-> Lares 仍处于早期 alpha 阶段。M5a 已完成，但 macOS 和 Windows 的全新环境
-> 验收尚未完成。
+> Lares 仍处于早期 alpha 阶段，安装包也没有签名——开发者付不起签名费，
+> 单纯是穷，不是什么安全特性。macOS 上 Gatekeeper、Windows 上 SmartScreen
+> 都会警告，这是意料之中。安装时请按[分发指南](docs/distribution.md)中的
+> 步骤绕过警告。
 
-## 如何使用
+在托盘菜单中选择 **Configure Agent Integrations…**，然后按安装程序的提示
+确认安装 Claude Code 插件或 Codex 插件。
 
-启动 Lares。你的 Lar 会出现在桌面上。系统托盘存放控制项。
+开启一个新的智能体会话，让钩子和本地 MCP 连接得以加载。Claude Code 可以直接用
+`/reload-plugins` 重新加载插件；Codex 会请你审核 Lares 的钩子，确认信任即可。
 
-发行版安装包未签名。在 macOS 上，Gatekeeper 会发出警告。在 Windows 上，
-SmartScreen 会发出警告。这是预期行为。开发者付不起 Apple Developer Program
-年费（每年 99 美元），所以构建保持未签名——穷是穷，不是安全特性。安装时请按
-[分发指南](docs/distribution.md) 中的绕过步骤操作。
+之后照常工作就好。Lar 会随会话状态和智能体的第一人称情绪一同起伏。换角色、
+调缩放、开免打扰，都在托盘里。
 
-在托盘中选择 **Configure Agent Integrations…**。当安装程序询问时，确认
-Claude Code 插件或 Codex 插件。
-
-新建一个智能体会话，让钩子和本地 MCP 连接能够加载。Claude Code 可以用
-`/reload-plugins` 重新加载插件。Codex 会请你检查 Lares 钩子。当 Codex 询问时，
-信任它们。
-
-然后像平常一样工作。Lar 会跟随会话状态和智能体的第一人称情绪表达。使用托盘
-切换角色、调整缩放或开启免打扰。
-
-手动配置请参阅 [Claude Code](plugins/claude-code/README.md) 和
+如需手动配置，请参阅 [Claude Code](plugins/claude-code/README.md) 和
 [Codex](plugins/codex/README.md) 插件指南。
 
 ## 它能做什么
 
 - 以透明、可拖动、始终置顶的浮层常驻桌面。
-- 通过 Claude Code 和 Codex 的原生插件系统连接智能体。
-- 保持本地运行。守护进程只绑定回环地址。对话记录不会离开你的设备。
-- 导入已解压的 VTube Studio 风格 Cubism SDK 3.0–4.2 模型文件夹，并将
-  表情映射为可移植的 Lar 角色包。
+- 通过 Claude Code 和 Codex 的原生插件系统接入智能体。
+- 全程本地运行：守护进程只绑定回环地址，对话记录不会离开你的设备。
+- 导入解压后的 VTube Studio 风格 Cubism SDK 3.0–4.2 模型文件夹，
+  并把其表情映射成可移植的 Lar 角色包。
 
-应用主动发起的唯一网络请求，是已明确披露的 GitHub 更新检查。只有在你请求并
-确认后，才会开始下载智能体插件。
+应用主动发起的网络请求只有一个：明确披露的 GitHub 更新检查。智能体插件
+也只会在你主动要求并确认之后才开始下载。
 
 ## 从源码运行
 
@@ -74,16 +72,16 @@ pnpm fetch-assets
 pnpm dev
 ```
 
-`fetch-assets` 会将 Live2D Cubism Core 和 Haru 示例下载到 Git 忽略的路径。
-开发期间，Electron 渲染器运行在 `127.0.0.1:5300`。
+`fetch-assets` 会把 Live2D Cubism Core 和 Haru 示例模型下载到 Git 忽略的
+路径。开发期间，Electron 渲染器运行在 `127.0.0.1:5300`。
 
 ## 导入自己的 Lar
 
-在托盘中选择 **Import Character…**。选择一个已解压的 Live2D 模型文件夹。
-Lares 会将其复制到托管角色库。它在切换前验证该包。它不会改动原始文件夹。
+在托盘菜单中选择 **Import Character…**，选中一个解压后的 Live2D 模型文件夹。
+Lares 会把它复制进托管角色库，校验通过后才会切换，原始文件夹不会被改动。
 
-请参阅[角色包指南](docs/character-format.md)，了解兼容范围、`lares/1` 清单格式、
-表情映射和命令行导入流程。
+关于兼容范围、`lares/1` 清单格式、表情映射和命令行导入流程，
+请参阅[角色包指南](docs/character-format.md)。
 
 ## 开发
 
@@ -93,13 +91,13 @@ Lares 会将其复制到托管角色库。它在切换前验证该包。它不�
 | `pnpm test` | 运行主进程侧的 Vitest 测试 |
 | `pnpm build` | 执行类型检查并构建生产版本 |
 | `pnpm fetch-assets` | 将 Cubism Core 和 Haru 下载到 Git 忽略的路径 |
-| `pnpm package:preflight` | 验证本地分发输入 |
+| `pnpm package:preflight` | 校验本地分发所需的输入 |
 | `pnpm package:mac` | 构建未签名的通用 macOS DMG |
-| `pnpm package:win` | 构建未签名的 Windows x64 NSIS 安装程序 |
+| `pnpm package:win` | 构建未签名的 Windows x64 NSIS 安装包 |
 
 ## 项目文档
 
-产品和设计的事实来源位于 [`sdd/`](sdd/)：
+产品与设计的权威依据都在 [`sdd/`](sdd/) 下：
 
 - [`sdd/PRD.md`](sdd/PRD.md) — Lares 为何存在
 - [`sdd/SPEC.md`](sdd/SPEC.md) — 契约与不变量
@@ -109,5 +107,5 @@ Lares 会将其复制到托管角色库。它在切换前验证该包。它不�
 
 ## 许可证
 
-本项目采用 [Apache 2.0](LICENSE) 许可证。Live2D Cubism Core 和随附角色资源
-保留各自的许可条款。详见 [NOTICE](NOTICE)。
+本项目采用 [Apache 2.0](LICENSE) 许可证。Live2D Cubism Core 与随附的角色
+资源仍遵循各自的许可条款，详见 [NOTICE](NOTICE)。

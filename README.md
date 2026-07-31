@@ -3,6 +3,7 @@
 </p>
 
 <h1 align="center">Lares</h1>
+<p align="center"><em>/ˈlɛəriːz/</em> · LAIR-eez</p>
 
 <p align="center">
   <strong>Give your AI agent a face.</strong><br>
@@ -31,20 +32,18 @@ baseline heartbeat. Emotion and mood keep history across the session.
 
 `agent hooks + MCP → local affect engine → Live2D performance`
 
+## Quickstart
+
+Download the installer from the
+[latest release](https://github.com/Xyri1/lares/releases/latest), install it,
+and start Lares. Your Lar shows on the desktop. The tray holds the controls.
+
 > [!IMPORTANT]
-> Lares is early alpha. M5a is complete, but clean-machine acceptance on macOS
-> and Windows is not complete yet.
-
-## How to use
-
-Start Lares. Your Lar shows on the desktop. The tray holds the controls.
-
-The release installers are not signed. On macOS, Gatekeeper will warn you. On
-Windows, SmartScreen will warn you. That is expected. The developer cannot
-afford the Apple Developer Program subscription (99 USD each year), so the
-builds stay unsigned — broke-ass economics, not a security feature. Use the
-bypass steps in the [distribution guide](docs/distribution.md) when you
-install.
+> Lares is early alpha, and the installers are unsigned — the developer
+> cannot afford the signing fees. Broke-ass economics, not a security
+> feature. Gatekeeper on macOS and SmartScreen on Windows will warn you;
+> that is expected. Use the bypass steps in the
+> [distribution guide](docs/distribution.md).
 
 From the tray, choose **Configure Agent Integrations…**. Confirm the Claude
 Code plugin or the Codex plugin when the installer asks.
@@ -95,15 +94,15 @@ the `lares/1` manifest, expression mapping, and the command-line import flow.
 
 ## Development
 
-| Command | What it does |
-| --- | --- |
-| `pnpm dev` | Run Lares in development |
-| `pnpm test` | Run the main-side Vitest suite |
-| `pnpm build` | Typecheck and build the production app |
-| `pnpm fetch-assets` | Download Cubism Core and Haru into gitignored paths |
-| `pnpm package:preflight` | Validate local distribution inputs |
-| `pnpm package:mac` | Build the unsigned universal macOS DMG |
-| `pnpm package:win` | Build the unsigned Windows x64 NSIS installer |
+| Command                  | What it does                                        |
+| ------------------------ | --------------------------------------------------- |
+| `pnpm dev`               | Run Lares in development                            |
+| `pnpm test`              | Run the main-side Vitest suite                      |
+| `pnpm build`             | Typecheck and build the production app              |
+| `pnpm fetch-assets`      | Download Cubism Core and Haru into gitignored paths |
+| `pnpm package:preflight` | Validate local distribution inputs                  |
+| `pnpm package:mac`       | Build the unsigned universal macOS DMG              |
+| `pnpm package:win`       | Build the unsigned Windows x64 NSIS installer       |
 
 ## Project docs
 
