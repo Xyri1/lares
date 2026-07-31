@@ -23,7 +23,7 @@ describe('calibration surfacing', () => {
   })
 
   it('keeps the bundled prompt byte-identical to the documented kickoff block', () => {
-    const docs = readFileSync(join(process.cwd(), 'docs', 'character-format.md'), 'utf8')
+    const docs = readFileSync(join(process.cwd(), 'docs', 'en', 'character-format.md'), 'utf8')
     const kickoff = /## Copyable mapping flow[\s\S]*?```text\n([\s\S]*?)\n```/.exec(docs)?.[1]
     expect(CALIBRATION_PROMPT).toBe(kickoff)
   })

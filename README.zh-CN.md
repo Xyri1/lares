@@ -30,16 +30,43 @@ Lares 不读对话记录，也不揣测情绪——感受由智能体自己通�
 
 `智能体钩子 + MCP → 本地情感引擎 → Live2D 表演`
 
-## 快速上手
+## 安装
 
-从[最新发行版](https://github.com/Xyri1/lares/releases/latest)下载安装包，
-安装后启动 Lares。你的 Lar 就会出现在桌面上，各项控制都在系统托盘里。
+从[最新发行版](https://github.com/Xyri1/lares/releases/latest)下载对应系统的
+安装包。
 
 > [!IMPORTANT]
-> Lares 仍处于早期 alpha 阶段，安装包也没有签名——开发者付不起签名费，
-> 单纯是穷，不是什么安全特性。macOS 上 Gatekeeper、Windows 上 SmartScreen
-> 都会警告，这是意料之中。安装时请按[分发指南](docs/distribution.md)中的
-> 步骤绕过警告。
+> Lares 仍处于早期 alpha 阶段，安装包**没有签名**——开发者付不起签名费，
+> 单纯是穷，不是什么安全特性。两个系统各会拦你一次，下面就是官方认可的
+> 通过方式。
+
+### macOS
+
+打开 DMG，把 **Lares.app** 拖进**应用程序**。首次启动会被直接拒绝：
+
+> Apple 无法验证“Lares”是否包含可能危害 Mac 安全或泄漏隐私的恶意软件。
+
+弹窗给出的唯一动作是**移到废纸篓**。不要点它——关掉弹窗，然后：
+
+1. 打开**系统设置 → 隐私与安全性**。
+2. 向下找到**安全性**，会看到一行提示：已阻止使用“Lares”以保护你的 Mac。
+3. 点击**仍要打开**。
+4. 完成验证，并在最后一个弹窗中确认。
+
+macOS 会记住这个决定，之后每次启动都恢复正常。
+
+### Windows
+
+运行安装程序，SmartScreen 会显示**Windows 已保护你的电脑**。点击**更多信息**，
+再点**仍要运行**。随后 Windows 会询问是否允许一个**未知发布者**的应用——选择
+**是**，安装即可继续。
+
+未签名带来的差别仅此而已。每个发行版还附带 SHA-256 校验值，你可以先核对下载
+文件再安装。
+
+## 连接你的智能体
+
+启动 Lares，你的 Lar 就会出现在桌面上，各项控制都在系统托盘里。
 
 在托盘菜单中选择 **Configure Agent Integrations…**，然后按安装程序的提示
 确认安装 Claude Code 插件或 Codex 插件。
@@ -81,7 +108,7 @@ pnpm dev
 Lares 会把它复制进托管角色库，校验通过后才会切换，原始文件夹不会被改动。
 
 关于兼容范围、`lares/1` 清单格式、表情映射和命令行导入流程，
-请参阅[角色包指南](docs/character-format.md)。
+请参阅[角色包指南](docs/zh-CN/character-format.md)。
 
 ## 开发
 
@@ -97,13 +124,19 @@ Lares 会把它复制进托管角色库，校验通过后才会切换，原始�
 
 ## 项目文档
 
+面向使用者的指南在 [`docs/`](docs/) 下，提供英文和简体中文两种版本：
+
+- [`docs/zh-CN/usage.md`](docs/zh-CN/usage.md) — 安装、连接 agent、读懂你的 Lar
+- [`docs/zh-CN/development.md`](docs/zh-CN/development.md) — 架构、开发流程，以及
+  一次改动必须遵守的规则
+
 产品与设计的权威依据都在 [`sdd/`](sdd/) 下：
 
 - [`sdd/PRD.md`](sdd/PRD.md) — Lares 为何存在
 - [`sdd/SPEC.md`](sdd/SPEC.md) — 契约与不变量
 - [`sdd/ROADMAP.md`](sdd/ROADMAP.md) — 里程碑与当前范围
 - [`AGENTS.md`](AGENTS.md) — 面向贡献者和编码智能体的仓库地图
-- [`docs/distribution.md`](docs/distribution.md) — 未签名构建与全新环境验收
+- [`docs/zh-CN/distribution.md`](docs/zh-CN/distribution.md) — 未签名构建与全新环境验收
 
 ## 许可证
 

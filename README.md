@@ -32,18 +32,48 @@ baseline heartbeat. Emotion and mood keep history across the session.
 
 `agent hooks + MCP → local affect engine → Live2D performance`
 
-## Quickstart
+## Install
 
-Download the installer from the
-[latest release](https://github.com/Xyri1/lares/releases/latest), install it,
-and start Lares. Your Lar shows on the desktop. The tray holds the controls.
+Download the installer for your system from the
+[latest release](https://github.com/Xyri1/lares/releases/latest).
 
 > [!IMPORTANT]
-> Lares is early alpha, and the installers are unsigned — the developer
+> Lares is early alpha and the installers are **unsigned** — the developer
 > cannot afford the signing fees. Broke-ass economics, not a security
-> feature. Gatekeeper on macOS and SmartScreen on Windows will warn you;
-> that is expected. Use the bypass steps in the
-> [distribution guide](docs/distribution.md).
+> feature. Each system interrupts you once. The steps below are the
+> supported way through.
+
+### macOS
+
+Open the DMG and drag **Lares.app** into **Applications**. The first launch is
+then refused outright:
+
+> Apple could not verify "Lares" is free of malware that may harm your Mac or
+> compromise your privacy.
+
+The only action offered is **Move to Trash**. Do not take it — dismiss the
+dialog, then:
+
+1. Open **System Settings → Privacy & Security**.
+2. Scroll down to **Security**. A line reads *"Lares" was blocked to protect
+   your Mac*.
+3. Click **Open Anyway**.
+4. Authenticate, then confirm in the last prompt.
+
+macOS remembers the decision. Every later launch opens normally.
+
+### Windows
+
+Run the installer. SmartScreen shows **Windows protected your PC**. Click
+**More info**, then **Run anyway**. Windows then asks to allow an app from an
+**unknown publisher** — choose **Yes**, and the installation proceeds.
+
+That is the whole difference an unsigned build makes. Each release also ships
+a SHA-256 checksum if you want to verify the download first.
+
+## Connect your agent
+
+Start Lares. Your Lar shows on the desktop, and the tray holds the controls.
 
 From the tray, choose **Configure Agent Integrations…**. Confirm the Claude
 Code plugin or the Codex plugin when the installer asks.
@@ -89,8 +119,9 @@ From the tray, choose **Import Character…**. Select an extracted Live2D model
 folder. Lares copies it into the managed character library. It validates the
 package before it switches. It does not change the original folder.
 
-See the [character package guide](docs/character-format.md) for compatibility,
-the `lares/1` manifest, expression mapping, and the command-line import flow.
+See the [character package guide](docs/en/character-format.md) for
+compatibility, the `lares/1` manifest, expression mapping, and the
+command-line import flow.
 
 ## Development
 
@@ -106,13 +137,20 @@ the `lares/1` manifest, expression mapping, and the command-line import flow.
 
 ## Project docs
 
+Human-facing guides live under [`docs/`](docs/), in English and 简体中文:
+
+- [`docs/en/usage.md`](docs/en/usage.md) — install, connect an agent, read
+  your Lar
+- [`docs/en/development.md`](docs/en/development.md) — architecture, dev
+  loop, and the rules a change must follow
+
 Product and design truth lives under [`sdd/`](sdd/):
 
 - [`sdd/PRD.md`](sdd/PRD.md) — why Lares exists
 - [`sdd/SPEC.md`](sdd/SPEC.md) — contracts and invariants
 - [`sdd/ROADMAP.md`](sdd/ROADMAP.md) — milestones and current scope
 - [`AGENTS.md`](AGENTS.md) — repository map for contributors and coding agents
-- [`docs/distribution.md`](docs/distribution.md) — unsigned builds and
+- [`docs/en/distribution.md`](docs/en/distribution.md) — unsigned builds and
   clean-machine gates
 
 ## License

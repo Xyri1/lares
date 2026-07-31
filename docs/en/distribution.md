@@ -74,8 +74,9 @@ These scripts never download. The artifact path is supplied explicitly.
 ```
 
 The macOS uninstall action opens Lares's native confirmation. **Also delete
-Lares data** is unchecked by default. If Lares is already running, use
-**Uninstall Lares…** from its tray instead.
+Lares data** is unchecked by default. Lares has no tray uninstall action: if
+Lares is already running, the command refuses with `Lares is already running;
+quit it and run --uninstall again`. Quit it first, then repeat the command.
 
 ```powershell
 .\scripts\install-local.ps1 install "C:\local\Lares-0.1.0-alpha.4-Windows-x64-unsigned.exe"
@@ -84,8 +85,8 @@ Lares data** is unchecked by default. If Lares is already running, use
 ```
 
 The PowerShell fixture uses silent NSIS mode: omission of `-DeleteData`
-retains data; including it deletes data. Apps & Features and the tray-launched
-uninstaller use the native unchecked checkbox instead.
+retains data; including it deletes data. Apps & Features and the bundled
+`Uninstall Lares.exe` use the native unchecked checkbox instead.
 
 Automated checks redirect every destination to temporary fixture roots. Run
 the Windows-native fixture with:
@@ -129,8 +130,9 @@ Use a clean Apple Silicon Mac running macOS 13 or newer.
 9. Run **Check for Updates…** once. This is the one disclosed app-owned request to
    `https://api.github.com/repos/Xyri1/lares/releases/latest`; verify a manual
    failure/no-update is visible and no update is downloaded or installed.
-10. Choose **Uninstall Lares…**, leave **Also delete Lares data** unchecked,
-    and confirm. Verify the app, any legacy Codex hooks-file and Claude
+10. Quit Lares, then run `/Applications/Lares.app/Contents/MacOS/Lares
+    --uninstall` (or `./scripts/install-local.sh uninstall`). Leave **Also
+    delete Lares data** unchecked, and confirm. Verify the app, any legacy Codex hooks-file and Claude
     settings/MCP entries, and the launcher shims are gone, while imported
     characters, authored expressions, settings, calibration, and position
     remain under Lares application support. The Claude Code and Codex
@@ -162,8 +164,8 @@ Use a clean x64 Windows 10 or Windows 11 machine.
 3. Repeat macOS steps 4–9 for tray-only startup, real import, duplicate/live
    switching, persistence/restart, DND/reset, calibration, both harness plugin
    installs, Codex hook trust, and the one disclosed live update request.
-4. Launch uninstall from the tray or Apps & Features. Leave **Also delete
-   Lares data** unchecked. Verify app and owned integrations are removed and
+4. Quit Lares, then launch uninstall from Apps & Features or the bundled
+   `Uninstall Lares.exe`. Leave **Also delete Lares data** unchecked. Verify app and owned integrations are removed and
    `%APPDATA%\Lares` data is retained (the user-installed plugins stay;
    `/plugin uninstall lares@lares` in Claude Code and `/plugins` in Codex
    remove them).
