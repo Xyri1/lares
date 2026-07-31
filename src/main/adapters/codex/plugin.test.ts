@@ -32,9 +32,13 @@ describe('Codex plugin', () => {
       '.codex-plugin',
       '.mcp.json',
       'README.md',
+      'assets',
       'hooks',
       'skills'
     ])
+    // The marketplace card's only asset. Pinned like skills/ below so the thin
+    // plugin (SPEC §6) cannot accumulate payload behind an allowlisted directory.
+    expect(await readdir(resolve(root, 'assets'))).toEqual(['logo.png'])
     expect(await json('.codex-plugin/plugin.json')).toMatchObject({
       name: 'lares',
       mcpServers: './.mcp.json'
