@@ -7,7 +7,7 @@ import {
   missingCues,
   type CanonicalCue,
   type CueMappings
-} from '../cues'
+} from '../cues.ts'
 import { parseExp3File } from './exp3.ts'
 
 export type CueCoordinates = Vec2 | null
