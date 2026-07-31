@@ -1,13 +1,10 @@
 # Slice 011 — Agent self-expression · DECISIONS
 
-Design reset, 2026-07-31. This is intentionally the slice's only artifact. The
-discarded SPEC, PLAN and decisions prematurely specified a fixed interjection
-table and a third emote branch before establishing that either belonged in the
-product. No implementation is approved by this record.
-
-Research is consolidated in `sdd/research/reasoning-tokens.md`; harness
-instruction delivery remains documented in
-`sdd/research/mcp-instruction-delivery.md`.
+Design folded 2026-08-01. Research remains in
+`sdd/research/reasoning-tokens.md` and
+`sdd/research/mcp-instruction-delivery.md`. This slice now owns two related
+changes: a canonical first-person cue vocabulary for everyday emoting and an
+explicit agent workflow that maps an imported Lar onto that vocabulary.
 
 ---
 
@@ -15,8 +12,8 @@ instruction delivery remains documented in
 *Chosen:* Lares provides a means for an agent to express its own emotional or
 epistemic appraisal; the agent deliberately emits the tool call and Lares
 validates, applies history and renders it. The call is the complete ingress
-signal. *Rejected:* Lares determining that an emotion occurred, whether by
-transcript sentiment, an observer model, hooks, logs or renderer-side inference.
+signal. *Rejected:* Lares determining that an emotion occurred from transcript
+sentiment, an observer model, hooks, logs or renderer-side inference.
 *Rationale:* this is the smallest interface shared by different models and
 harnesses, and it preserves P2, P4 and P11. *Status:* decided by the maintainer.
 
@@ -31,59 +28,149 @@ Lares dependency. *Rationale:* many target models hide or summarize reasoning,
 and Lares must work across them without owning inference or training. *Status:*
 decided by the maintainer.
 
-**011-D3 — Appraisal is semantic; interjections are examples, never protocol
-keys.** *Chosen:* instruction copy describes meaningful changes in the agent's
-own appraisal — discovery, uncertainty, concern, frustration, relief,
-satisfaction — and applies regardless of response language. A call may happen
+**011-D3 — Appraisal is semantic; interjections are examples, never triggers.**
+*Chosen:* instruction copy describes meaningful changes in the agent's own
+appraisal and applies regardless of response language. A call may happen
 before, after or without *aha*, *wait*, or any translated equivalent.
 *Rejected:* word matching; a multilingual interjection lexicon; a `token`
-parameter or fixed token-to-affect table; nearest-neighbor lookup over raw token
+parameter or token-to-affect table; nearest-neighbor lookup over raw token
 embeddings; an external multilingual embedding model at ingress. *Rationale:*
-equivalent meanings often align in contextual model representations, especially
-in middle layers, but raw token embeddings and tokenization are not a portable
-semantic interface. Let the generating model perform the multilingual mapping
-it already knows. *Status:* decided by the maintainer.
+equivalent meanings may align inside a model, but raw tokens and hidden states
+are not a portable client interface. Let the generating model make the semantic
+judgment it already knows how to make. *Status:* decided by the maintainer.
 
-**011-D4 — Test the existing cue interface before changing the wire contract.**
-*Chosen:* the first experiment uses `emote(cue=...)` unchanged. It tests whether
-a language-independent first-person disposition improves voluntary use; it
-does not add a protocol branch. *Rejected now:* special control tokens, an
-appraisal classifier, another model, or a new structured field before the
-existing interface is shown inadequate. *Open fork:* if models reliably detect
-their appraisal but cannot map it cleanly onto character-facing cue semantics,
-a future decision may introduce an `appraisal` event above the cue mapping.
-That fork is not approved here. *Status:* proposed.
+**011-D4 — Six appraisals are the canonical cue vocabulary.** *Chosen:* the
+agent-facing `cue` values are exactly `discovery`, `uncertainty`, `concern`,
+`frustration`, `relief` and `satisfaction` for this version. They mean,
+respectively: new understanding clicks; ambiguity remains; a concrete risk is
+recognized; repeated obstruction is felt; pressure resolves; success or
+correctness is confirmed. The `emote` cue branch accepts only these stable
+protocol symbols. Its existing `params` branch remains a low-level escape hatch
+but is absent from ordinary emoting guidance. *Rejected:* treating the six as
+mere prompt examples while the agent continues choosing artist asset names; an
+open-ended emotion taxonomy in this slice. *Rationale:* a fixed semantic
+interface is language-independent and lets the LLM appraise while Lares chooses
+how the character performs it. *Status:* decided by the maintainer, 2026-08-01;
+supersedes the earlier existing-cue experiment.
 
-**011-D5 — One semantic disposition, reinforced through available harness
-channels.** *Chosen:* once a tool is surfaced, its description and argument
-descriptions are self-contained about first-person, semantic, language-neutral
-use. MCP server instructions carry proactive discovery and the standing
-disposition where the client honors them; harness-native skills reinforce the
-same behavior. *Rejected:* putting the only authoritative behavior in a
-harness-specific skill; assuming optional server instructions reach every
-model; using literal interjections to make deferred tool search relevant.
-*Rationale:* delivery varies, so each adapter may strengthen adoption while the
-tool interface stays one deep, vendor-neutral seam. *Status:* proposed pending
-copy and live delivery evidence.
+**011-D5 — Character packages map canonical cues to performances.** *Chosen:*
+the manifest gains a renderer-neutral `cueMappings` block from canonical cue to
+an existing character performance name. The current artist-named `expressions`
+and renderer cue entries remain the performance inventory; they are available
+to calibration and authoring, not everyday emote selection. More than one
+canonical cue may map to the same performance. Raw Live2D imports begin with no
+canonical mappings; authored Lares packages preserve valid mappings, but
+filenames, directories, VTS hotkeys and metadata never assign them
+automatically. *Rejected:* renaming or modifying artist assets;
+runtime word or embedding inference over asset names; putting mappings in a
+harness. *Rationale:* one small mapping separates semantic protocol identity,
+character identity and renderer assets without replacing the working package
+pipeline. *Status:* decided by the maintainer.
 
-**011-D6 — Compatibility is behavioral, not merely transport-level.** *Chosen:*
-Lares can claim the tool transport works when a harness exposes the interface,
-but proactive emoting is supported only when the model also chooses to call it.
-Exact mid-reasoning or token-adjacent timing is a bonus; the portable baseline
-is a call at the model's first available tool-decision point. A combination
-that never calls still receives the hooks-only baseline and is not repaired by
-daemon-side inference. *Rejected:* promising identical timing or adoption
-across arbitrary models and harnesses; violating P2 to manufacture that claim.
-*Status:* decided by the maintainer.
+**011-D6 — Calibration is an explicit plugin skill named `calibrate-lar`.**
+*Chosen:* the user starts the workflow as `/lares:calibrate-lar` in Claude Code
+or as the **Calibrate Lar** skill in Codex (`$lares:calibrate-lar` when typed).
+It is never implicitly invoked: Claude Code disables model invocation and Codex
+sets `allow_implicit_invocation: false`. Both Lares plugins ship the workflow;
+the old ambient `emoting` skill is deleted. *Rejected:* automatic calibration
+after import; asking every ordinary session to inspect an uncalibrated model;
+keeping a second ambient skill as reinforcement. *Rationale:* calibration is a
+bounded, user-owned workflow, while everyday self-expression is standing MCP
+guidance. *Status:* decided by the maintainer.
 
-**011-D7 — Multilingual behavioral evidence precedes another SPEC or PLAN.**
-*Chosen:* A/B the existing instruction against a semantic disposition across
-hidden-reasoning, visible-reasoning and ordinary models; supported harnesses;
-multiple languages and scripts; code-switching; appraisal shifts without
-interjections; and quoted-word negative cases. Record call precision, density,
-cue choice, timing and task interference. *Rejected:* treating successful MCP
-connection, English examples, exposed reasoning traces, or literature
-frequencies as proof of voluntary self-expression. *Gate:* no implementation
-SPEC or PLAN until the experiment shows which failure is real — discovery,
-instruction following, semantic cue mapping, or harness timing. *Status:*
-decided by the maintainer.
+**011-D7 — Invocation authorizes an automatic, resumable mapping flow.**
+*Chosen:* after explicit invocation, the agent inventories performances,
+assigns obvious multilingual names without interviewing the user, previews and
+asks only where visible meaning is ambiguous, authors a missing expression only
+after the existing user-acceptance gate, maps all six canonical cues and
+verifies completion. Progress persists per mapping; interruption is safe.
+Multiple cues may reuse one performance. *Rejected:* making the user conduct
+the tool sequence manually; guessing opaque visuals; requiring six distinct
+assets. *Rationale:* the user chooses when setup runs, then the agent does all
+work that does not genuinely require human eyesight. *Status:* decided by the
+maintainer.
+
+**011-D8 — The skill orchestrates; the daemon validates and writes.** *Chosen:*
+the skill contains concise workflow instructions and calls Lares MCP tools.
+Only the daemon validates performance names, calibrated affect, canonical keys,
+mapping completeness and persistence. The skill never edits a managed manifest
+or character asset directly and ships no helper script. *Rejected:* filesystem
+instructions in the skill; harness-local calibration state; a script that
+duplicates daemon validation. *Rationale:* one deep server interface gives both
+harnesses identical behavior and preserves P7. *Status:* decided by the
+maintainer.
+
+**011-D9 — MCP instructions own everyday emoting; hooks remain heartbeat.**
+*Chosen:* server instructions and self-contained tool metadata teach sparse,
+first-person, multilingual use of the six canonical cues. The calibration
+skill is the only skill. Existing hooks continue reporting deterministic
+lifecycle state and inject no emoting or calibration instruction. *Rejected:*
+SessionStart instruction injection; calibration invitations in hook output or
+MCP initialization; per-turn injection; an ambient emoting skill. *Rationale:*
+each mechanism has one job, with no duplicated instruction authority or stale
+character readiness in session context. *Status:* decided by the maintainer;
+supersedes the proposed hook bootstrap.
+
+**011-D10 — Calibration is mandatory for canonical-cue playback, not import.**
+*Chosen:* an imported character may be stored, selected and previewed while
+incomplete so the skill can work on the active Lar. Until all six mappings point
+to calibrated performances, `emote(cue=...)` fails closed with a stable
+not-calibrated tool result and does not fall back to artist-name selection.
+Readiness reports zero, partial or complete canonical mappings; completion is
+six of six. *Rejected:* blocking import; silently guessing a raw performance;
+maintaining calibrated and uncalibrated emote interfaces. *Rationale:* one
+stable caller contract is worth a visible setup state, and hooks still provide
+the baseline heartbeat meanwhile. *Status:* decided by the maintainer.
+
+**011-D11 — Compatibility is behavioral and multilingual.** *Chosen:* verify
+both supported harnesses with hidden- and visible-reasoning models, multiple
+languages and scripts, code-switching, appraisal shifts without interjections,
+quoted-word negatives, explicit-only calibration activation and daemon-down
+behavior. Exact token-adjacent timing is a bonus; the portable baseline is a
+call at the first available tool-decision point. *Rejected:* treating MCP
+connection, English examples, exposed reasoning or skill discovery alone as
+proof. *Status:* decided by the maintainer.
+
+**011-D12 — Canonical resolution is an application adapter, not an affect-engine
+concern.** *Chosen:* the MCP/application boundary validates that the active
+character has all six mappings, resolves the canonical cue to a performance,
+then calls Nerves through its existing performance-name interface. Nerves,
+affect history, renderer playback and the scenario harness retain their current
+internal cue vocabulary. *Rejected:* teaching Nerves both canonical and
+character-specific names; rewriting frozen scenario cues or goldens. *Rationale:*
+the adapter is the narrow seam where external semantic protocol meets portable
+character identity, while Nerves already correctly owns performance dynamics.
+*Status:* decided during implementation-readiness review, 2026-08-01.
+
+**011-D13 — The breaking MCP and plugin change is versioned honestly.**
+*Chosen:* `status.protocol_version` becomes `2` and the MCP server advertises
+`2.0.0`; `/v1/mcp` remains the stable transport address so a new skill can
+query an old daemon. The event envelope, runtime discovery file and additive
+`lares/1` manifest format keep their current versions. Both plugins become `0.2.0`.
+**Configure Agent Integrations…** compares installed plugin versions, refreshes
+the marketplace and upgrades a stale Lares plugin instead of reporting it as
+already configured. Calibration checks protocol version before using tools and
+stops with an update instruction on a v1 daemon. *Rejected:* silently removing
+or renaming v1 tools under protocol v1; relying on clean installs. *Rationale:*
+`emote.cue` changes meaning and schema, while `list_cues` is replaced, so old
+daemon/plugin pairings are not compatible. *Status:* decided during
+implementation-readiness review, 2026-08-01.
+
+**011-D14 — Calibration has status, not a tray action.** *Chosen:* the tray
+shows one disabled, read-only `Expression mapping n/6` status row (localized)
+and no calibration button, checkbox or menu command. The row may name
+**Calibrate Lar** but cannot invoke a harness. *Rejected:* retaining **Map
+expressions…** as a second launch surface or disguised toggle. *Rationale:* the
+explicit host skill is now the sole consent and invocation surface. *Status:*
+decided by the maintainer, 2026-08-01.
+
+**011-D15 — Explicit-only activation is a host contract, not daemon
+attestation.** *Chosen:* host metadata prevents implicit skill activation; MCP
+tool descriptions reserve mapping/authoring calls for the user-invoked
+**Calibrate Lar** workflow; the daemon validates every requested mutation but
+does not attempt to prove which prompt caused it. *Rejected:* a client-supplied
+`confirmed` flag, secret token or duplicate daemon workflow state that would
+only simulate user intent. *Rationale:* MCP carries calls, not trustworthy
+prompt provenance. Behavioral acceptance therefore verifies that ordinary
+sessions do not call calibration tools. *Status:* decided during
+implementation-readiness review, 2026-08-01.
