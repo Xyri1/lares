@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { CANONICAL_CUES } from '../cues'
 import {
   loadCharacter,
   mergeRuntimeCompatibility,
@@ -13,6 +14,29 @@ const VALID = {
   format: 'lares/1',
   identity: { name: 'Hiyori', license: 'Live2D FML notice' },
   renderers: { live2d: { model: 'runtime/Hiyori.model3.json' } }
+}
+
+/** Three performances — two calibrated, one not — plus a mapping under test. */
+function mapped(cueMappings: Record<string, unknown>): unknown {
+  return {
+    ...VALID,
+    expressions: {
+      smile: { valence: 0.6, arousal: 0.4 },
+      sad: { valence: -0.6, arousal: 0.3 },
+      blank: null
+    },
+    cueMappings,
+    renderers: {
+      live2d: {
+        ...VALID.renderers.live2d,
+        cues: {
+          smile: { params: { ParamMouthForm: 1 } },
+          sad: { params: { ParamMouthForm: -1 } },
+          blank: { params: { ParamMouthForm: 0 } }
+        }
+      }
+    }
+  }
 }
 
 function writeRuntime(root: string, model = 'Hiyori'): void {
@@ -270,6 +294,65 @@ describe('loadCharacter', () => {
       }
     })
     expect(validateCharacter(uncoordinated).errors.join('\n')).toContain('no affect coordinates')
+  })
+
+  it('treats an absent cueMappings block as zero of six, not an error', () => {
+    const result = loadCharacter(writePackage(VALID))
+    expect(result).toMatchObject({ ok: true, cueMappings: {} })
+    if (result.ok) {
+      expect(result.report.mappedCues).toEqual([])
+      expect(result.report.missingCues).toEqual(CANONICAL_CUES)
+    }
+  })
+
+  it('accepts partial, complete, and duplicate canonical mappings under lares/1', () => {
+    const partial = loadCharacter(writePackage(mapped({ concern: 'sad', relief: 'smile' })))
+    expect(partial).toMatchObject({ ok: true, cueMappings: { concern: 'sad', relief: 'smile' } })
+    if (partial.ok) {
+      expect(partial.report.mappedCues).toEqual(['concern', 'relief'])
+      expect(partial.report.missingCues).toEqual([
+        'discovery',
+        'uncertainty',
+        'frustration',
+        'satisfaction'
+      ])
+    }
+
+    const complete = loadCharacter(
+      writePackage(
+        mapped({
+          discovery: 'smile',
+          uncertainty: 'sad',
+          concern: 'sad',
+          frustration: 'sad',
+          relief: 'smile',
+          satisfaction: 'smile'
+        })
+      )
+    )
+    expect(complete).toMatchObject({ ok: true })
+    if (complete.ok) {
+      expect(complete.report.mappedCues).toEqual(CANONICAL_CUES)
+      expect(complete.report.missingCues).toEqual([])
+    }
+  })
+
+  it('rejects unknown cue keys, unknown performances, and uncalibrated targets', () => {
+    expect(validateCharacter(writePackage(mapped({ joy: 'smile' }))).errors.join('\n')).toContain(
+      'not a canonical cue'
+    )
+    expect(
+      validateCharacter(writePackage(mapped({ relief: 'missing' }))).errors.join('\n')
+    ).toContain('unknown performance')
+    expect(
+      validateCharacter(writePackage(mapped({ relief: 'blank' }))).errors.join('\n')
+    ).toContain('uncalibrated performance')
+    expect(validateCharacter(writePackage(mapped({ relief: 42 }))).errors.join('\n')).toContain(
+      'must name a character performance'
+    )
+    expect(
+      validateCharacter(writePackage({ ...VALID, cueMappings: ['relief'] })).errors.join('\n')
+    ).toContain('cueMappings must be an object')
   })
 
   it('selects the first package alphabetically and diagnoses zero or many packages', () => {

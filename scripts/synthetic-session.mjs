@@ -31,29 +31,39 @@ try {
   await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/v1/mcp`)))
   console.log(client.getInstructions())
 
-  const cuesResult = await client.callTool({ name: 'list_cues', arguments: {} })
-  const cues = JSON.parse(cuesResult.content[0].text)
-  if (cues.length === 0) throw new Error('active character has no cues')
-  const available = new Set(cues.map((cue) => cue.name))
-  const cue = (preferred) => (available.has(preferred) ? preferred : cues[0]?.name)
+  // Tool-contract v2: the six canonical cues are the whole vocabulary, so the
+  // script never inspects the character's own performance names.
+  const before = JSON.parse(
+    (await client.callTool({ name: 'status', arguments: {} })).content[0].text
+  )
+  if (before.protocol_version !== 2) throw new Error(`expected protocol v2, got ${before.protocol_version}`)
+  if (before.missing_cues.length > 0) {
+    throw new Error(`active character is not calibrated: missing ${before.missing_cues.join(', ')}`)
+  }
+
+  const emote = async (cue) => {
+    const result = await client.callTool({ name: 'emote', arguments: { cue, duration_s: 2 } })
+    if (result.isError) throw new Error(`emote ${cue} failed: ${result.content[0].text}`)
+    console.log(result.content[0].text)
+  }
 
   await event('SessionStart')
-  await client.callTool({ name: 'emote', arguments: { cue: cue('focused'), duration_s: 2 } })
+  await emote('discovery')
 
   await event('PreToolUse', { tool_name: 'shell' })
   await event('PostToolUseFailure', { tool_name: 'shell', error: 'synthetic failure 1' })
   await event('PostToolUseFailure', { tool_name: 'shell', error: 'synthetic failure 2' })
   await event('PostToolUseFailure', { tool_name: 'shell', error: 'synthetic failure 3' })
   await sleep(2100)
-  await client.callTool({ name: 'emote', arguments: { cue: cue('frustrated'), duration_s: 2 } })
+  await emote('frustration')
 
   await event('PostToolUse', { tool_name: 'shell' })
   await sleep(2100)
-  await client.callTool({ name: 'emote', arguments: { cue: cue('pleased'), duration_s: 2 } })
+  await emote('relief')
 
   await event('Stop')
   await sleep(2100)
-  await client.callTool({ name: 'emote', arguments: { cue: cue('pleased'), duration_s: 2 } })
+  await emote('satisfaction')
 
   const status = await client.callTool({ name: 'status', arguments: {} })
   console.log(status.content[0].text)

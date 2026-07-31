@@ -295,9 +295,9 @@ export class Nerves {
       this.options.revertPreview?.()
       return { status: 'reverted' }
     }
-    const hasCue = Object.hasOwn(raw, 'cue')
+    const hasPerformance = Object.hasOwn(raw, 'performance')
     const hasParams = Object.hasOwn(raw, 'params')
-    if (hasCue === hasParams) throw new Error('exactly one of cue or params is required')
+    if (hasPerformance === hasParams) throw new Error('exactly one of performance or params is required')
     if (this.inventory === null) throw new Error('body inventory is not available yet')
 
     if (hasParams) {
@@ -307,21 +307,25 @@ export class Nerves {
       return { status: 'previewing' }
     }
 
-    if (typeof raw.cue !== 'string' || !raw.cue || !Object.hasOwn(this.cues, raw.cue)) {
-      throw new Error(`unknown cue "${String(raw.cue)}"`)
+    if (
+      typeof raw.performance !== 'string' ||
+      !raw.performance ||
+      !Object.hasOwn(this.cues, raw.performance)
+    ) {
+      throw new Error(`unknown performance "${String(raw.performance)}"`)
     }
-    const playback = this.resolvedCues.get(raw.cue)
+    const playback = this.resolvedCues.get(raw.performance)
     if (playback && 'params' in playback) {
       this.options.preview?.({ params: playback.params })
       this.previewExpiresAt = nowMs + AUTHORING_PREVIEW_MS
       return { status: 'previewing' }
     }
     if (playback && 'motion' in playback) {
-      this.options.preview?.({ cue: raw.cue })
+      this.options.preview?.({ cue: raw.performance })
       this.previewExpiresAt = null
       return { status: 'played' }
     }
-    throw new Error(`cue "${raw.cue}" has no parameters in the active body`)
+    throw new Error(`performance "${raw.performance}" has no parameters in the active body`)
   }
 
   clampParams(raw: unknown): Record<string, number> {
@@ -404,16 +408,16 @@ export class Nerves {
   status(nowMs: number): {
     active_character: string
     sessions: SessionSummary
-    protocol_version: 1
+    protocol_version: 2
     active_expression: string | null
-    uncalibrated_cues: number
+    uncalibrated_performances: number
   } {
     const active = this.snapshot().expressionStack[0]?.cueOrFreeform
     return {
       active_character: this.character,
       sessions: this.sessions.summary(nowMs),
-      protocol_version: 1,
-      uncalibrated_cues: Object.values(this.cues).filter((cue) => cue === null).length,
+      protocol_version: 2,
+      uncalibrated_performances: Object.values(this.cues).filter((cue) => cue === null).length,
       active_expression:
         active === undefined
           ? null

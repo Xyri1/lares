@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { CALIBRATION_INVITE } from '../calibration'
+import { CANONICAL_CUES } from '../cues'
 import { createServer, type ServerDeps } from './server'
 
 const event = {
@@ -14,28 +14,29 @@ const event = {
 describe('createServer', () => {
   const ingested: unknown[] = []
   const emoteSources: string[] = []
+  const emoteArgs: unknown[] = []
   const clients: Client[] = []
   let app: ReturnType<typeof createServer>
   let port: number
-  let calibrationArmed: boolean
 
   beforeEach(async () => {
     ingested.length = 0
     emoteSources.length = 0
-    calibrationArmed = false
+    emoteArgs.length = 0
     const deps: ServerDeps = {
       ingest: (envelope) => void ingested.push(envelope),
-      emote: (_args, source) => {
+      emote: (args, source) => {
         emoteSources.push(source)
+        emoteArgs.push(args)
         return { played: true }
       },
-      listCues: () => [{ id: 'pleased' }],
+      listPerformances: () => ({ performances: [{ name: 'Smile' }], missing_cues: [] }),
       status: () => ({ active: 'hiyori' }),
       listParameters: () => [{ id: 'ParamMouthForm' }],
       previewExpression: (args) => ({ preview: args }),
+      mapCue: (args) => ({ mapped: args }),
       saveExpression: (args) => ({ saved: args }),
-      updateExpression: (args) => ({ updated: args }),
-      sessionInstructions: () => (calibrationArmed ? CALIBRATION_INVITE : undefined)
+      updateExpression: (args) => ({ updated: args })
     }
     app = createServer(deps)
     port = await app.start(0)
@@ -112,24 +113,32 @@ describe('createServer', () => {
 
   it('round-trips the tools with stateful MCP sessions', async () => {
     const { client: first, transport: firstTransport } = await client()
-    expect(first.getInstructions()).toContain('meaningful beats')
     expect((await first.listTools()).tools.map((tool) => tool.name)).toEqual([
       'emote',
-      'list_cues',
+      'list_performances',
       'status',
       'list_parameters',
       'preview_expression',
+      'map_cue',
       'save_expression',
       'update_expression'
     ])
-    expect(await first.callTool({ name: 'list_cues', arguments: {} })).toMatchObject({
-      content: [{ type: 'text', text: '[{"id":"pleased"}]' }]
+    expect(await first.callTool({ name: 'list_performances', arguments: {} })).toMatchObject({
+      content: [{ type: 'text', text: '{"performances":[{"name":"Smile"}],"missing_cues":[]}' }]
     })
     expect(await first.callTool({ name: 'status', arguments: {} })).toMatchObject({
       content: [{ type: 'text', text: '{"active":"hiyori"}' }]
     })
-    expect(await first.callTool({ name: 'emote', arguments: { cue: 'pleased' } })).toMatchObject({
+    expect(await first.callTool({ name: 'emote', arguments: { cue: 'relief' } })).toMatchObject({
       content: [{ type: 'text', text: '{"played":true}' }]
+    })
+    expect(
+      await first.callTool({
+        name: 'map_cue',
+        arguments: { cue: 'discovery', performance: 'Smile' }
+      })
+    ).toMatchObject({
+      content: [{ type: 'text', text: '{"mapped":{"cue":"discovery","performance":"Smile"}}' }]
     })
     expect(await first.callTool({ name: 'list_parameters', arguments: {} })).toMatchObject({
       content: [{ type: 'text', text: '[{"id":"ParamMouthForm"}]' }]
@@ -160,7 +169,7 @@ describe('createServer', () => {
     ).not.toMatchObject({ isError: true })
 
     const { client: second } = await client()
-    await second.callTool({ name: 'emote', arguments: { cue: 'pleased' } })
+    await second.callTool({ name: 'emote', arguments: { cue: 'relief' } })
     expect(emoteSources).toHaveLength(2)
     expect(new Set(emoteSources).size).toBe(2)
     expect(emoteSources.every((source) => source.startsWith('mcp:'))).toBe(true)
@@ -180,28 +189,69 @@ describe('createServer', () => {
     expect(closed.status).toBe(404)
   })
 
-  it('adds the calibration invite only to sessions initialized while armed', async () => {
-    const { client: existing } = await client()
-    const base = existing.getInstructions()
-    expect(base).toContain('meaningful beats')
-    expect(base).not.toContain(CALIBRATION_INVITE)
+  it('publishes the canonical enum and no free-string cue', async () => {
+    const { client: value } = await client()
+    const tools = (await value.listTools()).tools
+    const emote = tools.find((tool) => tool.name === 'emote')!
+    const properties = emote.inputSchema.properties as Record<string, { enum?: unknown }>
+    expect(properties.cue.enum).toEqual([...CANONICAL_CUES])
+    expect(
+      (tools.find((tool) => tool.name === 'map_cue')!.inputSchema.properties as Record<
+        string,
+        { enum?: unknown }
+      >).cue.enum
+    ).toEqual([...CANONICAL_CUES])
 
-    calibrationArmed = true
-    const { client: armed } = await client()
-    expect(armed.getInstructions()).toContain('meaningful beats')
-    expect(armed.getInstructions()).toContain(CALIBRATION_INVITE)
-    expect(existing.getInstructions()).toBe(base)
+    // The schema is the whole vocabulary, so cue discovery is gone (SPEC §2).
+    expect(tools.map((tool) => tool.name)).not.toContain('list_cues')
+    expect(await value.callTool({ name: 'emote', arguments: { cue: 'Smile' } })).toMatchObject({
+      isError: true
+    })
+    expect(emoteSources).toHaveLength(0)
 
-    calibrationArmed = false
-    const { client: later } = await client()
-    expect(later.getInstructions()).toBe(base)
+    // The params escape hatch keeps its free shape and reaches the app untouched.
+    expect(
+      await value.callTool({
+        name: 'emote',
+        arguments: { params: { ParamMouthForm: 1 }, label: 'wry', intensity: 0.5 }
+      })
+    ).not.toMatchObject({ isError: true })
+    expect(emoteArgs).toEqual([{ params: { ParamMouthForm: 1 }, label: 'wry', intensity: 0.5 }])
+  })
+
+  it('teaches sparse first-person semantics inside both length budgets', async () => {
+    const { client: value } = await client()
+    const instructions = value.getInstructions()!
+
+    // SPEC §5: a client that truncates server guidance still gets a usable rule.
+    const head = instructions.slice(0, 512)
+    expect(head).toContain('emote')
+    for (const cue of CANONICAL_CUES) expect(head).toContain(cue)
+    expect(head).toMatch(/appraisal/)
+    expect(instructions.length).toBeLessThan(2000)
+
+    expect(instructions).toMatch(/never the user’s feelings/)
+    expect(instructions).toMatch(/every language/)
+    expect(instructions).toMatch(/no word triggers a call/)
+    expect(instructions).toMatch(/silently/)
+    expect(instructions).toContain('character_not_calibrated')
+    // 011-D9: no calibration invitation, no lifecycle checklist.
+    expect(instructions).not.toMatch(/calibrat(e|ion) (Lar|your)/i)
+    expect(instructions).not.toContain('list_cues')
+    expect(instructions).not.toContain('map_cue')
+  })
+
+  it('keeps every session on the same instructions', async () => {
+    const { client: first } = await client()
+    const { client: second } = await client()
+    expect(second.getInstructions()).toBe(first.getInstructions())
   })
 
   it('rejects a port collision without scanning', async () => {
     const colliding = createServer({
       ingest: () => undefined,
       emote: () => undefined,
-      listCues: () => [],
+      listPerformances: () => ({ performances: [], missing_cues: [] }),
       status: () => ({})
     })
     await expect(colliding.start(port)).rejects.toMatchObject({ code: 'EADDRINUSE' })

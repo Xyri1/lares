@@ -13,7 +13,6 @@ export interface AppConfig {
   doNotDisturb: boolean
   launchAtLogin: boolean
   automaticallyCheckForUpdates: boolean
-  calibrationArmed: boolean
   language: Language
 }
 
@@ -22,7 +21,6 @@ export const DEFAULT_CONFIG: AppConfig = {
   doNotDisturb: false,
   launchAtLogin: false,
   automaticallyCheckForUpdates: true,
-  calibrationArmed: false,
   language: 'system'
 }
 
@@ -40,10 +38,6 @@ export function parseConfig(raw: unknown): AppConfig {
       typeof value.automaticallyCheckForUpdates === 'boolean'
         ? value.automaticallyCheckForUpdates
         : DEFAULT_CONFIG.automaticallyCheckForUpdates,
-    calibrationArmed:
-      typeof value.calibrationArmed === 'boolean'
-        ? value.calibrationArmed
-        : DEFAULT_CONFIG.calibrationArmed,
     language: LANGUAGES.includes(value.language as Language)
       ? (value.language as Language)
       : DEFAULT_CONFIG.language

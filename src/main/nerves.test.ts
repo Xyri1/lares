@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import {
+  performanceInventory,
+  resolveCanonicalCue,
+  statusMappings,
+  type CanonicalCue,
+  type CueMappings
+} from './cues'
 import { Nerves } from './nerves'
 import { createServer } from './server/server'
 
@@ -102,9 +109,16 @@ describe('Nerves emote ingress', () => {
     expect(nerves.listCues()[0]).toMatchObject({ name: 'pleased', source: 'bundled' })
     expect(nerves.status(0)).toMatchObject({
       active_character: 'Hiyori',
-      protocol_version: 1,
+      protocol_version: 2,
       sessions: { baseline: 'thinking', sessions: [{ session_id: 's1' }] }
     })
+  })
+
+  it('keeps its performance-name vocabulary out of the canonical protocol (011-D12)', () => {
+    const nerves = new Nerves('Hiyori', CUES, 0)
+    expect(nerves.emote({ cue: 'pleased' }, 'agent', 0)).toEqual({ status: 'played' })
+    expect(() => nerves.emote({ cue: 'satisfaction' }, 'agent-2', 0)).toThrow('unknown cue')
+    expect(nerves.listCues().map((cue) => cue.name)).toEqual(['pleased', 'frustrated'])
   })
 
   it('keeps null-coordinate cues directly emote-able but out of autonomous selection', () => {
@@ -122,7 +136,7 @@ describe('Nerves emote ingress', () => {
       calibrated: false,
       source: 'bundled'
     })
-    expect(nerves.status(0).uncalibrated_cues).toBe(1)
+    expect(nerves.status(0).uncalibrated_performances).toBe(1)
   })
 
   it('resolves cue params through inventory and holds, replaces, reverts, and times out previews', () => {
@@ -157,7 +171,7 @@ describe('Nerves emote ingress', () => {
     expect(nerves.previewExpression({ params: { ParamMouthForm: -9 } }, 100)).toEqual({
       status: 'previewing'
     })
-    expect(nerves.previewExpression({ cue: 'smile' }, 200)).toEqual({ status: 'previewing' })
+    expect(nerves.previewExpression({ performance: 'smile' }, 200)).toEqual({ status: 'previewing' })
     expect(previews).toEqual([
       { params: { ParamMouthForm: -1 } },
       { params: { ParamMouthForm: 1 } }
@@ -167,7 +181,7 @@ describe('Nerves emote ingress', () => {
     nerves.tick(60_200)
     expect(reverts).toBe(1)
 
-    expect(nerves.previewExpression({ cue: 'wave' }, 70_000)).toEqual({ status: 'played' })
+    expect(nerves.previewExpression({ performance: 'wave' }, 70_000)).toEqual({ status: 'played' })
     expect(previews.at(-1)).toEqual({ cue: 'wave' })
     expect(nerves.previewExpression({}, 70_001)).toEqual({ status: 'reverted' })
     expect(reverts).toBe(2)
@@ -189,7 +203,7 @@ describe('Nerves emote ingress', () => {
     expect(nerves.cueValidationErrors()).toEqual([
       'Cue "bad": unknown parameter "Missing"'
     ])
-    expect(() => nerves.previewExpression({ cue: 'bad' }, 0)).toThrow(
+    expect(() => nerves.previewExpression({ performance: 'bad' }, 0)).toThrow(
       'has no parameters'
     )
   })
@@ -264,14 +278,20 @@ describe('Nerves emote ingress', () => {
     expect(nerves.snapshot().expressionStack).toEqual([])
   })
 
-  it('round-trips the real MCP server into the performance snapshot', async () => {
-    const nowMs = Date.now()
-    const nerves = new Nerves('Hiyori', CUES, nowMs)
+  it('fails an incomplete character closed without touching affect or playback', async () => {
+    const nerves = new Nerves('Imported', CUES, 0, undefined, {})
+    nerves.setInventory(INVENTORY)
+    const missing: CanonicalCue[] = ['uncertainty', 'concern', 'frustration', 'relief', 'satisfaction']
     const server = createServer({
       ingest: (envelope, at) => nerves.ingest(envelope, at),
-      emote: (args, source, at) => nerves.emote(args, source, at),
-      listCues: () => nerves.listCues(),
-      status: (at) => nerves.status(at)
+      emote: (args, source, at) => {
+        const raw = args as Record<string, unknown>
+        if (!Object.hasOwn(raw, 'cue')) return nerves.emote(raw, source, at)
+        const { cue, performance } = resolveCanonicalCue(raw.cue, { discovery: 'pleased' }, missing)
+        return { ...nerves.emote({ ...raw, cue: performance }, source, at), cue, performance }
+      },
+      listPerformances: () => performanceInventory(nerves.listCues(), {}, { discovery: 'pleased' }),
+      status: (at) => ({ ...nerves.status(at), ...statusMappings({ discovery: 'pleased' }, missing) })
     })
     const port = await server.start(0)
     const client = new Client({ name: 'nerves-test', version: '1.0.0' })
@@ -279,23 +299,82 @@ describe('Nerves emote ingress', () => {
       await client.connect(
         new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/v1/mcp`))
       )
+      const before = nerves.snapshot()
+      const refused = (await client.callTool({
+        name: 'emote',
+        arguments: { cue: 'discovery' }
+      })) as { isError?: boolean; content: Array<{ text: string }> }
+      expect(refused.isError).toBe(true)
+      expect(refused.content[0].text).toBe(
+        'character_not_calibrated: missing uncertainty, concern, frustration, relief, satisfaction'
+      )
+      expect(nerves.snapshot()).toEqual(before)
+
+      // The params escape hatch is unaffected by canonical readiness.
+      expect(
+        (await client.callTool({ name: 'emote', arguments: { params: { ParamMouthForm: 1 } } })) as {
+          isError?: boolean
+        }
+      ).not.toMatchObject({ isError: true })
+      expect(nerves.snapshot().expressionStack).toHaveLength(1)
+    } finally {
+      await client.close()
+      await server.stop()
+    }
+  })
+
+  it('round-trips the real MCP server through canonical resolution into the snapshot', async () => {
+    const nowMs = Date.now()
+    const nerves = new Nerves('Hiyori', CUES, nowMs)
+    // Duplicate targets are legal (011-D5); both share the performance's history.
+    const mappings: CueMappings = {
+      discovery: 'pleased',
+      uncertainty: 'frustrated',
+      concern: 'frustrated',
+      frustration: 'frustrated',
+      relief: 'pleased',
+      satisfaction: 'pleased'
+    }
+    const server = createServer({
+      ingest: (envelope, at) => nerves.ingest(envelope, at),
+      emote: (args, source, at) => {
+        const raw = args as Record<string, unknown>
+        const { cue, performance } = resolveCanonicalCue(raw.cue, mappings, [])
+        return { ...nerves.emote({ ...raw, cue: performance }, source, at), cue, performance }
+      },
+      listPerformances: () => performanceInventory(nerves.listCues(), {}, mappings),
+      status: (at) => ({ ...nerves.status(at), ...statusMappings(mappings, []) })
+    })
+    const port = await server.start(0)
+    const client = new Client({ name: 'nerves-test', version: '1.0.0' })
+    const parse = (result: unknown): unknown =>
+      JSON.parse((result as { content: Array<{ text: string }> }).content[0].text)
+    try {
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/v1/mcp`))
+      )
       expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
         'emote',
-        'list_cues',
+        'list_performances',
         'status',
         'list_parameters',
         'preview_expression',
+        'map_cue',
         'save_expression',
         'update_expression'
       ])
-      await client.callTool({ name: 'emote', arguments: { cue: 'pleased' } })
+      expect(parse(await client.callTool({ name: 'emote', arguments: { cue: 'satisfaction' } }))).toEqual({
+        status: 'played',
+        cue: 'satisfaction',
+        performance: 'pleased'
+      })
       expect(nerves.snapshot().expressionStack[0].cueOrFreeform).toBe('pleased')
-      const status = await client.callTool({ name: 'status', arguments: {} })
-      const content = (status as { content: Array<{ text: string }> }).content
-      expect(JSON.parse(content[0].text)).toMatchObject({
+      expect(parse(await client.callTool({ name: 'status', arguments: {} }))).toMatchObject({
         active_character: 'Hiyori',
-        protocol_version: 1,
-        active_expression: 'pleased'
+        protocol_version: 2,
+        active_expression: 'pleased',
+        missing_cues: [],
+        cue_mappings: mappings
       })
     } finally {
       await client.close()

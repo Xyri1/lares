@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { PLUGIN_VERSION } from '../../integrations'
 
 const root = resolve('plugins/claude-code')
 
@@ -35,7 +36,13 @@ describe('Claude Code plugin', () => {
       'hooks',
       'skills'
     ])
-    expect(await json('.claude-plugin/plugin.json')).toMatchObject({ name: 'lares' })
+    // 011-D13: the v2 cue contract makes an older plugin genuinely incompatible.
+    // PLUGIN_VERSION is what the upgrade comparator trusts; a manifest that
+    // drifts from it would report stale installs as already configured.
+    expect(await json('.claude-plugin/plugin.json')).toMatchObject({
+      name: 'lares',
+      version: PLUGIN_VERSION
+    })
     expect(await json('.mcp.json')).toEqual({
       mcpServers: { lares: { type: 'http', url: 'http://127.0.0.1:21473/v1/mcp' } }
     })
@@ -68,12 +75,45 @@ describe('Claude Code plugin', () => {
     }
   })
 
-  it('ships the emoting skill as emote-only reinforcement', async () => {
-    expect(await readdir(resolve(root, 'skills'))).toEqual(['emoting'])
-    const skill = await readFile(resolve(root, 'skills/emoting/SKILL.md'), 'utf8')
-    expect(skill).toMatch(/^---\nname: emoting\ndescription: >-\n/)
-    expect(skill).toContain('Never emote per tool call')
-    // D32: calibration is pull-only — the skill must not surface authoring.
-    expect(skill).not.toMatch(/list_parameters|preview_expression|save_expression|update_expression|calibrat/i)
+  it('ships calibrate-lar as the only skill, invocable by the user alone', async () => {
+    // 011-D6: everyday emoting guidance moved to the MCP server instructions.
+    expect(await readdir(resolve(root, 'skills'))).toEqual(['calibrate-lar'])
+    const skill = await readFile(resolve(root, 'skills/calibrate-lar/SKILL.md'), 'utf8')
+    const [, frontmatter = ''] = /^---\n([\s\S]*?)\n---\n/.exec(skill) ?? []
+    expect(frontmatter).toContain('name: calibrate-lar')
+    expect(frontmatter).toContain('disable-model-invocation: true')
+    // The description must not read as an ordinary "react to this" request.
+    expect(frontmatter).toMatch(/calibrate|map/i)
+    expect(frontmatter).not.toMatch(/emoting|emotional arc|how it feels|meaningful beat/i)
+    expect(skill).toMatch(/\blares\b.*MCP server/)
+    expect(skill).not.toMatch(/list_cues/)
+  })
+
+  it('encodes the load-bearing calibration workflow steps', async () => {
+    const skill = await readFile(resolve(root, 'skills/calibrate-lar/SKILL.md'), 'utf8')
+    const step = (pattern: RegExp): number => {
+      const index = skill.search(pattern)
+      expect(index, String(pattern)).toBeGreaterThan(-1)
+      return index
+    }
+    // SPEC §6 step 1: the protocol check gates every other tool call.
+    const status = step(/Call `status` first/)
+    expect(status).toBeLessThan(step(/`list_performances`/))
+    expect(skill).toMatch(/protocol_version` is not `2`/)
+    expect(skill).toMatch(/No `active_character`/)
+    expect(skill).toMatch(/`missing_cues` is empty/)
+    // Steps 3–5: preserve, judge categories, preview what is opaque, reuse.
+    expect(skill).toMatch(/Keep them|preserv/i)
+    expect(skill).toMatch(/never ask the user for a number/i)
+    expect(skill).toMatch(/keep the Lar visible/i)
+    expect(skill).toMatch(/motion.*plays once|plays once.*motion/is)
+    expect(skill).toMatch(/Warn the user/i)
+    expect(skill).toMatch(/Reuse one performance for several cues/i)
+    expect(skill).toMatch(/save_expression[^.]*only after the user accepts/is)
+    // Step 7: completion is the daemon's answer, not a count of names sent.
+    expect(skill).toMatch(/never inferred from the names/i)
+    // 011-D8: the skill orchestrates, the daemon validates and writes.
+    expect(skill).toMatch(/[Nn]ever edit a character\s+manifest/)
+    expect(skill).not.toMatch(/\.json|manifest\.json|Write|Bash\(/)
   })
 })

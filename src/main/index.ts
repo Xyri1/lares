@@ -35,6 +35,7 @@ import {
   type Exp3Parameter
 } from './characters/exp3'
 import {
+  mapCue as mapCharacterCue,
   saveExpression as saveCharacterExpression,
   updateExpression as updateCharacterExpression
 } from './characters/authoring'
@@ -62,13 +63,16 @@ import {
   type CharacterSwitcher,
   type CharacterSwitchResult
 } from './characters/switch'
-import {
-  CALIBRATION_INVITE,
-  calibrationState,
-  reconcileCalibrationArmed,
-  toggleCalibration
-} from './calibration'
+import { calibrationLabel } from './calibration'
 import { DEFAULT_CONFIG, loadConfig, saveConfig, type AppConfig, type Scale } from './config'
+import {
+  CANONICAL_CUES,
+  performanceInventory,
+  resolveCanonicalCue,
+  statusMappings,
+  type CanonicalCue,
+  type CueMappings
+} from './cues'
 import { DensityLog } from './densityLog'
 import { errorMessage } from './errors'
 import { L, resolveLocale, setLocale } from './strings'
@@ -201,11 +205,6 @@ function activeCharacter():
 function activeCalibrationReport() {
   const selected = activeCharacter()
   return 'error' in selected ? null : selected.character.report
-}
-
-function reconcileActiveCalibration(): boolean {
-  const report = activeCalibrationReport()
-  return report ? reconcileCalibrationArmed(appConfig, report) : false
 }
 
 export async function switchCharacter(manifestPath: string): Promise<CharacterSwitchResult> {
@@ -514,6 +513,11 @@ async function startNerves(): Promise<void> {
     liveNerves!.reloadCues(fresh.expressions, cueSources(cueDefinitions))
     return fresh
   }
+  // 011-D12: the canonical vocabulary stops here. Mappings and readiness ride
+  // on the active selection, so they change atomically with the character.
+  const activeMappings = (): CueMappings => currentSelection?.character.cueMappings ?? {}
+  const activeMissing = (): readonly CanonicalCue[] =>
+    currentSelection?.character.report.missingCues ?? CANONICAL_CUES
   if (currentSelection) {
     characterAssets = new CharacterAssetState(dirname(currentSelection.manifestPath))
     characterLoadBroker = new CharacterLoadBroker(characterAssets, liveCharacterBody, 30_000)
@@ -599,15 +603,45 @@ async function startNerves(): Promise<void> {
       densityLog?.recordBaseline(liveNerves!.status(nowMs).sessions.baseline, nowMs)
     },
     emote: (args, source, nowMs) => {
-      const result = liveNerves!.emote(args, source, nowMs)
-      densityLog?.recordEmote(source, args, result, nowMs)
-      return result
+      const raw = object(args, 'emote')
+      if (!Object.hasOwn(raw, 'cue')) {
+        const result = liveNerves!.emote(raw, source, nowMs)
+        densityLog?.recordEmote(source, raw, result, nowMs)
+        return result
+      }
+      const { cue, performance } = resolveCanonicalCue(raw.cue, activeMappings(), activeMissing())
+      const result = liveNerves!.emote({ ...raw, cue: performance }, source, nowMs)
+      densityLog?.recordEmote(source, { ...raw, cue, performance }, result, nowMs)
+      return {
+        status: result.status,
+        cue,
+        performance,
+        ...(result.warning === undefined ? {} : { warning: result.warning })
+      }
     },
-    listCues: () => liveNerves!.listCues(),
-    status: (nowMs) => liveNerves!.status(nowMs),
+    listPerformances: () =>
+      performanceInventory(liveNerves!.listCues(), cueDefinitions, activeMappings()),
+    status: (nowMs) => ({
+      ...liveNerves!.status(nowMs),
+      ...statusMappings(activeMappings(), activeMissing())
+    }),
     listParameters: () => liveNerves!.listParameters(),
     previewExpression: (args, nowMs) => liveNerves!.previewExpression(args, nowMs),
-    saveExpression: async (raw) => {
+    mapCue: (raw) => {
+      if (!currentSelection) throw new Error('No active character')
+      const args = object(raw, 'map_cue')
+      const result = mapCharacterCue(currentSelection.manifestPath, args.cue, args.performance)
+      if (!result.ok) throw new Error(result.error)
+      refreshCharacterState()
+      trayShell?.refresh()
+      return {
+        status: 'mapped',
+        cue: args.cue,
+        performance: args.performance,
+        missing_cues: result.report.missingCues
+      }
+    },
+    saveExpression: (raw) => {
       if (!currentSelection) throw new Error('No active character')
       const args = object(raw, 'save_expression')
       const params = liveNerves!.clampParams(args.params)
@@ -619,10 +653,10 @@ async function startNerves(): Promise<void> {
       )
       if (!result.ok) throw new Error(result.error)
       refreshCharacterState()
-      await syncCalibrationAfterAuthoring()
+      trayShell?.refresh()
       return { saved: args.name, report: result.report }
     },
-    updateExpression: async (raw) => {
+    updateExpression: (raw) => {
       if (!currentSelection) throw new Error('No active character')
       const args = object(raw, 'update_expression')
       const params = args.params === undefined ? undefined : liveNerves!.clampParams(args.params)
@@ -634,11 +668,9 @@ async function startNerves(): Promise<void> {
       })
       if (!result.ok) throw new Error(result.error)
       refreshCharacterState()
-      await syncCalibrationAfterAuthoring()
+      trayShell?.refresh()
       return { updated: args.name, report: result.report }
-    },
-    sessionInstructions: () =>
-      appConfig.calibrationArmed ? CALIBRATION_INVITE : undefined
+    }
   })
 
   try {
@@ -1065,17 +1097,6 @@ async function configureIntegrationsFromTray(): Promise<void> {
   }
 }
 
-async function syncCalibrationAfterAuthoring(): Promise<void> {
-  if (reconcileActiveCalibration()) {
-    try {
-      await saveConfig(configFile(), appConfig)
-    } catch (error) {
-      dialog.showErrorBox(L.couldNotSaveSettings, errorMessage(error))
-    }
-  }
-  trayShell?.refresh()
-}
-
 /** Where she goes: the remembered spot snapped into a visible work area (A4),
  *  or the bottom-right corner of the primary display on a first run. */
 function overlayBounds(
@@ -1326,11 +1347,6 @@ async function uninstallFromTray(): Promise<void> {
 }
 
 function createTray(): void {
-  if (reconcileActiveCalibration()) {
-    void saveConfig(configFile(), appConfig).catch((error) => {
-      dialog.showErrorBox(L.couldNotSaveSettings, errorMessage(error))
-    })
-  }
   // Tray wants 16pt (+32px @2x); the raw 1024px icon renders full-size on macOS.
   // ponytail: colored mark, not a monochrome Template image — swap in a white
   // silhouette asset if it blends into dark menu bars.
@@ -1389,11 +1405,7 @@ function createTray(): void {
       const selected = activeCharacter()
       return 'error' in selected ? undefined : selected.manifestPath
     },
-    switchCharacter: async (manifestPath) => {
-      const result = await switchCharacter(manifestPath)
-      if (result.ok) reconcileActiveCalibration()
-      return result
-    },
+    switchCharacter: (manifestPath) => switchCharacter(manifestPath),
     importCharacter: (source) => importCharacterPackage(charactersRoot(), source),
     discardImportedCharacter: (manifestPath) =>
       discardManagedCharacter(charactersRoot(), manifestPath),
@@ -1430,21 +1442,7 @@ function createTray(): void {
     resetPosition: resetOverlayPosition,
     calibrationStatus: () => {
       const report = activeCalibrationReport()
-      return calibrationState(report ?? { calibrated: 0, uncalibrated: 0 }).label
-    },
-    canMapExpressions: () => {
-      const report = activeCalibrationReport()
-      return report !== null && !calibrationState(report).complete
-    },
-    onMapExpressions: async () => {
-      const report = activeCalibrationReport()
-      if (!report) throw new Error('No active character')
-      await toggleCalibration(
-        appConfig,
-        report,
-        (text) => clipboard.writeText(text),
-        () => saveConfig(configFile(), appConfig)
-      )
+      return report ? calibrationLabel(report) : L.calibrationUnavailable
     },
     onAutomaticUpdatesChanged: () => updateChecks?.automaticPreferenceChanged(),
     onCheckForUpdates: () => updateChecks?.manual(),

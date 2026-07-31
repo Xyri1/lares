@@ -53,11 +53,7 @@ function setup(overrides: Partial<TrayShellDependencies> = {}) {
       effects.push(`login:${enabled}`)
     },
     resetPosition: () => effects.push('reset'),
-    calibrationStatus: () => '🔴 Expressions not mapped',
-    canMapExpressions: () => true,
-    onMapExpressions: () => {
-      effects.push('map')
-    },
+    calibrationStatus: () => 'Expression mapping 0/6 — run Calibrate Lar',
     onAutomaticUpdatesChanged: (enabled) => {
       effects.push(`automatic:${enabled}`)
     },
@@ -80,8 +76,7 @@ describe('tray shell', () => {
       ...DEFAULT_CONFIG,
       scale: 1.5,
       doNotDisturb: true,
-      launchAtLogin: true,
-      calibrationArmed: true
+      launchAtLogin: true
     }
     const state = setup({ config })
 
@@ -90,11 +85,26 @@ describe('tray shell', () => {
     expect(item(state.menu, 'Hiyori (2)').type).toBe('radio')
     for (const label of ['Import Character…', 'Open Character Folder', '50%', '75%', '100%',
       '125%', '150%', 'Do Not Disturb', 'Launch at Login', 'Reset Position',
-      '🔴 Expressions not mapped', 'Map expressions…', 'Automatically Check for Updates',
+      'Expression mapping 0/6 — run Calibrate Lar', 'Automatically Check for Updates',
       'Check for Updates…', 'Configure Agent Integrations…', 'Quit']) {
       expect(item(state.menu, label)).toBeTruthy()
     }
-    expect(item(state.menu, 'Map expressions…').checked).toBe(true)
+  })
+
+  it('shows mapping readiness as one disabled row and no calibration action (011-D14)', () => {
+    let mapped = 4
+    const state = setup({ calibrationStatus: () => `Expression mapping ${mapped}/6` })
+
+    const row = item(state.menu, 'Expression mapping 4/6')
+    expect(row.enabled).toBe(false)
+    expect(row.click).toBeUndefined()
+    expect(row.type).toBeUndefined()
+    expect(state.menu.flatMap((entry) => [entry, ...(entry.submenu ?? [])]).map((entry) => entry.label))
+      .not.toContain('Map expressions…')
+
+    mapped = 6
+    state.shell.refresh()
+    expect(item(state.menu, 'Expression mapping 6/6')).toBeTruthy()
   })
 
   it('dispatches scale, DND, login, update preference, reset, integration, and quit effects', async () => {
@@ -106,7 +116,6 @@ describe('tray shell', () => {
     await item(state.menu, 'Launch at Login').click!()
     await item(state.menu, 'Automatically Check for Updates').click!()
     await item(state.menu, 'Reset Position').click!()
-    await item(state.menu, 'Map expressions…').click!()
     await item(state.menu, 'Check for Updates…').click!()
     await item(state.menu, 'Configure Agent Integrations…').click!()
     await item(state.menu, 'Open Character Folder').click!()
@@ -123,7 +132,7 @@ describe('tray shell', () => {
       'scale:1.25', 'persist',
       'visible:false', 'persist',
       'login:true', 'persist',
-      'persist', 'automatic:false', 'reset', 'map', 'check', 'integrations', 'openFolder', 'quit'
+      'persist', 'automatic:false', 'reset', 'check', 'integrations', 'openFolder', 'quit'
     ])
   })
 
@@ -166,29 +175,11 @@ describe('tray shell', () => {
 
   it('keeps unavailable later-task actions disabled while retaining typed callbacks', () => {
     const state = setup({
-      onMapExpressions: undefined,
       onCheckForUpdates: undefined,
       onConfigureAgentIntegrations: undefined
     })
-    expect(item(state.menu, 'Map expressions…').enabled).toBe(false)
     expect(item(state.menu, 'Check for Updates…').enabled).toBe(false)
     expect(item(state.menu, 'Configure Agent Integrations…').enabled).toBe(false)
-  })
-
-  it('recomputes calibration status after mapping and disables completed packages', async () => {
-    let complete = false
-    const state = setup({
-      calibrationStatus: () => (complete ? 'Expressions mapped' : '🟡 1 expression left'),
-      canMapExpressions: () => !complete,
-      onMapExpressions: () => {
-        complete = true
-      }
-    })
-
-    expect(item(state.menu, '🟡 1 expression left')).toBeTruthy()
-    await item(state.menu, 'Map expressions…').click!()
-    expect(item(state.menu, 'Expressions mapped')).toBeTruthy()
-    expect(item(state.menu, 'Map expressions…').enabled).toBe(false)
   })
 
   it('shows rejected switch and picker failures instead of leaking menu promises', async () => {

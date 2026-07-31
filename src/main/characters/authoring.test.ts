@@ -9,7 +9,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { saveExpression, updateExpression } from './authoring'
+import { resolveCanonicalCue } from '../cues'
+import { mapCue, saveExpression, updateExpression } from './authoring'
 import { validateCharacter } from './manifest'
 
 const expression = (params: Record<string, number> = {}) => ({
@@ -123,6 +124,82 @@ describe('character authoring', () => {
     }
     expect(existsSync(join(manifestPath, '..', 'escape.exp3.json'))).toBe(false)
     expect(existsSync(join(manifestPath, '..', 'authored'))).toBe(false)
+  })
+
+  it('persists, repeats idempotently, and explicitly remaps a canonical cue', () => {
+    const manifestPath = writePackage(
+      {
+        smile: { expression: 'runtime/smile.exp3.json' },
+        frown: { expression: 'runtime/smile.exp3.json' }
+      },
+      { smile: { valence: 0.6, arousal: 0.4 }, frown: { valence: -0.6, arousal: 0.4 } }
+    )
+    const read = (): Record<string, string> =>
+      JSON.parse(readFileSync(manifestPath, 'utf8')).cueMappings
+
+    expect(mapCue(manifestPath, 'relief', 'smile')).toMatchObject({ ok: true })
+    expect(read()).toEqual({ relief: 'smile' })
+
+    const repeated = readFileSync(manifestPath, 'utf8')
+    expect(mapCue(manifestPath, 'relief', 'smile')).toMatchObject({ ok: true })
+    expect(readFileSync(manifestPath, 'utf8')).toBe(repeated)
+
+    expect(mapCue(manifestPath, 'relief', 'frown')).toMatchObject({ ok: true })
+    expect(mapCue(manifestPath, 'satisfaction', 'smile')).toMatchObject({ ok: true })
+    expect(read()).toEqual({ relief: 'frown', satisfaction: 'smile' })
+  })
+
+  it('reports the remaining cues so an interrupted workflow can resume', () => {
+    const manifestPath = writePackage(
+      { smile: { expression: 'runtime/smile.exp3.json' } },
+      { smile: { valence: 0.6, arousal: 0.4 } }
+    )
+    const first = mapCue(manifestPath, 'discovery', 'smile')
+    expect(first.ok && first.report.missingCues).toEqual([
+      'uncertainty',
+      'concern',
+      'frustration',
+      'relief',
+      'satisfaction'
+    ])
+
+    // The sixth mapping enables playback from the reloaded manifest alone —
+    // no restart, no second persistence layer (SPEC §4).
+    const play = (): unknown => {
+      const fresh = validateCharacter(manifestPath)
+      const mappings = JSON.parse(readFileSync(manifestPath, 'utf8')).cueMappings
+      return resolveCanonicalCue('satisfaction', mappings, fresh.missingCues)
+    }
+    for (const cue of ['uncertainty', 'concern', 'frustration', 'relief']) {
+      expect(mapCue(manifestPath, cue, 'smile')).toMatchObject({ ok: true })
+      expect(play).toThrow('character_not_calibrated')
+    }
+    expect(mapCue(manifestPath, 'satisfaction', 'smile')).toMatchObject({ ok: true })
+    expect(play()).toEqual({ cue: 'satisfaction', performance: 'smile' })
+
+    const report = validateCharacter(manifestPath)
+    expect(report).toMatchObject({ ok: true, missingCues: [] })
+    expect(report.mappedCues).toHaveLength(6)
+  })
+
+  it('refuses non-canonical cues, unknown performances, and uncalibrated targets', () => {
+    const manifestPath = writePackage(
+      {
+        smile: { expression: 'runtime/smile.exp3.json' },
+        blank: { expression: 'runtime/smile.exp3.json' }
+      },
+      { smile: { valence: 0.6, arousal: 0.4 }, blank: null }
+    )
+
+    expect(mapCue(manifestPath, 'joy', 'smile')).toMatchObject({ ok: false })
+    expect(mapCue(manifestPath, 'Smile', 'smile')).toMatchObject({ ok: false })
+    expect(mapCue(manifestPath, 'relief', 'missing')).toMatchObject({ ok: false })
+    expect(mapCue(manifestPath, 'relief', '')).toMatchObject({ ok: false })
+    expect(mapCue(manifestPath, 'relief', 'blank')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('affect coordinates')
+    })
+    expect(JSON.parse(readFileSync(manifestPath, 'utf8')).cueMappings).toBeUndefined()
   })
 
   it.skipIf(process.platform === 'win32')('rejects an authored directory symlink that escapes the package', () => {

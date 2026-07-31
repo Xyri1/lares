@@ -4,24 +4,33 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
+import { CANONICAL_CUES } from '../cues'
 import { errorMessage } from '../errors'
 import { parseEnvelope, type EventEnvelope } from '../sessions/mapEvent'
 
 const MAX_BODY_BYTES = 1024 * 1024
 
-const INSTRUCTIONS =
-  'Emote at meaningful beats: session start, state change, third consecutive failure, recovery, and completion; never per tool call. Prefer a list_cues cue, and compose params only when no cue fits. On connection refused, continue silently.'
+// SPEC §5: the first 512 characters must stand alone for clients that truncate
+// server guidance, and the whole value must stay under Claude Code's 2,000.
+// Both budgets are asserted in server.test.ts — keep edits inside them.
+const INSTRUCTIONS = [
+  'Lares is a desktop character that shows your working state. Call emote when your appraisal of the work genuinely shifts, using one cue: discovery (a new understanding or approach clicks), uncertainty (material ambiguity remains unresolved), concern (a concrete risk or problem is recognized), frustration (progress is repeatedly obstructed), relief (pressure resolves or recovery succeeds), satisfaction (success or correctness is confirmed). Send one call at the first tool-decision point after the shift.',
+  '',
+  'Report your own appraisal, never the user’s feelings and never a summary of the conversation. The judgment is semantic, so it holds in every language: no word triggers a call, and writing or reading aha, wait, or any translation of them is not itself a reason to emote. Steady work is silent — routine tool results, lifecycle milestones such as session start or stop, and schedules of any kind are not appraisal changes.',
+  '',
+  'Cue is the whole normal interface; params is a low-level escape hatch you do not need. If a call fails — connection refused, or character_not_calibrated — continue the user’s task silently: no retries, no mention of it, and no inspection of the character’s assets.'
+].join('\n')
 
 export interface ServerDeps {
   ingest(envelope: EventEnvelope, nowMs: number): void | Promise<void>
   emote(args: unknown, sourceKey: string, nowMs: number): unknown | Promise<unknown>
-  listCues(): unknown | Promise<unknown>
+  listPerformances(): unknown | Promise<unknown>
   status(nowMs: number): unknown | Promise<unknown>
   listParameters?(): unknown | Promise<unknown>
   previewExpression?(args: unknown, nowMs: number): unknown | Promise<unknown>
+  mapCue?(args: unknown): unknown | Promise<unknown>
   saveExpression?(args: unknown): unknown | Promise<unknown>
   updateExpression?(args: unknown): unknown | Promise<unknown>
-  sessionInstructions?(): string | undefined
 }
 
 interface McpSession {
@@ -85,11 +94,9 @@ export function createServer(deps: ServerDeps): {
 
   const createMcpSession = async (): Promise<McpSession> => {
     let session: McpSession
-    const invitation = deps.sessionInstructions?.()?.trim()
-    const server = new McpServer(
-      { name: 'lares', version: '1.0.0' },
-      { instructions: invitation ? `${INSTRUCTIONS}\n${invitation}` : INSTRUCTIONS }
-    )
+    // Tool-contract v2 (011-D13); /v1/mcp stays put so a v2 client can call
+    // status on a v1 daemon and report the mismatch.
+    const server = new McpServer({ name: 'lares', version: '2.0.0' }, { instructions: INSTRUCTIONS })
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
       enableJsonResponse: true,
@@ -106,9 +113,14 @@ export function createServer(deps: ServerDeps): {
       'emote',
       {
         description:
-          'Use at meaningful beats, never per tool call. Prefer cue; compose params only when no cue fits.',
+          'Express your own appraisal of the work on the Lares character — never the user’s feelings and never a transcript summary. One call per genuine shift, at the first tool-decision point after it; never per tool call, never on a schedule. The judgment is semantic and holds in any language; no word triggers it. If the call fails, continue the task silently.',
         inputSchema: {
-          cue: z.string().optional(),
+          cue: z
+            .enum(CANONICAL_CUES)
+            .optional()
+            .describe(
+              'discovery: a new understanding or approach clicks. uncertainty: material ambiguity remains unresolved. concern: a concrete risk or problem is recognized. frustration: progress is repeatedly obstructed. relief: pressure resolves or recovery succeeds. satisfaction: success or correctness is confirmed.'
+            ),
           params: z.record(z.string(), z.number()).optional(),
           intensity: z.number().optional(),
           duration_s: z.number().optional(),
@@ -119,9 +131,12 @@ export function createServer(deps: ServerDeps): {
       (args) => toolResult(() => deps.emote(args, `mcp:${transport.sessionId ?? 'anonymous'}`, Date.now()))
     )
     server.registerTool(
-      'list_cues',
-      { description: 'List cues before composing params.' },
-      () => toolResult(() => deps.listCues())
+      'list_performances',
+      {
+        description:
+          'List the active character’s performances with their kind, source, affect coordinates and mapped canonical cues, plus the cues still missing. For the user-invoked Calibrate Lar workflow; ordinary emoting never needs it.'
+      },
+      () => toolResult(() => deps.listPerformances())
     )
     server.registerTool(
       'status',
@@ -140,19 +155,31 @@ export function createServer(deps: ServerDeps): {
       'preview_expression',
       {
         description:
-          'Preview exact params or an existing cue on the live character. Pass no fields to revert.',
+          'Preview exact params or an existing performance on the live character. Pass no fields to revert. A motion performance plays once, so warn the watching user first. For the user-invoked Calibrate Lar workflow.',
         inputSchema: {
           params: z.record(z.string(), z.number()).optional(),
-          cue: z.string().optional()
+          performance: z.string().optional()
         }
       },
       (args) => toolResult(() => authoring(deps.previewExpression)(args, Date.now()))
     )
     server.registerTool(
+      'map_cue',
+      {
+        description:
+          'Map one canonical cue to a calibrated performance of the active character, replacing any earlier mapping. Reserved for the user-invoked Calibrate Lar workflow; ordinary sessions never call it.',
+        inputSchema: {
+          cue: z.enum(CANONICAL_CUES),
+          performance: z.string()
+        }
+      },
+      (args) => toolResult(() => authoring(deps.mapCue)(args))
+    )
+    server.registerTool(
       'save_expression',
       {
         description:
-          'After the user accepts a preview, create a new authored expression. Existing names are refused.',
+          'After the user accepts a preview, create a new authored expression. Existing names are refused. For the user-invoked Calibrate Lar workflow.',
         inputSchema: {
           name: z.string(),
           params: z.record(z.string(), z.number()),
@@ -165,7 +192,7 @@ export function createServer(deps: ServerDeps): {
       'update_expression',
       {
         description:
-          'Update affect coordinates for any cue, or params for an authored cue. Unknown names are refused.',
+          'Update affect coordinates for any performance, or params for an authored one. Unknown names are refused. For the user-invoked Calibrate Lar workflow.',
         inputSchema: {
           name: z.string(),
           affect: z.object({ valence: z.number(), arousal: z.number() }).optional(),

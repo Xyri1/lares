@@ -11,6 +11,7 @@ import {
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Vec2 } from '../affect/constants'
+import { CANONICAL_CUES, isCanonicalCue } from '../cues'
 import { errorMessage } from '../errors'
 import { validateCharacter, type ValidationReport } from './manifest'
 
@@ -19,6 +20,7 @@ export interface ExpressionUpdate { affect?: Vec2; params?: Record<string, numbe
 
 type ManifestDocument = {
   expressions?: Record<string, Vec2 | null>
+  cueMappings?: Record<string, string>
   renderers: { live2d: { cues?: Record<string, unknown> } }
 }
 
@@ -160,6 +162,35 @@ export function saveExpression(manifestPath: string, name: string, params: Recor
     if (existsSync(expressionPath)) unlinkSync(expressionPath)
     if (!authoredExisted && existsSync(authoredRoot)) rmdirSync(authoredRoot)
     return failure(`Cannot save expression: ${errorMessage(error)}`)
+  }
+}
+
+/**
+ * Persists one canonical cue mapping through the same atomic commit path as
+ * authoring. Each call re-reads the latest manifest, so back-to-back calls
+ * cannot lose progress — no lock, no second persistence layer (011-D8).
+ */
+export function mapCue(manifestPath: string, cue: unknown, performance: unknown): AuthoringResult {
+  if (!isCanonicalCue(cue)) {
+    return failure(`Unknown canonical cue: ${String(cue)} — expected one of ${CANONICAL_CUES.join(', ')}`)
+  }
+  if (typeof performance !== 'string' || performance === '') {
+    return failure('A performance name is required')
+  }
+  const manifest = readManifest(manifestPath)
+  if (isResult(manifest)) return manifest
+  if (!Object.hasOwn(manifest.renderers.live2d.cues ?? {}, performance)) {
+    return failure(`Unknown performance: ${performance}`)
+  }
+  if ((manifest.expressions ?? {})[performance] == null) {
+    return failure(`Performance has no affect coordinates: ${performance}`)
+  }
+  const next = clonedManifest(manifest)
+  next.cueMappings = { ...(next.cueMappings ?? {}), [cue]: performance }
+  try {
+    return commitManifest(manifestPath, next)
+  } catch (error) {
+    return failure(`Cannot map cue: ${errorMessage(error)}`)
   }
 }
 

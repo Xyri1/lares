@@ -97,6 +97,54 @@ describe('managed character library', () => {
     }
   })
 
+  it('preserves authored cue mappings on package import and adds none on raw import', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'lares-library-'))
+    const managedRoot = join(workspace, 'managed')
+    const authored = writePackage(workspace, 'authored')
+    writeFileSync(
+      join(authored, 'lar.character.json'),
+      JSON.stringify({
+        ...VALID,
+        expressions: { smile: { valence: 0.6, arousal: 0.4 } },
+        cueMappings: { relief: 'smile', satisfaction: 'smile' },
+        renderers: {
+          live2d: {
+            ...VALID.renderers.live2d,
+            cues: { smile: { params: { ParamMouthForm: 1 } } }
+          }
+        }
+      })
+    )
+
+    const imported = importCharacterPackage(managedRoot, authored)
+    expect(imported).toMatchObject({
+      ok: true,
+      character: { cueMappings: { relief: 'smile', satisfaction: 'smile' } }
+    })
+
+    // Raw import discovers assets under artist names only; semantic meaning
+    // comes solely from the explicit calibration workflow (011-D5).
+    const raw = importCharacterPackage(managedRoot, writeRawPackage(workspace))
+    expect(raw).toMatchObject({ ok: true, character: { cueMappings: {} } })
+    if (raw.ok) {
+      expect(raw.character.report.mappedCues).toEqual([])
+      expect(JSON.parse(readFileSync(raw.manifestPath, 'utf8')).cueMappings).toBeUndefined()
+    }
+  })
+
+  it('leaves an already-managed package unmigrated when the library is re-checked', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'lares-library-'))
+    const managedRoot = join(workspace, 'managed')
+    const bundledRoot = writePackage(workspace, 'bundled')
+    expect(ensureManagedCharacterLibrary(managedRoot, bundledRoot)).toEqual({ seeded: true })
+
+    const managedManifest = join(managedRoot, 'bundled', 'lar.character.json')
+    const before = readFileSync(managedManifest, 'utf8')
+    expect(ensureManagedCharacterLibrary(managedRoot, bundledRoot)).toEqual({ seeded: false })
+    expect(readFileSync(managedManifest, 'utf8')).toBe(before)
+    expect(JSON.parse(before).cueMappings).toBeUndefined()
+  })
+
   it('discards only a direct managed package after a failed activation', () => {
     const workspace = mkdtempSync(join(tmpdir(), 'lares-library-'))
     const managedRoot = join(workspace, 'managed')

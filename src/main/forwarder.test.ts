@@ -94,7 +94,7 @@ describe('embedded-Node forwarder', () => {
     const deps: ServerDeps = {
       ingest: (envelope) => void ingested.push(envelope),
       emote: () => undefined,
-      listCues: () => [],
+      listPerformances: () => ({ performances: [], missing_cues: [] }),
       status: () => ({})
     }
     const value = createServer(deps)
@@ -156,7 +156,7 @@ describe('embedded-Node forwarder', () => {
     const value = createServer({
       ingest: (envelope, at) => nerves.ingest(envelope, at),
       emote: () => undefined,
-      listCues: () => [],
+      listPerformances: () => ({ performances: [], missing_cues: [] }),
       status: (at) => nerves.status(at)
     })
     servers.push(value)

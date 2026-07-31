@@ -79,6 +79,14 @@
       "arousal": 0.35
     }
   },
+  "cueMappings": {
+    "discovery": "Surprised",
+    "uncertainty": "pleading-look",
+    "concern": "grimace",
+    "frustration": "Angry",
+    "relief": "warm-smile",
+    "satisfaction": "pleased-nod"
+  },
   "renderers": {
     "live2d": {
       "model": "haru.model3.json",

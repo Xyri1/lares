@@ -37,8 +37,6 @@ export interface TrayShellDependencies {
   setLaunchAtLogin(enabled: boolean): void
   resetPosition(): void
   calibrationStatus?: () => string
-  canMapExpressions?: () => boolean
-  onMapExpressions?: () => void | Promise<void>
   onAutomaticUpdatesChanged?: (enabled: boolean) => void | Promise<void>
   onCheckForUpdates?: () => void | Promise<void>
   onConfigureAgentIntegrations?: () => void | Promise<void>
@@ -164,15 +162,6 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
     refresh()
   }
 
-  const mapExpressions = async (): Promise<void> => {
-    try {
-      await deps.onMapExpressions?.()
-    } catch (error) {
-      deps.showError(L.expressionMappingCouldNotBeUpdated, errorMessage(error))
-    }
-    refresh()
-  }
-
   function refresh(): void {
     const active = deps.activeCharacter()
     deps.setMenu([
@@ -215,15 +204,8 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
       },
       { label: L.resetPosition, click: deps.resetPosition },
       { type: 'separator' },
+      // 011-D14: read-only readiness, never a launch surface.
       { label: deps.calibrationStatus?.() ?? L.calibrationUnavailable, enabled: false },
-      {
-        label: L.mapExpressions,
-        type: 'checkbox',
-        checked: config.calibrationArmed,
-        enabled:
-          deps.onMapExpressions !== undefined && (deps.canMapExpressions?.() ?? true),
-        click: mapExpressions
-      },
       { type: 'separator' },
       {
         label: L.automaticallyCheckForUpdates,

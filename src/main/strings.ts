@@ -13,8 +13,7 @@ export const en = {
   doNotDisturb: 'Do Not Disturb',
   launchAtLogin: 'Launch at Login',
   resetPosition: 'Reset Position',
-  calibrationUnavailable: 'Calibration unavailable',
-  mapExpressions: 'Map expressions…',
+  calibrationUnavailable: 'Expression mapping unavailable',
   automaticallyCheckForUpdates: 'Automatically Check for Updates',
   checkForUpdates: 'Check for Updates…',
   configureAgentIntegrations: 'Configure Agent Integrations…',
@@ -32,7 +31,6 @@ export const en = {
   characterCouldNotBeLoaded: 'Character could not be loaded',
   characterCouldNotBeImported: 'Character could not be imported',
   characterImportCleanupFailed: 'Character import cleanup failed',
-  expressionMappingCouldNotBeUpdated: 'Expression mapping could not be updated',
   laresCouldNotBeUninstalled: 'Lares could not be uninstalled',
   characterPackageInvalid: 'Character package invalid',
   defaultCharacterUnavailable: 'Default character unavailable',
@@ -66,7 +64,7 @@ export const en = {
   agentIntegrationsConfirmTitle: 'Configure Agent Integrations',
   agentIntegrationsConfirmMessage: 'Configure the Lares marketplace plugin where Claude Code or Codex is available?',
   agentIntegrationsConfirmDetail:
-    'Lares will download its public marketplace plugin and install hooks plus the local MCP connection. Each harness may still ask you to review and trust its hooks.',
+    'Lares will download its public marketplace plugin and install or upgrade it, adding hooks plus the local MCP connection. Each harness may ask you to review and trust its hooks again, and the update takes effect only after a new session or plugin reload.',
   agentIntegrationsCancel: 'Cancel',
   agentIntegrationsConfigure: 'Configure',
   agentIntegrationsResultTitle: 'Agent Integrations',
@@ -82,11 +80,10 @@ export const en = {
   agentIntegrationsCopyCommands: 'Copy Manual Commands',
   agentIntegrationsDone: 'Done',
 
-  // Calibration status line (tray)
-  calibrationNotMapped: '🔴 Expressions not mapped',
-  calibrationLeft: (remaining: number): string =>
-    `🟡 ${remaining} expression${remaining === 1 ? '' : 's'} left`,
-  calibrationMapped: 'Expressions mapped'
+  // Canonical mapping readiness (tray) — read-only; Calibrate Lar runs in the
+  // harness, so this row names it instead of offering a button.
+  expressionMapping: (mapped: number, total: number): string =>
+    `Expression mapping ${mapped}/${total}${mapped === total ? '' : ' — run Calibrate Lar'}`
 }
 
 export const zhCN: typeof en = {
@@ -97,8 +94,7 @@ export const zhCN: typeof en = {
   doNotDisturb: '勿扰模式',
   launchAtLogin: '开机启动',
   resetPosition: '重置位置',
-  calibrationUnavailable: '校准不可用',
-  mapExpressions: '映射表情…',
+  calibrationUnavailable: '表情映射不可用',
   automaticallyCheckForUpdates: '自动检查更新',
   checkForUpdates: '检查更新…',
   configureAgentIntegrations: '配置 Agent 集成…',
@@ -112,7 +108,6 @@ export const zhCN: typeof en = {
   characterCouldNotBeLoaded: '无法加载角色',
   characterCouldNotBeImported: '无法导入角色',
   characterImportCleanupFailed: '角色导入清理失败',
-  expressionMappingCouldNotBeUpdated: '无法更新表情映射',
   laresCouldNotBeUninstalled: '无法卸载 Lares',
   characterPackageInvalid: '角色包无效',
   defaultCharacterUnavailable: '默认角色不可用',
@@ -139,7 +134,7 @@ export const zhCN: typeof en = {
   agentIntegrationsConfirmTitle: '配置 Agent 集成',
   agentIntegrationsConfirmMessage: '要在可用的 Claude Code 或 Codex 中配置 Lares 市场插件吗？',
   agentIntegrationsConfirmDetail:
-    'Lares 将下载其公开市场插件，并安装钩子和本地 MCP 连接。每个工具仍可能要求你审核并信任其钩子。',
+    'Lares 将下载其公开市场插件并安装或升级，同时添加钩子和本地 MCP 连接。每个工具可能会要求你重新审核并信任其钩子，且更新需在新建会话或重新加载插件后才会生效。',
   agentIntegrationsCancel: '取消',
   agentIntegrationsConfigure: '配置',
   agentIntegrationsResultTitle: 'Agent 集成',
@@ -155,9 +150,8 @@ export const zhCN: typeof en = {
   agentIntegrationsCopyCommands: '复制手动命令',
   agentIntegrationsDone: '完成',
 
-  calibrationNotMapped: '🔴 表情尚未映射',
-  calibrationLeft: (remaining: number): string => `🟡 还剩 ${remaining} 个表情`,
-  calibrationMapped: '表情已映射'
+  expressionMapping: (mapped: number, total: number): string =>
+    `表情映射 ${mapped}/${total}${mapped === total ? '' : ' — 请运行 Calibrate Lar'}`
 }
 
 export type Locale = 'en' | 'zh-CN'

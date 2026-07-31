@@ -2,6 +2,10 @@ import { execFile, type ExecFileException } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join, posix } from 'node:path'
+import { compareVersions, isVersion } from './version'
+
+/** Both plugin manifests. An older install predates MCP contract v2 (011-D13). */
+export const PLUGIN_VERSION = '0.2.0-alpha1'
 
 export type Harness = 'claude' | 'codex'
 
@@ -40,6 +44,12 @@ interface HarnessDefinition {
   pluginAdd: string[]
   marketplaceList: string[]
   pluginList: string[]
+  /** Refresh the marketplace snapshot before upgrading a stale plugin. */
+  marketplaceRefresh: string[]
+  /** Run in order once the refreshed marketplace is known to offer the new version. */
+  pluginUpgrade: string[][]
+  /** Codex only: the refreshed marketplace must offer PLUGIN_VERSION before removal. */
+  availableList?: string[]
 }
 
 const HARNESSES: HarnessDefinition[] = [
@@ -49,7 +59,9 @@ const HARNESSES: HarnessDefinition[] = [
     marketplaceAdd: ['plugin', 'marketplace', 'add', 'Xyri1/lares', '--scope', 'user'],
     pluginAdd: ['plugin', 'install', 'lares@lares', '--scope', 'user'],
     marketplaceList: ['plugin', 'marketplace', 'list', '--json'],
-    pluginList: ['plugin', 'list', '--json']
+    pluginList: ['plugin', 'list', '--json'],
+    marketplaceRefresh: ['plugin', 'marketplace', 'update', 'lares'],
+    pluginUpgrade: [['plugin', 'update', 'lares@lares', '--scope', 'user']]
   },
   {
     harness: 'codex',
@@ -57,16 +69,27 @@ const HARNESSES: HarnessDefinition[] = [
     marketplaceAdd: ['plugin', 'marketplace', 'add', 'Xyri1/lares', '--json'],
     pluginAdd: ['plugin', 'add', 'lares@lares', '--json'],
     marketplaceList: ['plugin', 'marketplace', 'list', '--json'],
-    pluginList: ['plugin', 'list', '--json']
+    pluginList: ['plugin', 'list', '--json'],
+    marketplaceRefresh: ['plugin', 'marketplace', 'upgrade', 'lares', '--json'],
+    availableList: ['plugin', 'list', '--available', '--json'],
+    pluginUpgrade: [
+      ['plugin', 'remove', 'lares@lares', '--json'],
+      ['plugin', 'add', 'lares@lares', '--json']
+    ]
   }
 ]
 
 export function manualCommands(harness: Harness): string[] {
   const definition = HARNESSES.find((candidate) => candidate.harness === harness)!
-  return [
-    `${definition.cli} ${definition.marketplaceAdd.join(' ')}`,
-    `${definition.cli} ${definition.pluginAdd.join(' ')}`
-  ]
+  const commands = [
+    definition.marketplaceAdd,
+    definition.pluginAdd,
+    definition.marketplaceRefresh,
+    ...definition.pluginUpgrade
+  ].map((args) => `${definition.cli} ${args.join(' ')}`)
+  // Codex installs with the same command it reinstalls with; keep the later
+  // position so running the list top to bottom recovers install and upgrade.
+  return commands.filter((command, index) => commands.lastIndexOf(command) === index)
 }
 
 function candidates(cli: string, platform: NodeJS.Platform, home: string): string[] {
@@ -189,31 +212,65 @@ function hasMarketplace(harness: Harness, json: string): boolean {
   }
 }
 
-function hasPlugin(harness: Harness, json: string): boolean {
+/** The `lares@lares` row of a host's `plugin list --json` output, if present. */
+function laresEntry(harness: Harness, json: string): Record<string, unknown> | undefined {
   try {
     const value: unknown = JSON.parse(json)
-    if (harness === 'claude') {
-      return (
-        Array.isArray(value) &&
-        value.some(
-          (entry) => isRecord(entry) && entry.id === 'lares@lares' && entry.enabled === true
-        )
-      )
-    }
-    return (
-      isRecord(value) &&
-      Array.isArray(value.installed) &&
-      value.installed.some(
-        (entry) =>
-          isRecord(entry) &&
-          entry.pluginId === 'lares@lares' &&
-          entry.installed === true &&
-          entry.enabled === true
-      )
-    )
+    const rows: unknown = harness === 'claude' ? value : isRecord(value) ? value.installed : undefined
+    if (!Array.isArray(rows)) return undefined
+    return rows
+      .filter(isRecord)
+      .find((entry) => (harness === 'claude' ? entry.id : entry.pluginId) === 'lares@lares')
   } catch {
-    return false
+    return undefined
   }
+}
+
+/** Both hosts report a free-form `version`; Claude also uses `latest`/`unknown`/a sha. */
+function offeredVersion(entry: Record<string, unknown> | undefined): string | undefined {
+  return typeof entry?.version === 'string' && isVersion(entry.version) ? entry.version : undefined
+}
+
+function isCurrent(version: string | undefined): boolean {
+  return version !== undefined && compareVersions(version, PLUGIN_VERSION) >= 0
+}
+
+type PluginState = 'absent' | 'unreadable' | 'stale' | 'current'
+
+function pluginState(harness: Harness, json: string): PluginState {
+  const entry = laresEntry(harness, json)
+  const enabled =
+    entry?.enabled === true && (harness === 'claude' || entry.installed === true)
+  if (!enabled) return 'absent'
+  const version = offeredVersion(entry)
+  if (version === undefined) return 'unreadable'
+  return isCurrent(version) ? 'current' : 'stale'
+}
+
+/**
+ * Refresh the marketplace and replace a stale install. Resolves to the failing
+ * command, `'verification'` when the refreshed marketplace still has nothing
+ * newer, or undefined on success.
+ */
+async function upgradePlugin(
+  definition: HarnessDefinition,
+  command: string,
+  run: AgentIntegrationDependencies['run']
+): Promise<CommandResult | 'verification' | undefined> {
+  const refreshed = await run(command, definition.marketplaceRefresh)
+  if (refreshed.code !== 0) return refreshed
+  if (definition.availableList) {
+    const available = await run(command, definition.availableList)
+    if (available.code !== 0) return available
+    if (!isCurrent(offeredVersion(laresEntry(definition.harness, available.stdout)))) {
+      return 'verification'
+    }
+  }
+  for (const args of definition.pluginUpgrade) {
+    const step = await run(command, args)
+    if (step.code !== 0) return step
+  }
+  return undefined
 }
 
 function failure(result: CommandResult): string {
@@ -262,9 +319,14 @@ async function configureHarness(
       : { harness: definition.harness, status: 'missing' }
   }
 
-  const alreadyConfigured =
-    hasMarketplace(definition.harness, marketplace.stdout) && hasPlugin(definition.harness, plugins.stdout)
-  if (alreadyConfigured) return { harness: definition.harness, status: 'already-configured' }
+  const state = pluginState(definition.harness, plugins.stdout)
+  // An install we cannot version is not "probably fine": stop before mutating it.
+  if (state === 'unreadable') {
+    return { harness: definition.harness, status: 'failed', reason: 'verification' }
+  }
+  if (hasMarketplace(definition.harness, marketplace.stdout) && state === 'current') {
+    return { harness: definition.harness, status: 'already-configured' }
+  }
 
   if (!hasMarketplace(definition.harness, marketplace.stdout)) {
     const added = await deps.run(command, definition.marketplaceAdd)
@@ -272,7 +334,13 @@ async function configureHarness(
       return { harness: definition.harness, status: 'failed', error: failure(added) }
     }
   }
-  if (!hasPlugin(definition.harness, plugins.stdout)) {
+  if (state === 'stale') {
+    const upgraded = await upgradePlugin(definition, command, deps.run)
+    if (upgraded === 'verification') {
+      return { harness: definition.harness, status: 'failed', reason: 'verification' }
+    }
+    if (upgraded) return { harness: definition.harness, status: 'failed', error: failure(upgraded) }
+  } else if (state === 'absent') {
     const installed = await deps.run(command, definition.pluginAdd)
     if (installed.code !== 0) {
       return { harness: definition.harness, status: 'failed', error: failure(installed) }
@@ -289,7 +357,7 @@ async function configureHarness(
     }
   }
   return hasMarketplace(definition.harness, marketplace.stdout) &&
-    hasPlugin(definition.harness, plugins.stdout)
+    pluginState(definition.harness, plugins.stdout) === 'current'
     ? { harness: definition.harness, status: 'configured' }
     : { harness: definition.harness, status: 'failed', reason: 'verification' }
 }

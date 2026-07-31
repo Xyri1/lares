@@ -17,7 +17,6 @@ describe('persistent config', () => {
       doNotDisturb: true,
       launchAtLogin: true,
       automaticallyCheckForUpdates: false,
-      calibrationArmed: true,
       language: 'zh-CN' as const
     }
     await saveConfig(file, config)
@@ -39,7 +38,7 @@ describe('persistent config', () => {
       doNotDisturb: true,
       launchAtLogin: 'yes',
       automaticallyCheckForUpdates: false,
-      calibrationArmed: null,
+      calibrationArmed: true,
       language: 'fr',
       injected: 'ignored'
     }))
