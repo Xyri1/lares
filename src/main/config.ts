@@ -14,6 +14,7 @@ export interface AppConfig {
   launchAtLogin: boolean
   automaticallyCheckForUpdates: boolean
   language: Language
+  hostGuidance: boolean
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -21,7 +22,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   doNotDisturb: false,
   launchAtLogin: false,
   automaticallyCheckForUpdates: true,
-  language: 'system'
+  language: 'system',
+  hostGuidance: true
 }
 
 export function parseConfig(raw: unknown): AppConfig {
@@ -40,7 +42,9 @@ export function parseConfig(raw: unknown): AppConfig {
         : DEFAULT_CONFIG.automaticallyCheckForUpdates,
     language: LANGUAGES.includes(value.language as Language)
       ? (value.language as Language)
-      : DEFAULT_CONFIG.language
+      : DEFAULT_CONFIG.language,
+    hostGuidance:
+      typeof value.hostGuidance === 'boolean' ? value.hostGuidance : DEFAULT_CONFIG.hostGuidance
   }
 }
 

@@ -17,6 +17,13 @@ const nativeEvent = {
   detail: { source: 'spawn-test' }
 }
 
+// 012-D2/D3: approved copy, pinned in sdd/slices/012-host-guidance/SPEC.md §3.
+const HOST_GUIDANCE_REMINDER =
+  'Lares is active for this session. If the `emote` tool is available, report genuine shifts in your appraisal of the work as they occur — mid-task, not only at completion. Steady work stays silent.'
+const HOST_GUIDANCE_STDOUT = JSON.stringify({
+  hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: HOST_GUIDANCE_REMINDER }
+})
+
 interface RunResult {
   code: number | null
   stdout: string
@@ -244,5 +251,84 @@ describe('embedded-Node forwarder', () => {
     const envelope = ingested[0] as { pid?: number }
     if (process.platform === 'win32') expect(envelope.pid).toBeUndefined()
     else expect(envelope.pid).toBe(process.pid)
+  })
+
+  it('prints exactly the structured reminder on UserPromptSubmit when hostGuidance is true', async () => {
+    const ingested: unknown[] = []
+    const value = server(ingested)
+    const port = await value.start(0)
+    await writeFile(
+      runtimeFile,
+      JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: true })
+    )
+
+    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toBe(HOST_GUIDANCE_STDOUT)
+    expect(ingested).toHaveLength(1)
+  })
+
+  it('stays silent on a non-UserPromptSubmit hook even when hostGuidance is true', async () => {
+    const port = await server([]).start(0)
+    await writeFile(
+      runtimeFile,
+      JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: true })
+    )
+
+    const result = await runForwarder(
+      runtimeFile,
+      JSON.stringify({ ...nativeEvent, hook_event_name: 'PreToolUse' })
+    )
+
+    expect(result).toMatchObject({ code: 0, stdout: '' })
+  })
+
+  it('stays silent when hostGuidance is false', async () => {
+    const port = await server([]).start(0)
+    await writeFile(
+      runtimeFile,
+      JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: false })
+    )
+
+    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+
+    expect(result).toMatchObject({ code: 0, stdout: '' })
+  })
+
+  it('stays silent when the hostGuidance key is absent', async () => {
+    const port = await server([]).start(0)
+    await writeFile(runtimeFile, JSON.stringify({ version: 1, port, pid: process.pid }))
+
+    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+
+    expect(result).toMatchObject({ code: 0, stdout: '' })
+  })
+
+  it('stays silent when runtime.json is invalid, even with hostGuidance true', async () => {
+    await writeFile(
+      runtimeFile,
+      JSON.stringify({ version: 2, port: 1, pid: 1, hostGuidance: true })
+    )
+
+    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+
+    expect(result).toMatchObject({ code: 0, stdout: '' })
+  })
+
+  it('prints the reminder even when the daemon refuses the connection', async () => {
+    const first = server([])
+    const port = await first.start(0)
+    await first.stop()
+    await writeFile(
+      runtimeFile,
+      JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: true })
+    )
+
+    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toBe(HOST_GUIDANCE_STDOUT)
+    expect(result.exitMs).toBeLessThan(500)
   })
 })

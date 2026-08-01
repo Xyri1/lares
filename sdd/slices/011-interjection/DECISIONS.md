@@ -112,7 +112,10 @@ SessionStart instruction injection; calibration invitations in hook output or
 MCP initialization; per-turn injection; an ambient emoting skill. *Rationale:*
 each mechanism has one job, with no duplicated instruction authority or stale
 character readiness in session context. *Status:* decided by the maintainer;
-supersedes the proposed hook bootstrap.
+supersedes the proposed hook bootstrap. *Superseded in part 2026-08-01 by
+012-D1:* MCP remains the canonical contract, but supported plugin hooks may
+reinforce that contract with concise model-visible host context after the
+MCP-only path failed its first fresh voluntary-adoption check.
 
 **011-D10 — Calibration is mandatory for canonical-cue playback, not import.**
 *Chosen:* an imported character may be stored, selected and previewed while

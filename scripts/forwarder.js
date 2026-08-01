@@ -17,6 +17,10 @@ function finish() {
 
 const fs = require('node:fs')
 
+// 012-D2/D3: approved copy, verbatim. Never derived from prompt text.
+const HOST_GUIDANCE_REMINDER =
+  'Lares is active for this session. If the `emote` tool is available, report genuine shifts in your appraisal of the work as they occur — mid-task, not only at completion. Steady work stays silent.'
+
 const harness = process.argv[2]
 if (harness !== 'claude-code' && harness !== 'codex') finish()
 
@@ -63,6 +67,20 @@ process.stdin.on('end', () => {
     (event.cwd !== undefined && typeof event.cwd !== 'string')
   ) {
     return finish()
+  }
+
+  if (event.hook_event_name === 'UserPromptSubmit' && runtime.hostGuidance === true) {
+    try {
+      fs.writeSync(
+        1,
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: 'UserPromptSubmit',
+            additionalContext: HOST_GUIDANCE_REMINDER
+          }
+        })
+      )
+    } catch {}
   }
 
   const body = JSON.stringify({

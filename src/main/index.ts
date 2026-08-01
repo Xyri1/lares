@@ -681,7 +681,10 @@ async function startNerves(): Promise<void> {
     const port = await nervesServer.start(configuredPort())
     const directory = join(homedir(), '.lares')
     mkdirSync(directory, { recursive: true })
-    writeFileSync(runtimeFile(), JSON.stringify({ version: 1, port, pid: process.pid }))
+    writeFileSync(
+      runtimeFile(),
+      JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: appConfig.hostGuidance })
+    )
     await syncAdapters()
     nervesTick = setInterval(() => {
       const nowMs = Date.now()
