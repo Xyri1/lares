@@ -179,8 +179,10 @@ describe('embedded-Node forwarder', () => {
     )
     const handler = hooks.hooks.SessionStart[0].hooks[0]
     const command = process.platform === 'win32' ? handler.commandWindows : handler.command
-    const shell = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : (process.env.SHELL ?? '/bin/sh')
-    const args = process.platform === 'win32' ? ['/d', '/s', '/c', command] : ['-lc', command]
+    const shell = process.platform === 'win32' ? 'pwsh.exe' : (process.env.SHELL ?? '/bin/sh')
+    const args = process.platform === 'win32'
+      ? ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')]
+      : ['-lc', command]
 
     const result = await run(
       shell,
@@ -192,7 +194,7 @@ describe('embedded-Node forwarder', () => {
         LARES_HARNESS_PID: ''
       },
       JSON.stringify({ ...nativeEvent, hook_event_name: 'SessionStart' }),
-      process.platform === 'win32'
+      false
     )
     nerves.tick(Date.now() + 100)
 

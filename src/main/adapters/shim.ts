@@ -46,8 +46,7 @@ export async function writeForwarderShim(options: ForwarderShimOptions): Promise
     windows ? undefined : 0o755
   )
 
-  // Codex on Windows dispatches commandWindows through cmd.exe, so it gets
-  // its own .cmd alongside the sh shim.
+  // Codex's Windows PowerShell command invokes this .cmd alongside the sh shim.
   if (windows) {
     await writeExecutable(
       join(options.binDir, 'lares-forwarder.cmd'),

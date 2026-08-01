@@ -70,7 +70,7 @@ describe('Codex plugin', () => {
             {
               type: 'command',
               command: 'LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder',
-              commandWindows: 'call "%USERPROFILE%\\.lares\\bin\\lares-forwarder.cmd"'
+              commandWindows: '& "$env:USERPROFILE\\.lares\\bin\\lares-forwarder.cmd"'
             }
           ]
         }
