@@ -4,8 +4,8 @@ import { homedir } from 'node:os'
 import { delimiter, join, posix } from 'node:path'
 import { compareVersions, isVersion } from './version'
 
-/** Both plugin manifests. An older install predates MCP contract v2 (011-D13). */
-export const PLUGIN_VERSION = '0.2.0-alpha1'
+/** Both plugin manifests and the minimum version accepted by the upgrade check. */
+export const PLUGIN_VERSION = '0.2.0-alpha.3'
 
 export type Harness = 'claude' | 'codex'
 
