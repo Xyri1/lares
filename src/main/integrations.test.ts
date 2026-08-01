@@ -627,6 +627,15 @@ describe('agent integration configuration', () => {
     })
   })
 
+  it('captures Codex-sized JSON output without treating it as a command failure', async () => {
+    const command =
+      'process.stdout.write(JSON.stringify({ installed: [], padding: "x".repeat(70_000) }))'
+    const output = await runAgentIntegrationCommand(process.execPath, ['-e', command])
+
+    expect(output.code).toBe(0)
+    expect(JSON.parse(output.stdout)).toMatchObject({ installed: [] })
+  })
+
   it('reports a manager missing after its known locations are exhausted', async () => {
     const run = vi.fn(async () => result({ code: 1, missing: true }))
     const report = await configureAgentIntegrations({

@@ -425,7 +425,6 @@ export function runAgentIntegrationCommand(command: string, args: string[]): Pro
           encoding: 'utf8',
           shell: false,
           windowsVerbatimArguments: windowsLauncher,
-          maxBuffer: 64 * 1024,
           timeout: 60_000
         },
         complete
