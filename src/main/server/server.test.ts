@@ -241,6 +241,23 @@ describe('createServer', () => {
     expect(instructions).not.toContain('map_cue')
   })
 
+  it('publishes the direct semantic request rule in initialization and emote metadata', async () => {
+    const { client: value } = await client()
+    const instructions = value.getInstructions()!
+    const emote = (await value.listTools()).tools.find((tool) => tool.name === 'emote')!
+    const directRequest =
+      'When the user directly asks you to express your current appraisal, emit exactly one appropriate cue even without an appraisal shift.'
+
+    expect.soft(instructions).toContain(directRequest)
+    expect.soft(emote.description).toContain(directRequest)
+    for (const surface of [instructions, emote.description!]) {
+      expect(surface).toMatch(/semantic/)
+      expect(surface).toMatch(/no word triggers/)
+      expect(surface).toMatch(/do not use word or phrase matching/i)
+      expect(surface).toMatch(/never the user’s feelings/)
+    }
+  })
+
   it('keeps every session on the same instructions', async () => {
     const { client: first } = await client()
     const { client: second } = await client()

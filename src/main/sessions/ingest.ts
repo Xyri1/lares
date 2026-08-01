@@ -80,7 +80,8 @@ export class Ingestor {
     this.updateBaseline(nowMs)
   }
 
-  sweep(nowMs: number): void {
+  sweep(nowMs: number): SessionRow[] {
+    const reaped: SessionRow[] = []
     const probePids = nowMs - this.lastPidProbeAt >= this.pidProbeMs
     for (const [id, row] of this.sessions) {
       if (
@@ -88,6 +89,7 @@ export class Ingestor {
         (row.pid !== undefined && probePids && !this.pidProbe(row.pid))
       ) {
         this.sessions.delete(id)
+        reaped.push(row)
         continue
       }
       if (row.state === 'done' && nowMs - row.since >= DONE_IDLE_MS) {
@@ -97,6 +99,7 @@ export class Ingestor {
     }
     if (probePids) this.lastPidProbeAt = nowMs
     this.updateBaseline(nowMs)
+    return reaped
   }
 
   summary(nowMs: number): SessionSummary {

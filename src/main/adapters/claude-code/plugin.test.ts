@@ -10,7 +10,7 @@ async function json(path: string): Promise<Record<string, unknown>> {
 }
 
 describe('Claude Code plugin', () => {
-  it('contains the nine supported lifecycle hooks and the fixed MCP endpoint', async () => {
+  it('contains the six heartbeat hooks and the fixed MCP endpoint', async () => {
     expect(
       JSON.parse(await readFile(resolve('.claude-plugin/marketplace.json'), 'utf8'))
     ).toEqual({
@@ -50,15 +50,12 @@ describe('Claude Code plugin', () => {
     const config = await json('hooks/hooks.json')
     const hooks = config.hooks as Record<string, unknown[]>
     expect(Object.keys(hooks)).toEqual([
-      'SessionStart',
       'UserPromptSubmit',
       'PreToolUse',
       'PostToolUse',
       'PostToolUseFailure',
       'Notification',
-      'Stop',
-      'SubagentStart',
-      'SubagentStop'
+      'Stop'
     ])
     for (const [event, groups] of Object.entries(hooks)) {
       expect(groups).toEqual([

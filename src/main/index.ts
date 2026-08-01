@@ -477,6 +477,10 @@ async function startNerves(): Promise<void> {
       : new Map<string, string>()
   liveNerves = new Nerves(character?.name ?? 'No character', character?.expressions ?? {}, Date.now(), undefined, {
     cueSources: cueSources(cueDefinitions),
+    resolveHookCue: (cue) =>
+      currentSelection?.character.report.missingCues.length === 0
+        ? currentSelection.character.cueMappings[cue]
+        : undefined,
     resolveCue: (cue, defaults, inventory) => {
       const definition = cueDefinitions[cue]
       if (!definition) return undefined

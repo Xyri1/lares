@@ -12,8 +12,10 @@ explicit agent workflow that maps an imported Lar onto that vocabulary.
 *Chosen:* Lares provides a means for an agent to express its own emotional or
 epistemic appraisal; the agent deliberately emits the tool call and Lares
 validates, applies history and renders it. The call is the complete ingress
-signal. *Rejected:* Lares determining that an emotion occurred from transcript
-sentiment, an observer model, hooks, logs or renderer-side inference.
+signal for model-owned semantic appraisal. Deterministic hook beats may express
+known operational history but never masquerade as this signal. *Rejected:*
+Lares determining the model's appraisal from transcript sentiment, an observer
+model, hook payload guesses, logs or renderer-side inference.
 *Rationale:* this is the smallest interface shared by different models and
 harnesses, and it preserves P2, P4 and P11. *Status:* decided by the maintainer.
 
@@ -103,8 +105,9 @@ maintainer.
 **011-D9 — MCP instructions own everyday emoting; hooks remain heartbeat.**
 *Chosen:* server instructions and self-contained tool metadata teach sparse,
 first-person, multilingual use of the six canonical cues. The calibration
-skill is the only skill. Existing hooks continue reporting deterministic
-lifecycle state and inject no emoting or calibration instruction. *Rejected:*
+skill is the only skill. The reduced hook sets continue reporting deterministic
+lifecycle state and may produce the internal history beats in 011-D16; they
+inject no emoting or calibration instruction. *Rejected:*
 SessionStart instruction injection; calibration invitations in hook output or
 MCP initialization; per-turn injection; an ambient emoting skill. *Rationale:*
 each mechanism has one job, with no duplicated instruction authority or stale
@@ -136,8 +139,11 @@ concern.** *Chosen:* the MCP/application boundary validates that the active
 character has all six mappings, resolves the canonical cue to a performance,
 then calls Nerves through its existing performance-name interface. Nerves,
 affect history, renderer playback and the scenario harness retain their current
-internal cue vocabulary. *Rejected:* teaching Nerves both canonical and
-character-specific names; rewriting frozen scenario cues or goldens. *Rationale:*
+performance vocabulary. The narrow exception is deterministic hook history:
+`Nerves.ingest` selects one of the four approved canonical beats, then uses an
+application-supplied resolver before entering the same performance-name affect
+and presentation path. *Rejected:* exposing both vocabularies through Nerves' public emote/status
+interface; rewriting frozen scenario cues or goldens. *Rationale:*
 the adapter is the narrow seam where external semantic protocol meets portable
 character identity, while Nerves already correctly owns performance dynamics.
 *Status:* decided during implementation-readiness review, 2026-08-01.
@@ -174,3 +180,41 @@ only simulate user intent. *Rationale:* MCP carries calls, not trustworthy
 prompt provenance. Behavioral acceptance therefore verifies that ordinary
 sessions do not call calibration tools. *Status:* decided during
 implementation-readiness review, 2026-08-01.
+
+**011-D16 — Hook beats are deterministic, per-session and harness-originated.**
+*Chosen:* both plugin manifests omit `SessionStart`, `SubagentStart` and
+`SubagentStop`. Codex keeps `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
+`PermissionRequest` and `Stop`; Claude Code additionally keeps
+`PostToolUseFailure` and its permission-prompt `Notification`. Lares tracks
+turn-scoped failure and success history by `(harness, session_id)`: first
+failure immediately presents `concern` as the active error preemption, third
+consecutive failure replaces it with one `frustration`, the
+first later success gives `relief` and resets the streak, and `Stop` after a
+successful tool-bearing turn with no unresolved failure gives `satisfaction`.
+History resets at `UserPromptSubmit` and after `Stop`, and is discarded with a
+`SessionEnd` or liveness reap; routine events remain baseline-only, and
+permission stays `awaiting_input` rather than
+`uncertainty`. Failure beats resolve through the existing mapping under a
+harness-session source key, update affect at their first/third-failure
+transitions, and replace error preemption without entering the queue. Recovery
+and completion beats retain the existing queue, spacing and saturation path.
+`awaiting_input` remains louder than concurrent errors; an incomplete mapping
+preserves ordinary error preemption. These beats are neither MCP calls nor model
+appraisals. Codex failure/recovery beats remain unavailable until its hook
+surface supplies a trustworthy failure event. *Rejected:* fake MCP calls;
+transcript inference; guessed Codex payload fields; a parallel animation path;
+global history shared across sessions. *Rationale:* a deterministic heartbeat
+can satisfy P8 from events the harness explicitly supplies without weakening
+P2, P4 or P11. *Status:* decided by the maintainer, 2026-08-01.
+
+**011-D17 — A direct request for current appraisal is eligible without a
+transition.** *Chosen:* MCP initialization instructions and self-contained
+`emote` metadata tell the agent to emit exactly one appropriate cue when the
+user directly asks it to express its current appraisal, even if no appraisal
+shift just occurred. Eligibility is semantic in every language and never based
+on phrase or word matching; the cue still reports the agent's appraisal, never
+the user's emotion. *Rejected:* treating direct requests as ineligible because
+the state is steady; trigger phrase lists; mirroring user sentiment. *Rationale:*
+the two live `How do you feel?` misses were an eligibility gap in guidance, not
+a transport or cue-resolution failure. *Status:* decided by the maintainer,
+2026-08-01.

@@ -1,15 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -62,26 +52,6 @@
       }
     ],
     "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder claude-code"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
       {
         "hooks": [
           {

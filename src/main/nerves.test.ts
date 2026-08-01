@@ -21,6 +21,274 @@ const INVENTORY = [
   { id: 'ParamAngleY', name: 'Head Y', min: -30, max: 30, default: 0 }
 ]
 
+const HOOK_PERFORMANCES: Partial<Record<CanonicalCue, string>> = {
+  concern: 'concern-beat',
+  frustration: 'frustration-beat',
+  relief: 'relief-beat',
+  satisfaction: 'satisfaction-beat'
+}
+
+function hookNerves(pidProbe?: (pid: number) => boolean): Nerves {
+  return new Nerves(
+    'Hook Lar',
+    {
+      'baseline-error': { valence: -0.2, arousal: 0.45 },
+      'concern-beat': { valence: -0.25, arousal: 0.15 },
+      'frustration-beat': { valence: -0.5, arousal: 0.35 },
+      'relief-beat': { valence: 0.35, arousal: 0.1 },
+      'satisfaction-beat': { valence: 0.5, arousal: 0.05 }
+    },
+    0,
+    pidProbe,
+    { resolveHookCue: (cue) => HOOK_PERFORMANCES[cue] }
+  )
+}
+
+function hookEvent(
+  hook_event_name: string,
+  session_id = 'session-a',
+  harness: 'claude-code' | 'codex' = 'claude-code'
+) {
+  return { v: 1 as const, harness, session_id, event: { hook_event_name } }
+}
+
+describe('Nerves deterministic hook beats', () => {
+  it('makes concern the active error expression on the first consecutive PostToolUseFailure', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('UserPromptSubmit'), 0)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 2000)
+
+    expect(nerves.status(2000).active_expression).toBe('concern-beat')
+    expect(nerves.snapshot().expressionStack).toEqual([
+      { cueOrFreeform: 'concern-beat', weight: 1, expiryMs: Infinity }
+    ])
+  })
+
+  it('replaces active concern with frustration on the third consecutive PostToolUseFailure', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('UserPromptSubmit'), 0)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 2000)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 4000)
+    expect(nerves.status(4000).active_expression).toBe('concern-beat')
+
+    nerves.ingest(hookEvent('PostToolUseFailure'), 6000)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 8000)
+
+    expect(nerves.status(8000).active_expression).toBe('frustration-beat')
+    expect(nerves.snapshot().expressionStack).toEqual([
+      { cueOrFreeform: 'frustration-beat', weight: 1, expiryMs: Infinity }
+    ])
+  })
+
+  it('clears error preemption and stale failure beats before recovery relief', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('UserPromptSubmit'), 0)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 2000)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 4000)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 6000)
+    nerves.ingest(hookEvent('PostToolUse'), 8000)
+    nerves.ingest(hookEvent('PostToolUse'), 10_000)
+
+    expect(nerves.snapshot().expressionStack.map((entry) => entry.cueOrFreeform)).toEqual([
+      'relief-beat'
+    ])
+    expect(nerves.status(10_000).active_expression).toBe('relief-beat')
+  })
+
+  it('queues satisfaction when Stop follows a successful tool-bearing turn', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('UserPromptSubmit'), 0)
+    nerves.ingest(hookEvent('PreToolUse'), 1000)
+    nerves.ingest(hookEvent('PostToolUse'), 2000)
+    nerves.ingest(hookEvent('Stop'), 4000)
+
+    expect(nerves.status(4000).active_expression).toBe('satisfaction-beat')
+  })
+
+  it('keeps the immediate failure beat harmless when the expression queue is full', () => {
+    const nerves = hookNerves()
+    for (let index = 0; index < 4; index++) {
+      nerves.emote({ cue: 'satisfaction-beat' }, `mcp:${index}`, 0)
+    }
+
+    expect(() => nerves.ingest(hookEvent('PostToolUseFailure'), 2000)).not.toThrow()
+    expect(nerves.snapshot().baselineState).toBe('error')
+    expect(nerves.snapshot().expressionStack[0]).toEqual({
+      cueOrFreeform: 'concern-beat',
+      weight: 1,
+      expiryMs: Infinity
+    })
+  })
+
+  it('keeps routine hooks baseline-only and permission as awaiting_input preemption', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('UserPromptSubmit', 'codex-turn', 'codex'), 0)
+    nerves.ingest(hookEvent('PreToolUse', 'codex-turn', 'codex'), 1000)
+    nerves.ingest(hookEvent('PostToolUse', 'codex-turn', 'codex'), 2000)
+    expect(nerves.snapshot().expressionStack).toEqual([])
+
+    nerves.ingest(hookEvent('PermissionRequest', 'codex-turn', 'codex'), 3000)
+    expect(nerves.snapshot()).toMatchObject({
+      baselineState: 'awaiting_input',
+      expressionStack: [{ expiryMs: Infinity }]
+    })
+  })
+
+  it('keeps awaiting_input louder than an error beat from another session', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('PermissionRequest', 'waiting', 'codex'), 1000)
+    nerves.ingest(hookEvent('PostToolUseFailure', 'failing'), 2000)
+
+    expect(nerves.snapshot()).toMatchObject({
+      baselineState: 'awaiting_input',
+      expressionStack: [{ expiryMs: Infinity }]
+    })
+    expect(nerves.snapshot().expressionStack).toHaveLength(1)
+
+    nerves.ingest(hookEvent('Stop', 'waiting', 'codex'), 4000)
+    expect(nerves.status(4000).active_expression).toBe('concern-beat')
+  })
+
+  it('resets failure history at UserPromptSubmit', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('PostToolUseFailure'), 2000)
+    nerves.ingest(hookEvent('UserPromptSubmit'), 4000)
+    expect(nerves.snapshot().expressionStack).toEqual([])
+
+    nerves.ingest(hookEvent('PostToolUseFailure'), 6000)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 8000)
+    expect(nerves.status(8000).active_expression).toBe('concern-beat')
+    nerves.ingest(hookEvent('PostToolUseFailure'), 10_000)
+
+    expect(nerves.status(10_000).active_expression).toBe('frustration-beat')
+  })
+
+  it('does not satisfy unresolved failures and resets their history after Stop', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('PostToolUseFailure'), 2000)
+    nerves.ingest(hookEvent('Stop'), 4000)
+    expect(nerves.status(4000).active_expression).toBeNull()
+
+    nerves.ingest(hookEvent('PostToolUseFailure'), 6000)
+
+    expect(nerves.status(6000).active_expression).toBe('concern-beat')
+  })
+
+  it('allows recovery relief followed by Stop satisfaction', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('PostToolUseFailure'), 2000)
+    nerves.ingest(hookEvent('PostToolUse'), 4000)
+    nerves.ingest(hookEvent('Stop'), 6000)
+
+    expect(nerves.snapshot().expressionStack.map((entry) => entry.cueOrFreeform)).toEqual([
+      'relief-beat',
+      'satisfaction-beat'
+    ])
+  })
+
+  it('keeps failure history independent for identical session ids from different harnesses', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('PostToolUseFailure', 'shared', 'claude-code'), 2000)
+    nerves.ingest(hookEvent('UserPromptSubmit', 'shared', 'codex'), 3000)
+    nerves.ingest(hookEvent('PostToolUseFailure', 'shared', 'claude-code'), 4000)
+    nerves.ingest(hookEvent('PostToolUseFailure', 'shared', 'claude-code'), 6000)
+
+    expect(nerves.status(6000).active_expression).toBe('frustration-beat')
+  })
+
+  it('recovers sessions independently without masking a remaining error', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('PostToolUseFailure', 'session-a'), 2000)
+    nerves.ingest(hookEvent('PostToolUseFailure', 'session-a'), 3000)
+    nerves.ingest(hookEvent('PostToolUseFailure', 'session-b'), 3500)
+    nerves.ingest(hookEvent('PostToolUseFailure', 'session-a'), 4000)
+    nerves.ingest(hookEvent('PostToolUse', 'session-a'), 6000)
+
+    expect(nerves.status(6000).active_expression).toBe('concern-beat')
+
+    nerves.ingest(hookEvent('PostToolUse', 'session-b'), 8000)
+    expect(nerves.snapshot().expressionStack.map((entry) => entry.cueOrFreeform)).toEqual([
+      'relief-beat',
+      'relief-beat'
+    ])
+  })
+
+  it('does not let a retrying session mask another session still in error', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('PostToolUseFailure', 'session-a'), 2000)
+    nerves.ingest(hookEvent('PostToolUseFailure', 'session-b'), 2500)
+    nerves.ingest(hookEvent('PostToolUseFailure', 'session-b'), 3000)
+    nerves.ingest(hookEvent('PostToolUseFailure', 'session-b'), 3500)
+    expect(nerves.status(3500).active_expression).toBe('frustration-beat')
+
+    nerves.ingest(hookEvent('PreToolUse', 'session-b'), 4000)
+    expect(nerves.status(4000).active_expression).toBe('concern-beat')
+
+    nerves.ingest(hookEvent('PostToolUseFailure', 'session-b'), 5000)
+    expect(nerves.status(5000).active_expression).toBe('frustration-beat')
+  })
+
+  it('removes a PID-reaped session beat while preserving another live error', () => {
+    const livePids = new Set([101, 202])
+    const nerves = hookNerves((pid) => livePids.has(pid))
+
+    nerves.ingest({ ...hookEvent('PostToolUseFailure', 'session-a'), pid: 101 }, 2000)
+    nerves.ingest({ ...hookEvent('PostToolUseFailure', 'session-b'), pid: 202 }, 2500)
+    nerves.ingest({ ...hookEvent('PostToolUseFailure', 'session-b'), pid: 202 }, 3000)
+    nerves.ingest({ ...hookEvent('PostToolUseFailure', 'session-b'), pid: 202 }, 3500)
+    expect(nerves.status(3500).active_expression).toBe('frustration-beat')
+
+    livePids.delete(202)
+    nerves.tick(30_000)
+
+    expect(nerves.status(30_000)).toMatchObject({
+      active_expression: 'concern-beat',
+      sessions: { sessions: [{ session_id: 'session-a' }] }
+    })
+  })
+
+  it('clears failure and successful-turn history when SessionEnd arrives', () => {
+    const nerves = hookNerves()
+
+    nerves.ingest(hookEvent('PostToolUseFailure'), 2000)
+    nerves.ingest(hookEvent('SessionEnd'), 3000)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 4000)
+    nerves.ingest(hookEvent('PostToolUseFailure'), 5000)
+    expect.soft(nerves.status(5000).active_expression).toBe('concern-beat')
+
+    nerves.ingest(hookEvent('PostToolUse'), 7000)
+    nerves.ingest(hookEvent('SessionEnd'), 8000)
+    nerves.ingest(hookEvent('Stop'), 9000)
+
+    expect
+      .soft(nerves.snapshot().expressionStack.map((entry) => entry.cueOrFreeform))
+      .toEqual(['relief-beat'])
+  })
+
+  it('preserves ordinary error preemption when the failure cue is unmapped', () => {
+    const nerves = new Nerves('Hook Lar', { 'baseline-error': { valence: -0.2, arousal: 0.45 } }, 0)
+
+    nerves.ingest(hookEvent('PostToolUseFailure'), 2000)
+
+    expect(nerves.status(2000).active_expression).toBe('baseline-error')
+    expect(nerves.snapshot().expressionStack).toEqual([
+      { cueOrFreeform: 'baseline-error', weight: 1, expiryMs: Infinity }
+    ])
+  })
+})
+
 describe('Nerves emote ingress', () => {
   it('requires exactly one branch and a body inventory for params', () => {
     const nerves = new Nerves('Hiyori', CUES, 0)

@@ -13,7 +13,7 @@ const electron = createRequire(import.meta.url)('electron') as string
 const nativeEvent = {
   session_id: 'session-1',
   cwd: 'C:\\repo',
-  hook_event_name: 'SessionStart',
+  hook_event_name: 'UserPromptSubmit',
   detail: { source: 'spawn-test' }
 }
 
@@ -177,7 +177,7 @@ describe('embedded-Node forwarder', () => {
     const hooks = JSON.parse(
       await readFile(resolve('plugins/codex/hooks/hooks.json'), 'utf8')
     )
-    const handler = hooks.hooks.SessionStart[0].hooks[0]
+    const handler = hooks.hooks.UserPromptSubmit[0].hooks[0]
     const command = process.platform === 'win32' ? handler.commandWindows : handler.command
     const shell = process.platform === 'win32' ? 'pwsh.exe' : (process.env.SHELL ?? '/bin/sh')
     const args = process.platform === 'win32'
@@ -193,7 +193,7 @@ describe('embedded-Node forwarder', () => {
         USERPROFILE: profile,
         LARES_HARNESS_PID: ''
       },
-      JSON.stringify({ ...nativeEvent, hook_event_name: 'SessionStart' }),
+      JSON.stringify(nativeEvent),
       false
     )
     nerves.tick(Date.now() + 100)
@@ -224,7 +224,7 @@ describe('embedded-Node forwarder', () => {
     const hooks = JSON.parse(
       await readFile(resolve('plugins/claude-code/hooks/hooks.json'), 'utf8')
     )
-    const command = hooks.hooks.SessionStart[0].hooks[0].command
+    const command = hooks.hooks.UserPromptSubmit[0].hooks[0].command
     // Claude Code uses Git Bash on Windows — never System32's WSL bash.
     const shell =
       process.platform === 'win32'

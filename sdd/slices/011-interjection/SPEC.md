@@ -1,7 +1,8 @@
 # Slice 011 — Agent self-expression · SPEC
 
 **Artifact:** Slice SPEC · **Slice:** 011-interjection (post-M3a adoption and
-cue-seam revision) · **Status:** Ready for implementation · **Date:** 2026-08-01
+cue-seam revision) · **Status:** Implemented; live behavioral gate open ·
+**Date:** 2026-08-01
 
 ## Why
 
@@ -50,7 +51,8 @@ performances. Import, selection and preview remain available before completion;
 canonical-cue playback does not.
 
 **Exit gate:** both supported harnesses voluntarily emote at eligible appraisal
-changes in multiple languages without reacting to quoted words or user emotion;
+changes and direct requests for their current appraisal in multiple languages,
+without reacting to quoted words or user emotion;
 the same canonical call resolves to the active character's mapped performance;
 calibration runs only after explicit invocation and completes, resumes or stops
 honestly; daemon-down and incomplete-character paths are safe and quiet.
@@ -62,7 +64,8 @@ canonical-cue resolution; performance inventory terminology; mapping readiness
 and persistence; one validated mapping tool; semantic MCP instructions and tool
 metadata; deletion of the ambient emoting skill; the explicit `calibrate-lar`
 skill in both plugins; removal of calibration arming/invitation UI and state;
-Lares MCP tool-contract v2 and plugin upgrade handling; automated and real-harness
+Lares MCP tool-contract v2 and plugin upgrade handling; reduced plugin hook sets;
+deterministic, history-aware harness beats; automated and real-harness
 verification; resulting root SDD amendments.
 
 **Out:** word or translation matching; embeddings; transcript, log or
@@ -87,12 +90,15 @@ the schema exposes that enum rather than a free string. `intensity`,
 3. applies the mapped performance's calibrated affect nudge and playback;
 4. returns the canonical cue and resolved performance in the tool result.
 
-Resolution happens in the application adapter before Nerves. Nerves still
-accepts and reports character performance names; its affect, queue, coalescing
-and renderer behavior do not gain a second vocabulary. Canonical cues mapped to
-one performance therefore share that performance's existing coalescing and
+Model-originated MCP resolution happens in the application adapter before
+Nerves. Deterministic hook history is selected at `Nerves.ingest`, then an
+application-supplied resolver maps its canonical beat to a character performance
+before the existing affect and presentation path. Nerves still accepts and reports performance
+names at its public emote/status seam; its affect engine, queue, coalescing and
+renderer behavior do not gain a second vocabulary. Canonical cues mapped to one
+performance therefore share that performance's existing coalescing and
 saturation history. The scenario harness and its frozen internal cues bypass
-this adapter, so existing replay goldens remain unchanged.
+the MCP adapter, so existing replay goldens remain unchanged.
 
 If any canonical mapping is absent or targets an uncalibrated/unknown
 performance, the character is incomplete. Every cue call fails before Nerves
@@ -215,6 +221,8 @@ It establishes:
 
 - first-person appraisal, never user sentiment or transcript summary;
 - meaningful transitions, never lifecycle schedules or per-tool calls;
+- exactly one appropriate cue when the user directly asks the agent to express
+  its current appraisal, even without an appraisal transition;
 - language-independent semantics, never word/interjection triggers;
 - one call per meaningful shift at the first available tool-decision point;
 - the six cue meanings and cue-first normal path;
@@ -222,8 +230,42 @@ It establishes:
 
 The `emote` description and cue argument repeat enough of this rule to remain
 self-contained when the tool is surfaced without durable server instructions.
+Direct-request eligibility is determined from semantic intent, never a phrase
+or word match, and still reports the agent's current appraisal rather than the
+user's emotion.
+
+Hooks remain the deterministic operational heartbeat and never emit model-
+visible guidance. The Codex plugin registers `UserPromptSubmit`, `PreToolUse`,
+`PostToolUse`, `PermissionRequest` and `Stop`. The Claude Code plugin registers
+`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
+`Notification` matched to `permission_prompt`, and `Stop`. Both omit
+`SessionStart`, `SubagentStart` and `SubagentStop`.
+
+Lares keeps turn history per `(harness, session_id)` and resets it at
+`UserPromptSubmit` and after `Stop`; `SessionEnd` or liveness reap discards it
+with the session. The first consecutive
+`PostToolUseFailure` immediately presents mapped `concern` as the active error
+preemption; the third replaces it with mapped `frustration` once; later failures
+retain frustration until reset. Neither failure beat enters the expression
+queue. The first successful `PostToolUse` after failures clears failure
+preemption, queues `relief` with no stale failure beat ahead of it and resets the failure streak. A
+`Stop` after a successful tool-bearing turn queues `satisfaction` only when no
+failure remains unresolved. A recovered turn may therefore queue `relief` and
+then `satisfaction`; normal per-source spacing, coalescing, saturation and queue
+capacity apply to those queued beats. A full queue drops the optional queued
+beat without breaking baseline ingestion, while the immediate failure
+preemption is queue-independent. An incomplete character preserves ordinary
+error baseline/preemption without a canonical failure beat.
+
+These expressions are harness-originated internal beats, not MCP calls and not
+claims about model appraisal. `UserPromptSubmit`, routine `PreToolUse` and
+routine successful `PostToolUse` remain baseline-only. Permission requests keep
+the existing `awaiting_input` preemption, remain louder than concurrent error
+beats and are never labeled `uncertainty`.
+Codex has no trustworthy failure event, so it cannot produce the failure or
+recovery beats; Lares does not infer one from transcript or undocumented fields.
 No calibration invitation is appended to initialization. Existing hooks emit
-lifecycle events only and produce no model-visible instruction output.
+lifecycle events and produce no model-visible instruction output.
 
 ## 6. Calibrate Lar skill
 
@@ -291,7 +333,8 @@ Minimum cases:
 
 - **Eligible:** discovery that changes the approach; material uncertainty;
   concern about a concrete risk; frustration after repeated failure; relief
-  after recovery; successful completion.
+  after recovery; successful completion; a direct request for the agent's
+  current appraisal even when no transition just occurred.
 - **Ineligible:** user emotion; quoted or translated *aha*/*wait*; routine tool
   success; lifecycle activity without an appraisal change.
 - **Language:** English, Simplified Chinese, another non-Latin language and one
@@ -342,7 +385,9 @@ Automated checks cover:
 - explicit-only host metadata, stale-plugin upgrades and the load-bearing
   calibration workflow;
 - semantic instruction content and both length budgets;
-- existing hook commands and silent daemon-down behavior remain unchanged.
+- exact reduced hook sets, per-session deterministic beat history and silent
+  daemon-down behavior.
 
-Repository gate: `pnpm test` and `pnpm build` green. Live gate: both behavioral
-matrices above pass before root source-of-truth documents are amended.
+Repository gate: `pnpm test` and `pnpm build` green. The approved root
+source-of-truth amendments are present; the live gate remains open until both
+behavioral matrices above pass.

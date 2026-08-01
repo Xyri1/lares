@@ -1,6 +1,19 @@
 # Lares for Codex
 
-The plugin provides Lares's baseline lifecycle hooks, its local MCP server, and the `calibrate-lar` skill. Everyday emote guidance comes from the MCP server's own instructions, not a skill. The hooks call the `~/.lares/bin/lares-forwarder` shim the desktop app maintains, so the plugin works across app updates without machine-specific paths.
+The plugin provides five heartbeat hooks (`UserPromptSubmit`, `PreToolUse`,
+`PostToolUse`, `PermissionRequest`, `Stop`), Lares's local MCP server, and the
+`calibrate-lar` skill. Routine hooks drive baseline state; Lares may derive a
+deterministic satisfaction beat after a successful tool-bearing turn. Codex has
+no dedicated failure hook, so Lares does not guess failure or recovery beats
+from transcript text or undocumented payload fields.
+
+Everyday first-person emote guidance comes from the MCP server's own
+instructions, not a skill or hook output. When the user directly asks the agent
+to express its current appraisal, the guidance calls for exactly one
+semantically appropriate cue even without a transition—never a phrase match or
+the user's emotion. Hooks call the `~/.lares/bin/lares-forwarder` shim the
+desktop app maintains, so the plugin works across app updates without
+machine-specific paths.
 
 ## Install
 

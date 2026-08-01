@@ -10,7 +10,7 @@ async function json(path: string): Promise<Record<string, unknown>> {
 }
 
 describe('Codex plugin', () => {
-  it('contains only the eight supported lifecycle hooks and the fixed MCP endpoint', async () => {
+  it('contains only the five heartbeat hooks and the fixed MCP endpoint', async () => {
     expect(
       JSON.parse(await readFile(resolve('.agents/plugins/marketplace.json'), 'utf8'))
     ).toEqual({
@@ -54,14 +54,11 @@ describe('Codex plugin', () => {
     const config = await json('hooks/hooks.json')
     const hooks = config.hooks as Record<string, unknown[]>
     expect(Object.keys(hooks)).toEqual([
-      'SessionStart',
       'UserPromptSubmit',
       'PreToolUse',
       'PostToolUse',
       'PermissionRequest',
-      'Stop',
-      'SubagentStart',
-      'SubagentStop'
+      'Stop'
     ])
     for (const groups of Object.values(hooks)) {
       expect(groups).toEqual([

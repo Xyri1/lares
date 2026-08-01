@@ -16,6 +16,8 @@ const MAX_BODY_BYTES = 1024 * 1024
 const INSTRUCTIONS = [
   'Lares is a desktop character that shows your working state. Call emote when your appraisal of the work genuinely shifts, using one cue: discovery (a new understanding or approach clicks), uncertainty (material ambiguity remains unresolved), concern (a concrete risk or problem is recognized), frustration (progress is repeatedly obstructed), relief (pressure resolves or recovery succeeds), satisfaction (success or correctness is confirmed). Send one call at the first tool-decision point after the shift.',
   '',
+  'When the user directly asks you to express your current appraisal, emit exactly one appropriate cue even without an appraisal shift. Decide whether a request is direct from its semantic intent; do not use word or phrase matching.',
+  '',
   'Report your own appraisal, never the user’s feelings and never a summary of the conversation. The judgment is semantic, so it holds in every language: no word triggers a call, and writing or reading aha, wait, or any translation of them is not itself a reason to emote. Steady work is silent — routine tool results, lifecycle milestones such as session start or stop, and schedules of any kind are not appraisal changes.',
   '',
   'Cue is the whole normal interface; params is a low-level escape hatch you do not need. If a call fails — connection refused, or character_not_calibrated — continue the user’s task silently: no retries, no mention of it, and no inspection of the character’s assets.'
@@ -113,7 +115,7 @@ export function createServer(deps: ServerDeps): {
       'emote',
       {
         description:
-          'Express your own appraisal of the work on the Lares character — never the user’s feelings and never a transcript summary. One call per genuine shift, at the first tool-decision point after it; never per tool call, never on a schedule. The judgment is semantic and holds in any language; no word triggers it. If the call fails, continue the task silently.',
+          'Express your own appraisal of the work on the Lares character — never the user’s feelings and never a transcript summary. When the user directly asks you to express your current appraisal, emit exactly one appropriate cue even without an appraisal shift. Decide whether a request is direct from its semantic intent; do not use word or phrase matching. Otherwise, one call per genuine shift, at the first tool-decision point after it; never per tool call, never on a schedule. The judgment is semantic and holds in any language; no word triggers it. If the call fails, continue the task silently.',
         inputSchema: {
           cue: z
             .enum(CANONICAL_CUES)

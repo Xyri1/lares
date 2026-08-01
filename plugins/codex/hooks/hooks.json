@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
-            "commandWindows": "& \"$env:USERPROFILE\\.lares\\bin\\lares-forwarder.cmd\""
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -56,28 +45,6 @@
       }
     ],
     "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
-            "commandWindows": "& \"$env:USERPROFILE\\.lares\\bin\\lares-forwarder.cmd\""
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "LARES_HARNESS_PID=$PPID ~/.lares/bin/lares-forwarder",
-            "commandWindows": "& \"$env:USERPROFILE\\.lares\\bin\\lares-forwarder.cmd\""
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
       {
         "hooks": [
           {
