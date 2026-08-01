@@ -223,11 +223,14 @@ describe('createServer', () => {
     const { client: value } = await client()
     const instructions = value.getInstructions()!
 
-    // SPEC §5: a client that truncates server guidance still gets a usable rule.
+    // SPEC §5: the priority window must stand alone as usable guidance.
     const head = instructions.slice(0, 512)
     expect(head).toContain('emote')
     for (const cue of CANONICAL_CUES) expect(head).toContain(cue)
     expect(head).toMatch(/appraisal/)
+    expect(head).toMatch(/how you feel/)
+    expect(head).toMatch(/even if nothing changed/)
+    expect(head).toMatch(/never the user’s feelings/)
     expect(instructions.length).toBeLessThan(2000)
 
     expect(instructions).toMatch(/never the user’s feelings/)
@@ -246,14 +249,14 @@ describe('createServer', () => {
     const instructions = value.getInstructions()!
     const emote = (await value.listTools()).tools.find((tool) => tool.name === 'emote')!
     const directRequest =
-      'When the user directly asks you to express your current appraisal, emit exactly one appropriate cue even without an appraisal shift.'
+      'If the user asks how you feel, how the work feels, or for your reaction, confidence, or appraisal, call emote once even if nothing changed.'
 
-    expect.soft(instructions).toContain(directRequest)
+    expect.soft(instructions.slice(0, 512)).toContain(directRequest)
     expect.soft(emote.description).toContain(directRequest)
+    expect.soft(emote.description!.length).toBeLessThanOrEqual(512)
     for (const surface of [instructions, emote.description!]) {
       expect(surface).toMatch(/semantic/)
-      expect(surface).toMatch(/no word triggers/)
-      expect(surface).toMatch(/do not use word or phrase matching/i)
+      expect(surface).toMatch(/not trigger phrases/)
       expect(surface).toMatch(/never the user’s feelings/)
     }
   })
