@@ -1,7 +1,7 @@
 # Slice 012 — Host guidance reinforcement · SPEC
 
 **Artifact:** Slice SPEC · **Slice:** 012-host-guidance (post-011 adoption
-follow-up) · **Status:** Contract settled (012-D1–D3); I2 implemented
+follow-up) · **Status:** Contract settled (012-D1–D4); I2/I3 implemented
 2026-08-01; G1 behavioral gate open · **Date:** 2026-08-01
 
 ## Why
@@ -65,15 +65,18 @@ Any implementation must preserve these rules:
 2. Host context contains a short standing integration rule, not the cue
    taxonomy or a duplicate tool manual.
 3. The hook does not inspect prompt text to decide whether to inject guidance.
-4. No guidance is emitted unless the helper's existing local liveness check
-   passes (a valid `runtime.json`) and the mirrored settings toggle is on;
-   daemon-down behavior stays silent. Emission never waits on a daemon
-   response.
-5. Structured `additionalContext` is the model-visible channel. UI-only
-   `systemMessage`, Stop continuation prompts, and incidental plain stdout are
-   not instruction surfaces.
+4. No guidance is delivered unless the app is alive and the settings toggle is
+   on: the Codex hook prints only past the helper's local liveness check (a
+   valid `runtime.json`), and the Claude Code rule file exists only while the
+   app runs with the toggle on. Daemon-down behavior stays silent; emission
+   never waits on a daemon response.
+5. Model-visible channels are exactly two (012-D4): structured
+   `additionalContext` from the Codex `SessionStart` hook, and the app-owned
+   Claude Code rule file. UI-only `systemMessage`, Stop continuation prompts,
+   and incidental plain stdout are not instruction surfaces.
 6. Plugin install/trust remains the user's consent surface. No global
-   `AGENTS.md`, `CLAUDE.md`, or harness preference is edited.
+   `AGENTS.md`, `CLAUDE.md`, or harness preference is edited; the Claude Code
+   rule file is app-owned and app-lifecycled, never a user document.
 7. The copy states the standing expectation plainly — a calm directive is
    fine, because hook context is user-consented plugin output — but it stays
    conditional and quiet: no urgency, no quota language, no cue taxonomy, no
@@ -86,27 +89,34 @@ Any implementation must preserve these rules:
 
 ## 3. Host surfaces
 
-Both supported hosts accept the same structured shape on `UserPromptSubmit`:
+Delivery is split per host (012-D4): once per session, same copy, same gates.
+
+**Codex** — no tool-owned always-loaded instruction file exists (its only
+user-scope instruction file is the user-owned `AGENTS.md`), so the hook remains
+the channel. The plugin registers `SessionStart` and the shared forwarder
+prints there, gated on its existing local `runtime.json` check and the
+mirrored settings toggle, never waiting on the daemon:
 
 ```json
 {
   "hookSpecificOutput": {
-    "hookEventName": "UserPromptSubmit",
+    "hookEventName": "SessionStart",
     "additionalContext": "..."
   }
 }
 ```
 
-Codex adds the text as developer context. Claude Code inserts it as a hidden
-system reminder. Both also support context from `SessionStart`, but neither
-host treats `systemMessage` as model instruction.
+**Claude Code** — the app owns `~/.claude/rules/lares.md`: written at startup
+while the toggle is on, removed at clean shutdown and on uninstall, so the
+rule follows `runtime.json`'s lifecycle and a session started while the app is
+down finds nothing. Rule files load at session launch with `CLAUDE.md`
+priority; a tool-owned rule file is the precedented pattern (Context7's
+`ctx7 setup` ships one). The forwarder prints nothing for Claude Code.
 
-`UserPromptSubmit` is the decided surface (012-D2): both Lares plugins already
-register it, and the shared forwarder prints a fixed reminder there, gated only
-on its existing local `runtime.json` check and the mirrored settings toggle.
-There is no daemon round trip, so delivery is deterministic inside the hook
-budget and the A/B arms differ in exactly one way. The copy ships inside the
-helper and updates with the app. Approved 2026-08-01:
+The per-turn `UserPromptSubmit` print (012-D2) is retired: identical text
+re-injected every turn accumulates in transcripts and invites habituation. The
+copy is byte-identical in both channels — a consistency test pins the helper's
+string to the app module's — and ships with the app. Approved 2026-08-01:
 
 ```text
 Lares is active for this session. If the `emote` tool is available, report
@@ -114,12 +124,10 @@ genuine shifts in your appraisal of the work as they occur — mid-task, not
 only at completion. Steady work stays silent.
 ```
 
-Two accepted limits: a prompt-time reminder may fade over a long agentic turn —
-the exact task shape that motivated this slice — so a failed gate indicts
-timing before it indicts the vector, with `SessionStart` as the lower-frequency
-fallback; and a session started while the app was down passes the liveness
-check yet has no MCP tools, which the conditional copy absorbs. Disclosure
-wording remains an I1 decision.
+Two accepted limits: launch-time delivery decays over very long sessions on
+both hosts — per-turn `UserPromptSubmit` remains the documented revert if the
+gate shows decay — and a crash can leave a stale rule file or stale session
+context promising a tool that is gone, which the conditional copy absorbs.
 
 Other surfaces do not fit:
 
@@ -127,7 +135,7 @@ Other surfaces do not fit:
 |---|---|
 | MCP initialization and tool metadata | Necessary canonical contract, already insufficient in one fresh task. |
 | Ambient skill | Retrieval has the same non-instrumental problem and slice 011 removed it. |
-| Global instruction files | Durable, but not safely owned or distributed by a plugin. |
+| Global instruction files | User-owned files stay off-limits; Claude Code's tool-owned rules directory is the exception 012-D4 adopts. Codex has no equivalent. |
 | Claude output style | Can replace system-prompt behavior, but is Claude-only and overrides the user's chosen style. |
 | Pre/PostToolUse context | Repeats on implementation activity rather than appraisal opportunities. |
 | Stop continuation | Creates another model turn and risks task interference. |
@@ -149,7 +157,8 @@ cannot satisfy a task (012-D3). Record the complete turn and:
 - silence when the daemon is absent or the toggle is off.
 
 The minimum matrix is eligible-moment, ineligible, and daemon-down cases on
-Codex and Claude Code. Multilingual, direct-request, and incomplete-character
+Codex and Claude Code, plus one long multi-turn session per host probing
+launch-time decay (012-D4's known risk). Multilingual, direct-request, and incomplete-character
 cases test the unchanged cue contract and stay in slice 011's ledger; rerun
 them only if the copy touches cue semantics. The reminder-on arm must raise
 moment coverage over the reminder-off arm while keeping ineligible calls at

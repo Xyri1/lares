@@ -1,19 +1,21 @@
 # Lares for Codex
 
-The plugin provides five heartbeat hooks (`UserPromptSubmit`, `PreToolUse`,
-`PostToolUse`, `PermissionRequest`, `Stop`), Lares's local MCP server, and the
+The plugin provides six heartbeat hooks (`SessionStart`, `UserPromptSubmit`,
+`PreToolUse`, `PostToolUse`, `PermissionRequest`, `Stop`), Lares's local MCP
+server, and the
 `calibrate-lar` skill. Routine hooks drive baseline state; Lares may derive a
 deterministic satisfaction beat after a successful tool-bearing turn. Codex has
 no dedicated failure hook, so Lares does not guess failure or recovery beats
 from transcript text or undocumented payload fields.
 
 Everyday first-person emote guidance comes from the MCP server's own
-instructions, not a skill. With the app running, the `UserPromptSubmit` hook
-additionally injects a fixed one-line reminder into the model's context that
-the emote tool is available. The reminder text never varies, is never derived
-from your prompt, and never selects an emotion; setting `hostGuidance: false`
-in the app's `config.json` disables it (no UI toggle), and it stops on its own
-whenever the app is not running. When the user directly asks the agent
+instructions, not a skill. When a task starts while the app is running, the
+`SessionStart` hook injects a fixed one-line reminder into the model's context
+that the emote tool is available — once per task, never per turn. The reminder
+text never varies, is never derived from your prompt, and never selects an
+emotion; setting `hostGuidance: false` in the app's `config.json` disables it
+(no UI toggle), and it stays silent whenever the app is not running. When the
+user directly asks the agent
 to express its current appraisal, the guidance calls for exactly one
 semantically appropriate cue even without a transition—never a phrase match or
 the user's emotion. Hooks call the `~/.lares/bin/lares-forwarder` shim the

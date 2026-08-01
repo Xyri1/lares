@@ -141,21 +141,35 @@ with that prompt as a hidden system reminder. Claude advises keeping this
 context concise and factual because out-of-band imperative commands may trigger
 prompt-injection defenses.
 
-Lares already registers `UserPromptSubmit` in both plugins. Slice 012 settled
-delivery on a simpler seam (012-D2): the forwarder prints a fixed structured
-reminder gated only on its existing local `runtime.json` check and a hidden
-settings toggle, never waiting on the `/v1/events` response — the round trip
-stays for the heartbeat, and the reminder cannot lose the helper's 500ms
-budget. `SessionStart` is a viable lower-frequency fallback, but it is not
-currently registered and can precede MCP readiness.
+Slice 012 first shipped per-turn `UserPromptSubmit` printing (012-D2): the
+forwarder prints a fixed structured reminder gated only on its existing local
+`runtime.json` check and a hidden settings toggle, never waiting on the
+`/v1/events` response. The same day, 012-D4 retired the per-turn print for
+session-scoped delivery: Codex registers `SessionStart` and prints there once
+per task (it can precede MCP readiness, which the conditional copy absorbs),
+while Claude Code drops hook delivery entirely in favor of an app-owned rule
+file (below).
+
+Claude Code's user-scope rules directory (`~/.claude/rules/`) loads every
+markdown file at session launch, unconditionally, with the same priority as
+`CLAUDE.md` — a first-class, tool-ownable, always-on instruction channel.
+The precedent is Context7's `ctx7 setup`, which installs its own rule file
+(e.g. `rules/context7.md`) plus a skill at user scope, creating dedicated
+files rather than appending to user documents. Lares owns `rules/lares.md`
+on the `runtime.json` lifecycle: written at app start while `hostGuidance`
+is on, removed at clean shutdown and uninstall, so sessions started with the
+app down find nothing. Codex verified to have no equivalent — its only
+user-scope instruction files are the user-owned `AGENTS.md` /
+`AGENTS.override.md`, and Codex skills load on demand (the retrieval problem
+again) — hence the hook split.
 
 Event detection is settled and production-verified: both harnesses put the
 event name in the hook's stdin JSON as `hook_event_name`. The daemon's
 envelope validation already rejects any event without that field, and the
 deterministic beats work on both hosts, so every working beat re-verifies the
-field and its values. The helper prints the reminder only when
-`hook_event_name` is exactly `UserPromptSubmit` and stays silent on anything
-else.
+field and its values. The helper prints the reminder only for the `codex`
+harness when `hook_event_name` is exactly `SessionStart`, and stays silent on
+anything else.
 
 Static global instruction files are a poor plugin surface. Codex can load a
 global `AGENTS.md`, but a plugin should not edit user-owned standing guidance;
@@ -193,9 +207,9 @@ surface when discovery alone does not create adoption.
 - **Chosen direction:** keep MCP instructions and tool metadata canonical, then
   test concise host-level reinforcement under slice 012. The hook must never
   appraise, select a cue, or inspect the prompt for emotion.
-- **Still open:** A/B moment-coverage evidence on both hosts. Copy was
-  approved and event detection verified 2026-08-01; the README disclosure is
-  drafted in the slice PLAN and ships with the I2 commit. Repetition policy
-  is deferred until per-turn noise is measured.
+- **Still open:** A/B moment-coverage evidence on both hosts, now including
+  long-session decay cases. Copy approved, event detection verified, and
+  repetition policy resolved by 012-D4 (session-scoped delivery; per-turn
+  injection retired).
 - **Version-sensitive throughout:** tool-search defaults, context placement,
   output schemas, and limits must be rechecked after harness upgrades.

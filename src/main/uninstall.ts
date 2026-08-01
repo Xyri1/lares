@@ -3,11 +3,13 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, parse, posix, resolve, win32 } from 'node:path'
 import { removeClaudeCode } from './adapters/claude-code/writer.ts'
 import { removeCodexHooks } from './adapters/codex/hooks.ts'
+import { removeHostGuidanceRule } from './hostGuidance.ts'
 
 export async function removeOwnedIntegrations(
   home = homedir(),
   log: (message: string) => void = console.error
 ) {
+  removeHostGuidanceRule(home)
   const [claude, codex] = await Promise.all([
     removeClaudeCode({
       claudeDirectory: join(home, '.claude'),

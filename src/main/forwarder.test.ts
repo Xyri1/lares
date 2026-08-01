@@ -17,12 +17,14 @@ const nativeEvent = {
   detail: { source: 'spawn-test' }
 }
 
-// 012-D2/D3: approved copy, pinned in sdd/slices/012-host-guidance/SPEC.md §3.
+// 012-D4: approved copy, kept in sync with src/main/hostGuidance.ts (checked
+// there) and pinned in sdd/slices/012-host-guidance/SPEC.md §3.
 const HOST_GUIDANCE_REMINDER =
   'Lares is active for this session. If the `emote` tool is available, report genuine shifts in your appraisal of the work as they occur — mid-task, not only at completion. Steady work stays silent.'
 const HOST_GUIDANCE_STDOUT = JSON.stringify({
-  hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: HOST_GUIDANCE_REMINDER }
+  hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: HOST_GUIDANCE_REMINDER }
 })
+const sessionStartEvent = { ...nativeEvent, hook_event_name: 'SessionStart' }
 
 interface RunResult {
   code: number | null
@@ -67,10 +69,15 @@ function run(
   })
 }
 
-function runForwarder(runtimeFile: string, input: string | null, timing = false): Promise<RunResult> {
+function runForwarder(
+  runtimeFile: string,
+  input: string | null,
+  timing = false,
+  harness: 'claude-code' | 'codex' = 'claude-code'
+): Promise<RunResult> {
   return run(
     electron,
-    [script, 'claude-code'],
+    [script, harness],
     {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
@@ -253,7 +260,7 @@ describe('embedded-Node forwarder', () => {
     else expect(envelope.pid).toBe(process.pid)
   })
 
-  it('prints exactly the structured reminder on UserPromptSubmit when hostGuidance is true', async () => {
+  it('prints exactly the structured reminder on codex SessionStart when hostGuidance is true', async () => {
     const ingested: unknown[] = []
     const value = server(ingested)
     const port = await value.start(0)
@@ -262,14 +269,14 @@ describe('embedded-Node forwarder', () => {
       JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: true })
     )
 
-    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+    const result = await runForwarder(runtimeFile, JSON.stringify(sessionStartEvent), false, 'codex')
 
     expect(result.code).toBe(0)
     expect(result.stdout).toBe(HOST_GUIDANCE_STDOUT)
     expect(ingested).toHaveLength(1)
   })
 
-  it('stays silent on a non-UserPromptSubmit hook even when hostGuidance is true', async () => {
+  it('stays silent on Claude Code SessionStart even when hostGuidance is true', async () => {
     const port = await server([]).start(0)
     await writeFile(
       runtimeFile,
@@ -278,8 +285,22 @@ describe('embedded-Node forwarder', () => {
 
     const result = await runForwarder(
       runtimeFile,
-      JSON.stringify({ ...nativeEvent, hook_event_name: 'PreToolUse' })
+      JSON.stringify(sessionStartEvent),
+      false,
+      'claude-code'
     )
+
+    expect(result).toMatchObject({ code: 0, stdout: '' })
+  })
+
+  it('stays silent on codex UserPromptSubmit even when hostGuidance is true', async () => {
+    const port = await server([]).start(0)
+    await writeFile(
+      runtimeFile,
+      JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: true })
+    )
+
+    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent), false, 'codex')
 
     expect(result).toMatchObject({ code: 0, stdout: '' })
   })
@@ -291,7 +312,7 @@ describe('embedded-Node forwarder', () => {
       JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: false })
     )
 
-    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+    const result = await runForwarder(runtimeFile, JSON.stringify(sessionStartEvent), false, 'codex')
 
     expect(result).toMatchObject({ code: 0, stdout: '' })
   })
@@ -300,7 +321,7 @@ describe('embedded-Node forwarder', () => {
     const port = await server([]).start(0)
     await writeFile(runtimeFile, JSON.stringify({ version: 1, port, pid: process.pid }))
 
-    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+    const result = await runForwarder(runtimeFile, JSON.stringify(sessionStartEvent), false, 'codex')
 
     expect(result).toMatchObject({ code: 0, stdout: '' })
   })
@@ -311,7 +332,7 @@ describe('embedded-Node forwarder', () => {
       JSON.stringify({ version: 2, port: 1, pid: 1, hostGuidance: true })
     )
 
-    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+    const result = await runForwarder(runtimeFile, JSON.stringify(sessionStartEvent), false, 'codex')
 
     expect(result).toMatchObject({ code: 0, stdout: '' })
   })
@@ -325,7 +346,7 @@ describe('embedded-Node forwarder', () => {
       JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: true })
     )
 
-    const result = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+    const result = await runForwarder(runtimeFile, JSON.stringify(sessionStartEvent), false, 'codex')
 
     expect(result.code).toBe(0)
     expect(result.stdout).toBe(HOST_GUIDANCE_STDOUT)

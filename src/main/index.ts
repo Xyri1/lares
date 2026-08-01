@@ -28,6 +28,7 @@ import icon from '../../resources/icon.png?asset'
 import { removeClaudeCode } from './adapters/claude-code/writer'
 import { removeCodexHooks } from './adapters/codex/hooks'
 import { writeForwarderShim } from './adapters/shim'
+import { removeHostGuidanceRule, writeHostGuidanceRule } from './hostGuidance'
 import {
   applyExp3,
   parseExp3File,
@@ -402,6 +403,7 @@ function removeRuntimeFile(): void {
       console.error('[lares] failed to remove discovery file', error)
     }
   }
+  removeHostGuidanceRule()
 }
 
 function configuredPort(): number {
@@ -685,6 +687,8 @@ async function startNerves(): Promise<void> {
       runtimeFile(),
       JSON.stringify({ version: 1, port, pid: process.pid, hostGuidance: appConfig.hostGuidance })
     )
+    if (appConfig.hostGuidance) writeHostGuidanceRule()
+    else removeHostGuidanceRule()
     await syncAdapters()
     nervesTick = setInterval(() => {
       const nowMs = Date.now()

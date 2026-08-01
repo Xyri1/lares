@@ -1,7 +1,7 @@
 # Slice 012 — Host guidance reinforcement · PLAN
 
 **Artifact:** Slice PLAN · **Slice:** 012-host-guidance ·
-**Status:** I1/I2 complete; G1 behavioral gate open ·
+**Status:** I1–I3 complete; G1 behavioral gate open ·
 **Date:** 2026-08-01
 
 ## R1 — Establish the failure baseline — complete
@@ -65,6 +65,28 @@ D26/D27 updates landed alongside. Original work list:
 - Update D26/D27's `runtime.json` field description in `sdd/DECISIONS.md` in
   the same commit that adds the mirrored key.
 - Run focused tests, the full test suite, and the production build.
+
+## I3 — Channel redesign (012-D4) — complete
+
+Closed 2026-08-01. Codex prints on `SessionStart` only; Claude Code delivery
+moved to the app-owned `~/.claude/rules/lares.md` on the `runtime.json`
+lifecycle. Independent review caught one real defect — unguarded rule-file
+I/O could take down nerves startup or shutdown teardown — fixed at the root
+(both module functions are now never-throw, log-and-continue) with two
+failure-simulation tests. Full suite 391 green, production build clean.
+Original work list:
+
+- Forwarder: guidance print becomes codex + `SessionStart` + toggle; the
+  Claude Code harness prints nothing.
+- Codex plugin registers `SessionStart` (one-time hook re-trust on update).
+- New app-side module owns `~/.claude/rules/lares.md` on the `runtime.json`
+  lifecycle: written at startup while `hostGuidance` is on, removed at clean
+  shutdown, on uninstall, and when the toggle is off at startup.
+- A consistency test pins the helper's copy string to the app module's so the
+  two channels cannot drift.
+- README disclosures rewritten per channel; G1 matrix gains a long-session
+  case per host (SPEC §4).
+- Focused tests, full suite, production build.
 
 ## G1 — Behavioral gate — pending implementation
 

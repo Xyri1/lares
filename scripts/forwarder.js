@@ -69,13 +69,17 @@ process.stdin.on('end', () => {
     return finish()
   }
 
-  if (event.hook_event_name === 'UserPromptSubmit' && runtime.hostGuidance === true) {
+  if (
+    harness === 'codex' &&
+    event.hook_event_name === 'SessionStart' &&
+    runtime.hostGuidance === true
+  ) {
     try {
       fs.writeSync(
         1,
         JSON.stringify({
           hookSpecificOutput: {
-            hookEventName: 'UserPromptSubmit',
+            hookEventName: 'SessionStart',
             additionalContext: HOST_GUIDANCE_REMINDER
           }
         })

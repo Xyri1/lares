@@ -1,7 +1,7 @@
 # Slice 012 — Host guidance reinforcement · DECISIONS
 
 **Artifact:** Slice DECISIONS · **Slice:** 012-host-guidance ·
-**Status:** Three decisions accepted; implemented (I2) 2026-08-01; G1 open ·
+**Status:** Four decisions accepted; implemented through I3; G1 open ·
 **Date:** 2026-08-01
 
 **012-D1 — Add host-level instruction as a second emote-adoption vector.**
@@ -67,3 +67,29 @@ rejects, brittle in every language not patched). *Rationale:* the emote signal
 is informative only because it may be absent; count-shaped and case-shaped
 instructions optimize obedience, not appraisal. *Status:* decided by the
 maintainer 2026-08-01.
+
+**012-D4 — Session-scoped delivery: Claude Code rule file, Codex `SessionStart`; per-turn injection retired.**
+*Chosen:* both harnesses deliver the approved copy once per session, present
+iff the app was alive at session start, through each host's native
+standing-instruction channel. Claude Code: the app owns
+`~/.claude/rules/lares.md`, written at startup and removed at clean shutdown
+and uninstall — the `runtime.json` lifecycle — because rule files load at
+session launch with `CLAUDE.md` priority and a tool-owned rule file is the
+precedented pattern (Context7's `ctx7 setup` ships one). Codex: no rules
+directory exists, so the plugin registers a `SessionStart` hook and the
+forwarder prints the same structured context there; the `UserPromptSubmit`
+print is removed on both harnesses. One copy, byte-identical in both channels
+and pinned by a consistency test; `hostGuidance` gates both; the conditional
+wording absorbs crash-stale files and contexts. *Rejected:* keeping per-turn
+`UserPromptSubmit` injection (identical text every turn accumulates in
+transcripts and invites habituation — maintainer judgment: bad practice);
+editing user-owned `AGENTS.md`/`CLAUDE.md` (ownership unchanged from 012-D1);
+a Codex rules-equivalent (verified absent); asymmetric channels kept to
+protect an unmeasured "working" arm (anecdote is not the gate). *Rationale:*
+symmetry — the same session-scoped contract on both hosts — plus the highest
+salience placement Claude Code offers, at zero repetition cost. Known shared
+risk: launch-time delivery decays over very long sessions; per-turn
+`UserPromptSubmit` remains the documented revert, and G1 gains a long-session
+case per host. *Status:* decided by the maintainer 2026-08-01; supersedes
+012-D2's event choice; delivery gating and A/B toggle semantics of 012-D2 and
+the moment-scoring of 012-D3 stand.
