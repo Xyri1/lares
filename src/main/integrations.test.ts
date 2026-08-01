@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   configureAgentIntegrations,
   manualCommands,
+  PLUGIN_VERSION,
   runAgentIntegrationCommand,
   type CommandResult
 } from './integrations'
@@ -144,8 +145,8 @@ describe('agent integration configuration', () => {
 
   it('upgrades a stale plugin on both hosts rather than reporting it configured', async () => {
     const versions = new Map([
-      ['claude', '0.1.0'],
-      ['codex', '0.1.0']
+      ['claude', '0.0.1'],
+      ['codex', '0.0.1']
     ])
     const run = vi.fn(async (command: string, args: string[]) => {
       if (args.includes('marketplace') && args.includes('list')) {
@@ -157,12 +158,12 @@ describe('agent integration configuration', () => {
           stdout: pluginStatus(
             command,
             true,
-            args.includes('--available') ? '0.2.0' : versions.get(command)!
+            args.includes('--available') ? PLUGIN_VERSION : versions.get(command)!
           )
         })
       }
       if (!args.includes('marketplace') && (args.includes('update') || args.includes('add'))) {
-        versions.set(command, '0.2.0')
+        versions.set(command, PLUGIN_VERSION)
       }
       return result()
     })
@@ -243,7 +244,7 @@ describe('agent integration configuration', () => {
       if (args.includes('marketplace') && args.includes('list')) {
         return result({ stdout: marketplaceStatus(command, true) })
       }
-      if (args.includes('list')) return result({ stdout: pluginStatus(command, true, '0.1.0') })
+      if (args.includes('list')) return result({ stdout: pluginStatus(command, true, '0.0.1') })
       return result({ code: 1, stderr: 'marketplace snapshot is unreachable' })
     })
     const report = await configureAgentIntegrations({
@@ -273,7 +274,7 @@ describe('agent integration configuration', () => {
       if (args.includes('marketplace') && args.includes('list')) {
         return result({ stdout: marketplaceStatus(command, true) })
       }
-      if (args.includes('list')) return result({ stdout: pluginStatus(command, true, '0.1.0') })
+      if (args.includes('list')) return result({ stdout: pluginStatus(command, true, '0.0.1') })
       return result()
     })
     const report = await configureAgentIntegrations({
@@ -297,7 +298,7 @@ describe('agent integration configuration', () => {
       if (args.includes('marketplace') && args.includes('list')) {
         return result({ stdout: marketplaceStatus(command, true) })
       }
-      if (args.includes('list')) return result({ stdout: pluginStatus(command, true, '0.1.0') })
+      if (args.includes('list')) return result({ stdout: pluginStatus(command, true, '0.0.1') })
       return result()
     })
     const report = await configureAgentIntegrations({
