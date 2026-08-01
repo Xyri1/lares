@@ -1,3 +1,4 @@
+import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   macBundlePath,
@@ -9,13 +10,11 @@ import {
 
 describe('uninstall path safety', () => {
   it('accepts only the direct Lares child of appData', () => {
-    expect(validatedUserDataPath('/Users/test/Library/Application Support/Lares',
-      '/Users/test/Library/Application Support')).toBe(
-      '/Users/test/Library/Application Support/Lares'
-    )
-    expect(() => validatedUserDataPath('/Users/test', '/Users/test')).toThrow('userData')
-    expect(() => validatedUserDataPath('/Users/test/Projects/lares',
-      '/Users/test/Library/Application Support')).toThrow('userData')
+    const appData = resolve('test-app-data')
+    const userData = join(appData, 'Lares')
+    expect(validatedUserDataPath(userData, appData)).toBe(userData)
+    expect(() => validatedUserDataPath(appData, appData)).toThrow('userData')
+    expect(() => validatedUserDataPath(resolve('test-project', 'lares'), appData)).toThrow('userData')
   })
 
   it('resolves only packaged platform-owned removal targets', () => {
@@ -39,12 +38,13 @@ describe('uninstall path safety', () => {
 describe('supported uninstall flows', () => {
   it('cleans integrations before optional data and app removal on macOS', async () => {
     const events: string[] = []
+    const appData = resolve('test-app-data')
     const common = {
       execPath: '/Applications/Lares.app/Contents/MacOS/Lares',
       packaged: true,
       platform: 'darwin' as const,
-      userData: '/Users/test/Library/Application Support/Lares',
-      appData: '/Users/test/Library/Application Support',
+      userData: join(appData, 'Lares'),
+      appData,
       cleanup: async () => {
         events.push('cleanup')
       },

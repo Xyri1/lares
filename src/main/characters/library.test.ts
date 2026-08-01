@@ -166,9 +166,12 @@ describe('managed character library', () => {
     const source = writePackage(workspace, 'source')
     const linkedSource = join(workspace, 'linked-source')
     const managedRoot = join(workspace, 'managed')
-    symlinkSync(source, linkedSource)
+    symlinkSync(source, linkedSource, process.platform === 'win32' ? 'junction' : 'dir')
 
-    expect(importCharacterPackage(managedRoot, linkedSource)).toMatchObject({ ok: false })
+    expect(importCharacterPackage(managedRoot, linkedSource)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('symbolic link')
+    })
     expect(existsSync(join(managedRoot, 'linked-source'))).toBe(false)
   })
 
@@ -259,7 +262,7 @@ describe('managed character library', () => {
 
   it('resolves the packaged default separately from the development selection', () => {
 
-    expect(bundledPackageRoot('/app', '/resources', true, 'ignored')).toBe('/resources/default-character')
-    expect(bundledPackageRoot('/app', '/resources', false, 'alternate')).toBe('/app/characters/alternate')
+    expect(bundledPackageRoot('/app', '/resources', true, 'ignored')).toBe(join('/resources', 'default-character'))
+    expect(bundledPackageRoot('/app', '/resources', false, 'alternate')).toBe(join('/app', 'characters', 'alternate'))
   })
 })

@@ -29,7 +29,7 @@ async function executable(path: string, source: string): Promise<void> {
 }
 
 describe('local macOS installer entry point', () => {
-  it('installs and invokes confirmed uninstall through local fixtures with spaces', async () => {
+  it.skipIf(process.platform === 'win32')('installs and invokes confirmed uninstall through local fixtures with spaces', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lares local install '))
     roots.push(root)
     const tools = join(root, 'fake tools')
@@ -79,7 +79,7 @@ describe('local macOS installer entry point', () => {
     expect(await readFile(log, 'utf8')).toContain(`app:--uninstall`)
   })
 
-  it('rejects missing artifacts and propagates native failures', async () => {
+  it.skipIf(process.platform === 'win32')('rejects missing artifacts and propagates native failures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lares-local-failure-'))
     roots.push(root)
     const tools = join(root, 'bin')
