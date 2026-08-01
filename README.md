@@ -119,6 +119,14 @@ From the tray, choose **Import Character…**. Select an extracted Live2D model
 folder. Lares copies it into the managed character library. It validates the
 package before it switches. It does not change the original folder.
 
+A newly imported model then needs calibration. Run the **Calibrate Lar**
+skill from your agent — `/lares:calibrate-lar` in Claude Code,
+`$lares:calibrate-lar` in Codex. The agent previews the model's expressions
+on your desktop, asks you about what it cannot see, and maps them onto the
+six canonical cues. Keep the Lar visible while it runs. Until all six are
+mapped, the tray shows `Expression mapping n/6` and the affect engine does
+not play cues on its own.
+
 See the [character package guide](docs/en/character-format.md) for
 compatibility, the `lares/1` manifest, expression mapping, and the
 command-line import flow.

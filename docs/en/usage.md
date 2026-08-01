@@ -177,8 +177,7 @@ This history is the reason a third failure reads worse than the first.
 | **Do Not Disturb** | Hide the Lar |
 | **Launch at Login** | Start Lares when you sign in |
 | **Reset Position** | Move the Lar to the bottom right of the primary display |
-| *Calibration status* | A line that reports the mapping state. You cannot select it |
-| **Map expressions…** | Start the calibration flow for the active character |
+| *Expression mapping n/6* | A read-only line that reports the cue mapping state. You cannot select it |
 | **Automatically Check for Updates** | Enable or disable the daily check |
 | **Check for Updates…** | Check now |
 | **Configure Agent Integrations…** | Install the harness plugins |
@@ -223,30 +222,30 @@ one: `Name` and `Name (2)`.
 Supported runtimes are Cubism SDK 3.0 to 4.2. Lares refuses Cubism 2.1 and
 MOC version 5 or later.
 
-### Map the expressions
+### Calibrate the character
 
-A new character arrives with cues, but with no emotional meaning. The tray
-shows the state:
+A new character arrives with performances, but with no emotional meaning. The
+tray shows one read-only line:
 
 | Tray line | Meaning |
 | --- | --- |
-| 🔴 Expressions not mapped | No cue has a coordinate |
-| 🟡 *n* expressions left | Some cues have a coordinate |
-| Expressions mapped | Every cue has a coordinate |
+| Expression mapping *n*/6 — run Calibrate Lar | Some canonical cues have no performance yet |
+| Expression mapping 6/6 | Every canonical cue is mapped |
 
-An unmapped cue still works: your agent can play it by name. But the affect
-engine does not select it on its own.
+Until all six cues are mapped, `emote` refuses cue playback and the affect
+engine plays nothing on its own. Only the raw parameter escape hatch works.
 
-To map the cues, choose **Map expressions…**. Lares copies a prompt to your
-clipboard. Paste the prompt into an agent session that has the Lares MCP
-connection. The agent then previews each cue on your desktop and asks you what
-it needs to know.
+To map the cues, run the **Calibrate Lar** skill from your agent —
+`/lares:calibrate-lar` in Claude Code, `$lares:calibrate-lar` in Codex. The
+skill is user-invoked only; the agent never starts it by itself. The agent
+then previews each performance on your desktop and asks you what it needs to
+know.
 
 Keep the Lar visible during this flow. Mapping is a visual decision, and the
 agent needs your eyes.
 
-The [character package guide](character-format.md) holds the manifest schema,
-the command-line import flow, and the full prompt.
+The [character package guide](character-format.md) holds the manifest schema
+and the command-line import flow.
 
 ---
 
@@ -256,17 +255,17 @@ The Lares MCP server gives your agent these tools:
 
 | Tool | What it does |
 | --- | --- |
-| `emote` | Play a cue, or drive parameters directly |
-| `list_cues` | List the cues, with their coordinates and their source |
+| `emote` | Play one of the six canonical cues, or drive parameters directly |
+| `list_performances` | List the performances, their affect coordinates, and the missing cues |
 | `status` | Report the active character and a session summary |
 | `list_parameters` | List the parameters of the loaded model |
-| `preview_expression` | Show an exact expression, for calibration |
+| `preview_expression` | Show an exact expression or performance, for calibration |
+| `map_cue` | Map a canonical cue to a performance, during calibration |
 | `save_expression` | Write a new authored expression |
-| `update_expression` | Change the coordinates or the parameters of a cue |
+| `update_expression` | Change the coordinates or the parameters of a performance |
 
-The server tells the agent when to emote: at session start, at a state change,
-at a third failure, at a recovery, and at completion. The agent must not emote
-for each tool call.
+The server tells the agent when to emote: once per genuine shift in its own
+appraisal of the work, never per tool call and never on a schedule.
 
 The server enforces every limit itself. Your agent cannot exceed them:
 

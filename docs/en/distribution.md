@@ -116,9 +116,12 @@ Use a clean Apple Silicon Mac running macOS 13 or newer.
 6. Change character, scale, DND, launch-at-login, position, and automatic
    update preference. Restart and confirm every setting persists. Confirm DND
    hides only the body and **Reset Position** uses the primary display.
-7. Check red/yellow/complete calibration states. Arm mapping, verify the
-   kickoff prompt reaches the clipboard, and verify only a newly opened MCP
-   session receives the invite. Re-toggle or complete mapping to disarm.
+7. Check the read-only calibration row: an uncalibrated character shows
+   `Expression mapping n/6 — run Calibrate Lar`, a fully mapped one shows
+   `Expression mapping 6/6`, and the row is never clickable. Run the
+   **Calibrate Lar** skill from a harness session and confirm the tray count
+   advances as cues are mapped, and that `emote` cue playback is refused
+   until 6/6.
 8. Choose **Configure Agent Integrations…** and cancel once; verify no
    marketplace or plugin changes. Choose it again, accept the disclosed
    download, and verify both installed harnesses report configured. Start a

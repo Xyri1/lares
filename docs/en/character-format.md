@@ -24,6 +24,10 @@ files or model index.
     "weary": { "valence": -0.35, "arousal": 0.15 },
     "neutral": { "valence": 0.1, "arousal": 0.25 }
   },
+  "cueMappings": {
+    "discovery": "surprised",
+    "satisfaction": "wave"
+  },
   "renderers": {
     "live2d": {
       "model": "runtime/Example.model3.json",
@@ -44,10 +48,15 @@ files or model index.
 - A cue has exactly one source: `expression` (a package-relative `.exp3.json`
   path), `motion` (a package-relative `.motion3.json` path), or `params` (a
   map of parameter IDs to numeric values).
-- `expressions` maps cue names to `{ "valence", "arousal" }`. Valence is
-  between `-1` and `1`; arousal is between `0` and `1`. Imported cues begin
-  as a `null` entry: they can be played directly, but the autonomous
-  affect selector ignores them until mapped.
+- `expressions` maps performance names to `{ "valence", "arousal" }`. Valence
+  is between `-1` and `1`; arousal is between `0` and `1`. Imported entries
+  begin as a `null` entry and gain coordinates during calibration; `map_cue`
+  refuses a performance whose coordinates are still `null`.
+- `cueMappings` maps the six canonical cues (`discovery`, `uncertainty`,
+  `concern`, `frustration`, `relief`, `satisfaction`) to performance names.
+  The Calibrate Lar skill writes it through the daemon. Until all six are
+  present, `emote` refuses cue playback. One performance may serve several
+  cues.
 - Author new expressions under `authored/<name>.exp3.json` and reference them
   as an `expression` cue. Do not overwrite bundled files.
 - `renderers.live2d.performance` may contain the same `params` and `idle`
@@ -109,51 +118,37 @@ the renderer texture limit and probed texture dimensions.
    ```
 
    The check mode names broken files and shows bundled, motion, authored,
-   calibrated, and uncalibrated cue counts. Fix reported paths or malformed
-   expression files before loading the package.
-4. Start Lares, then use an MCP-capable agent to preview and map the imported
-   cues. Preview is visual: keep the character visible and make mapping choices
-   with the person at the desktop.
+   calibrated, and uncalibrated cue counts, plus the mapped and missing
+   canonical cues. Fix reported paths or malformed expression files before
+   loading the package.
+4. Start Lares, select the character, then run the **Calibrate Lar** skill
+   from your agent — `/lares:calibrate-lar` in Claude Code,
+   `$lares:calibrate-lar` in Codex. Preview is visual: keep the character
+   visible and make mapping choices with the person at the desktop.
 
-## Copyable mapping flow
+## Calibration flow
 
-Give this prompt to the agent after the character is loaded:
+The **Calibrate Lar** skill ships with both harness plugins. It is
+user-invoked only and works entirely through the Lares MCP server — the
+daemon is the only validator, and the skill never edits package files
+directly:
 
-```text
-You are mapping the active Lares character's expression cues with the user
-watching the desktop. First call list_cues and list_parameters, then tell
-the user the plan: which cues you will map from their names alone, which
-you propose to discard, and which few need their eyes. Progress saves per
-cue; stopping at any point is fine.
+1. `status` reads the active character and its missing canonical cues.
+2. `list_performances` inventories the performances. Non-emotive ones
+   (idle, physics, tap reactions) stay exactly as they are; nothing is
+   deleted or renamed.
+3. A clearly named performance gets affect coordinates from its name via
+   `update_expression`; an opaque one (`f01`, `m_03`) is shown with
+   `preview_expression` and the user says what it conveys. Then
+   `map_cue({ cue, performance })` records the mapping.
+4. If no performance fits a cue, the skill authors one as a last resort:
+   `list_parameters`, `preview_expression({ params })`, and
+   `save_expression` once the user accepts the visible result.
+5. `status` again — the character is calibrated only when no canonical cue
+   is missing.
 
-Cue names are the artist's own labels, in any language, and a clear name
-is the artist telling you what the face means. Map each expressively named
-cue (Smile, 生气, 疑惑) yourself with category-level coordinates — valence
-[-1, 1], arousal [0, 1]; do not ask the user about degree. Preview each
-one as you write it so the user can veto a wrong-looking face; silence is
-consent. Propose clearly non-emotive cues (outfits, accessories, props,
-toggles) as one batch discard; after a single confirmation, remove each
-discarded key from both `expressions` and `renderers.live2d.cues` in the
-manifest; never delete or rename the artist's asset. Interview only opaque
-names (f01, m_03): preview with preview_expression({ cue: "<cue name>" }),
-ask the user what it visibly conveys, propose coordinates, confirm, then
-call update_expression({ name: "<cue name>", affect: { valence, arousal } }).
-Map expressions before motions, and warn the user before each motion
-preview: a motion plays once, so they must be watching the character. If
-the user wants a clearer cue name, rename the key in both blocks while
-leaving its referenced path unchanged.
-
-If the set lacks a useful emotion, use list_parameters, preview_expression
-with a small parameter map, ask the user to accept the visible result, then
-call save_expression({ name, params, affect }) once to create it. Do not save
-until the user accepts it. Never overwrite a bundled cue; choose a new name.
-Use preview_expression({}) to revert an expression preview when done.
-```
-
-Acceptance is exception-based where the artist has already spoken: an
-expressively named cue is mapped from its name while the user watches for
-vetoes, and only opaque cues get the full preview-and-ask round. Discards and
-authored expressions remain conversational. The user can also edit the
+Every `map_cue` and `save_expression` persists immediately, so an
+interrupted run resumes from stored state. The user can also edit the
 manifest by hand if an MCP client is unavailable; run `--check` afterward.
 
 ## Worked synthetic example

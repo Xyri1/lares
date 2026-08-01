@@ -26,6 +26,10 @@
     "weary": { "valence": -0.35, "arousal": 0.15 },
     "neutral": { "valence": 0.1, "arousal": 0.25 }
   },
+  "cueMappings": {
+    "discovery": "surprised",
+    "satisfaction": "wave"
+  },
   "renderers": {
     "live2d": {
       "model": "runtime/Example.model3.json",
@@ -44,9 +48,13 @@
 - `renderers.live2d.model` 是指向 `.model3.json` 的包内相对路径。
 - 每个 cue 只能有一个来源：`expression`（包内相对的 `.exp3.json` 路径）、`motion`
   （包内相对的 `.motion3.json` 路径），或 `params`（参数 ID 到数值的映射）。
-- `expressions` 把 cue 名字映射为 `{ "valence", "arousal" }`。valence（效价）取值
-  在 `-1` 到 `1` 之间，arousal（唤醒度）在 `0` 到 `1` 之间。导入的 cue 初始为 `null`：
-  它们可以被直接播放，但在映射完成前，自主情感选择器会忽略它们。
+- `expressions` 把表演名字映射为 `{ "valence", "arousal" }`。valence（效价）取值
+  在 `-1` 到 `1` 之间，arousal（唤醒度）在 `0` 到 `1` 之间。导入的条目初始为 `null`，
+  在校准过程中获得坐标；`map_cue` 会拒绝坐标仍为 `null` 的表演。
+- `cueMappings` 把六个规范 cue（`discovery`、`uncertainty`、`concern`、
+  `frustration`、`relief`、`satisfaction`）映射到表演名字。它由 Calibrate Lar
+  技能通过守护进程写入。六个 cue 齐全之前，`emote` 会拒绝播放 cue。一个表演
+  可以同时对应多个 cue。
 - 新表情请创作在 `authored/<名字>.exp3.json` 下，并作为 `expression` 类型的 cue
   引用。不要覆盖随包附带的文件。
 - `renderers.live2d.performance` 可以包含与 `presets/default.json` 相同的 `params`
@@ -101,53 +109,35 @@ MOC 版本、参数与分组清单、动作分组，以及渲染器贴图上限�
    pnpm run import -- --check characters/<名字>
    ```
 
-   检查模式会指出损坏的文件，并显示随包、动作、创作、已校准和未校准的 cue 数量。加载
-   该包之前，请先修复报告中的路径或格式错误的表情文件。
+   检查模式会指出损坏的文件，并显示随包、动作、创作、已校准和未校准的 cue 数量，
+   以及已映射和缺失的规范 cue。加载该包之前，请先修复报告中的路径或格式错误的
+   表情文件。
 
-4. 启动 Lares，然后用一个支持 MCP 的 agent 预览并映射导入的 cue。预览是视觉过程：
-   请保持角色可见，并与坐在桌前的人一起做映射决定。
+4. 启动 Lares，选中该角色，然后在你的 agent 里运行 **Calibrate Lar** 技能——
+   Claude Code 中输入 `/lares:calibrate-lar`，Codex 中输入
+   `$lares:calibrate-lar`。预览是视觉过程：请保持角色可见，并与坐在桌前的人
+   一起做映射决定。
 
-## 可直接复制的映射流程
+## 校准流程
 
-角色加载完成后，把下面这段提示词交给 agent。
+**Calibrate Lar** 技能随两个 harness 插件一起分发。它只能由用户发起，并且
+完全通过 Lares 的 MCP 服务工作——守护进程是唯一的校验者，技能绝不直接编辑
+包内文件：
 
-> 这段提示词与应用复制到剪贴板的文本逐字一致，因此保持英文原文，请勿翻译后使用。
+1. `status` 读取当前角色及其缺失的规范 cue。
+2. `list_performances` 盘点全部表演。非情感类表演（待机、物理、点击反应）
+   原样保留，不删除也不重命名。
+3. 名字清晰的表演直接按名字通过 `update_expression` 获得情感坐标；含义不明
+   的（`f01`、`m_03`）先用 `preview_expression` 展示，由用户说出它传达了
+   什么。然后 `map_cue({ cue, performance })` 记录映射。
+4. 如果没有任何表演适合某个 cue，技能才会创作一个：`list_parameters`、
+   `preview_expression({ params })`，在用户接受可见效果后调用
+   `save_expression`。
+5. 再次 `status`——只有当没有任何规范 cue 缺失时，角色才算校准完成。
 
-```text
-You are mapping the active Lares character's expression cues with the user
-watching the desktop. First call list_cues and list_parameters, then tell
-the user the plan: which cues you will map from their names alone, which
-you propose to discard, and which few need their eyes. Progress saves per
-cue; stopping at any point is fine.
-
-Cue names are the artist's own labels, in any language, and a clear name
-is the artist telling you what the face means. Map each expressively named
-cue (Smile, 生气, 疑惑) yourself with category-level coordinates — valence
-[-1, 1], arousal [0, 1]; do not ask the user about degree. Preview each
-one as you write it so the user can veto a wrong-looking face; silence is
-consent. Propose clearly non-emotive cues (outfits, accessories, props,
-toggles) as one batch discard; after a single confirmation, remove each
-discarded key from both `expressions` and `renderers.live2d.cues` in the
-manifest; never delete or rename the artist's asset. Interview only opaque
-names (f01, m_03): preview with preview_expression({ cue: "<cue name>" }),
-ask the user what it visibly conveys, propose coordinates, confirm, then
-call update_expression({ name: "<cue name>", affect: { valence, arousal } }).
-Map expressions before motions, and warn the user before each motion
-preview: a motion plays once, so they must be watching the character. If
-the user wants a clearer cue name, rename the key in both blocks while
-leaving its referenced path unchanged.
-
-If the set lacks a useful emotion, use list_parameters, preview_expression
-with a small parameter map, ask the user to accept the visible result, then
-call save_expression({ name, params, affect }) once to create it. Do not save
-until the user accepts it. Never overwrite a bundled cue; choose a new name.
-Use preview_expression({}) to revert an expression preview when done.
-```
-
-在作者已经表态的地方，确认采用例外制：名字本身有表达力的 cue 直接按名字映射，用户
-只需在看到不对劲时否决；只有含义不明的 cue 才走完整的「预览并询问」轮次。丢弃项和
-创作的表情仍然通过对话确认。若手边没有 MCP 客户端，用户也可以手工编辑清单文件，改完
-之后运行 `--check`。
+每次 `map_cue` 和 `save_expression` 都立即持久化，中断的流程会从已保存的
+状态继续。若手边没有 MCP 客户端，用户也可以手工编辑清单文件，改完之后运行
+`--check`。
 
 ## 一个完整的示例
 

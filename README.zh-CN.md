@@ -107,6 +107,12 @@ pnpm dev
 在托盘菜单中选择 **Import Character…**，选中一个解压后的 Live2D 模型文件夹。
 Lares 会把它复制进托管角色库，校验通过后才会切换，原始文件夹不会被改动。
 
+新导入的模型还需要校准。在智能体里运行 **Calibrate Lar** 技能——Claude Code
+中输入 `/lares:calibrate-lar`，Codex 中输入 `$lares:calibrate-lar`。智能体会在
+桌面上逐个预览模型的表情，向你确认它看不到的部分，并把表情映射到六个规范
+cue 上。运行期间请保持 Lar 可见。六个 cue 全部映射完成之前，托盘会显示
+`Expression mapping n/6`，情感引擎也不会自行播放 cue。
+
 关于兼容范围、`lares/1` 清单格式、表情映射和命令行导入流程，
 请参阅[角色包指南](docs/zh-CN/character-format.md)。
 
