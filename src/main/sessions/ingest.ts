@@ -17,6 +17,8 @@ export interface SessionRow {
   last_event_at: number
   subagents: number
   pid?: number
+  /** UserPromptSubmit seen, no Stop yet — feel attribution reads this (013 §9). */
+  turnOpen: boolean
 }
 
 export interface SessionSummary {
@@ -64,12 +66,15 @@ export class Ingestor {
       state: 'idle',
       since: nowMs,
       last_event_at: nowMs,
-      subagents: 0
+      subagents: 0,
+      turnOpen: false
     }
     row.harness = envelope.harness
     if (envelope.cwd !== undefined) row.cwd = envelope.cwd
     if (envelope.pid !== undefined) row.pid = envelope.pid
     row.last_event_at = nowMs
+    if (name === 'UserPromptSubmit') row.turnOpen = true
+    else if (name === 'Stop') row.turnOpen = false
     if (name === 'SubagentStart') row.subagents++
     if (name === 'SubagentStop') row.subagents = Math.max(0, row.subagents - 1)
     if (state !== row.state) {
