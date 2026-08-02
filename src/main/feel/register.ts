@@ -39,12 +39,13 @@ export function parseTuple(raw: unknown): FeelTuple | null {
   return tuple
 }
 
-/** Parses `feel.json`; anything malformed yields an empty register (§12). */
-export function parseFeelFile(raw: unknown): Map<string, Latch> {
+/** Parses `feel.json`; `null` means the file is not a v1 file and the caller
+ * starts empty with a warning (§12). Unusable single entries are dropped. */
+export function parseFeelFile(raw: unknown): Map<string, Latch> | null {
   const latches = new Map<string, Latch>()
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return latches
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   const stored = (raw as Record<string, unknown>).v === 1 ? (raw as FeelFile).latches : undefined
-  if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return latches
+  if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return null
   for (const [key, value] of Object.entries(stored as Record<string, unknown>)) {
     const tuple = parseTuple(value)
     if (!tuple || key.startsWith('mcp:')) continue

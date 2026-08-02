@@ -33,7 +33,7 @@ describe('createServer', () => {
         if (feelError) throw feelError
         feelCallers.push(mcpSessionId)
         feelArgs.push(args)
-        return { status: 'latched', session: 'claude-code:session-1' }
+        return 'Latched valence 1, activation 0, control 2.'
       },
       status: (mcpSessionId) => ({
         active_character: 'hiyori',
@@ -150,10 +150,12 @@ describe('createServer', () => {
       'list_parameters',
       'preview_expression'
     ])
+    // §8: one short sentence naming the stored tuple, and no session key —
+    // the attribution is internal bookkeeping the model never sees.
     expect(
       await first.callTool({ name: 'feel', arguments: { valence: 1, activation: 0, control: 2 } })
     ).toMatchObject({
-      content: [{ type: 'text', text: '{"status":"latched","session":"claude-code:session-1"}' }]
+      content: [{ type: 'text', text: 'Latched valence 1, activation 0, control 2.' }]
     })
     expect(feelArgs).toEqual([{ valence: 1, activation: 0, control: 2 }])
     // §8: the caller's own attributed session, not a global summary.

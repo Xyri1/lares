@@ -13,14 +13,7 @@ import {
   screen,
   Tray
 } from 'electron'
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  unlinkSync,
-  writeFileSync
-} from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -53,15 +46,7 @@ import {
 import { DEFAULT_CONFIG, loadConfig, saveConfig, type AppConfig, type Scale } from './config'
 import { DensityLog } from './densityLog'
 import { errorMessage } from './errors'
-import {
-  attribute,
-  FeedGate,
-  FeelRegister,
-  FEEL_SPACING_MS,
-  parseFeelFile,
-  type Latch
-} from './feel/register'
-import { atomicWrite } from './fs'
+import { createFeel, type Feel } from './feel/service'
 import { L, resolveLocale, setLocale } from './strings'
 import {
   configureAgentIntegrations,
@@ -124,14 +109,7 @@ const defaultCharacterRoot = (): string =>
 const runtimeFile = (): string => join(homedir(), '.lares', 'runtime.json')
 
 let liveNerves: Nerves | null = null
-let feelRegister: FeelRegister | null = null
-const liveFeedGate = new FeedGate()
-// A body attaches its feed listener a beat after it reports inventory, so a
-// single on-change message can sail past it and a restored latch would never
-// reach a fresh boot (013-S9). Resend every tick for a short warmup instead.
-// ponytail: fixed window; a body:ready handshake would be exact if it drifts.
-const FEED_WARMUP_MS = 2000
-let feedWarmupUntil = 0
+let liveFeel: Feel | null = null
 let nervesServer: ReturnType<typeof createServer> | null = null
 let nervesTick: ReturnType<typeof setInterval> | null = null
 let densityLog: DensityLog | null = null
@@ -168,80 +146,20 @@ function sendLiveFeed(feed: AffectFeedMessage): void {
  * sweep itself produces, such as done→idle.
  */
 function emitLiveFeed(nowMs: number): void {
-  if (liveNerves === null) return
+  if (liveFeel === null) return
   if (activePlayback !== null) {
     // Playback owns the channel; resend once live takes it back.
-    liveFeedGate.reset()
+    liveFeel.resetFeed()
     return
   }
-  const latch = feelRegister?.displayed()
-  const feel =
-    latch === undefined
-      ? null
-      : { valence: latch.valence, activation: latch.activation, control: latch.control }
-  const operational = liveNerves.sessionState(nowMs).baseline
-  if (nowMs < feedWarmupUntil) liveFeedGate.reset()
-  if (!liveFeedGate.changed(feel, operational)) return
-  sendLiveFeed({ stageId: 'A', tick: Math.floor(nowMs / 100), feel, operational })
+  const message = liveFeel.feed(nowMs)
+  if (message) sendLiveFeed(message)
 }
 
-// Durable latch storage (013 SPEC §12): restore at boot, write through on
-// every accepted report. An unreadable or malformed file starts empty with a
-// warning and never a crash.
-function loadFeelRegister(): FeelRegister {
-  const path = feelFile()
-  const register = new FeelRegister((file) => {
-    void atomicWrite(path, file).catch((error) =>
-      console.warn(`[lares] cannot write ${path}: ${errorMessage(error)}`)
-    )
-  })
-  try {
-    register.restore(parseFeelFile(JSON.parse(readFileSync(path, 'utf8'))))
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn(`[lares] ignoring unreadable ${path}: ${errorMessage(error)}`)
-    }
-  }
-  return register
-}
-
-/**
- * The caller's attributed session key and its latch (013 SPEC §§8, 9) — the
- * feel half of a reshaped `status()`, and the key `feelReport` writes.
- */
-export function attributedFeel(
-  mcpSessionId: string,
-  nowMs: number
-): { session: string; feel: Latch | null } {
-  if (liveNerves === null || feelRegister === null) throw new Error('Lares is not ready')
-  const session = attribute(liveNerves.sessionState(nowMs).sessions) ?? `mcp:${mcpSessionId}`
-  return { session, feel: feelRegister.get(session) ?? null }
-}
-
-/**
- * The brain half of the `feel` tool (013 SPEC §§1, 8): validate, attribute,
- * latch, persist, push the feed. Throws the tool error for an invalid tuple or
- * a rate-capped call; either way the latch is untouched.
- */
-export function feelReport(
-  args: unknown,
-  mcpSessionId: string,
-  nowMs: number
-): { status: 'latched'; session: string } {
-  const { session } = attributedFeel(mcpSessionId, nowMs)
-  const result = feelRegister!.tryFeel(session, args, nowMs)
-  if (result.status === 'rejected') {
-    throw new Error(
-      `one feel per session every ${FEEL_SPACING_MS / 1000}s; wait ${Math.ceil(result.waitMs / 1000)}s`
-    )
-  }
-  emitLiveFeed(nowMs)
-  return { status: 'latched', session }
-}
-
-/** Prompt-submit checkpoint lookup (013 SPEC §10) — keyed, never attributed. */
-export function feelCheckpoint(sessionKey: string): Latch | undefined {
-  return feelRegister?.get(sessionKey)
+/** A body just took the feed channel — at boot, or after a character switch
+ *  reset its pose to the new neutral (013 SPEC §§1, 6). */
+function resendLiveFeed(): void {
+  liveFeel?.resend(Date.now())
 }
 
 function broadcast(channel: 'authoring:preview' | 'authoring:revert', value?: unknown): void {
@@ -424,10 +342,13 @@ async function startNerves(): Promise<void> {
   const character = 'error' in selected ? null : selected.character
   let currentSelection = 'error' in selected ? null : selected
   if ('error' in selected) console.error(`[lares] ${selected.error}`)
-  feelRegister = loadFeelRegister()
   liveNerves = new Nerves(character?.name ?? 'No character', undefined, {
     preview: (value) => broadcast('authoring:preview', value),
     revertPreview: () => broadcast('authoring:revert')
+  })
+  liveFeel = createFeel({
+    path: feelFile(),
+    state: (nowMs) => liveNerves!.sessionState(nowMs)
   })
   if (currentSelection) {
     characterAssets = new CharacterAssetState(dirname(currentSelection.manifestPath))
@@ -477,6 +398,11 @@ async function startNerves(): Promise<void> {
           currentSelection = candidate
           liveNerves!.commitCharacter(state.nerves)
           stopScenarioPlayback()
+          // The new body performs its own neutral until the feed reaches it:
+          // re-emit the unchanged tuple and the live operational state so the
+          // switch eases from one character's target to the other's (§§1, 6)
+          // and no awaiting_input is masked (P10).
+          resendLiveFeed()
         }
       }
     )
@@ -488,12 +414,16 @@ async function startNerves(): Promise<void> {
       densityLog?.recordBaseline(liveNerves!.sessionState(nowMs).baseline, nowMs)
       emitLiveFeed(nowMs)
     },
-    feel: (args, mcpSessionId, nowMs) => feelReport(args, mcpSessionId, nowMs),
+    feel: (args, mcpSessionId, nowMs) => {
+      const ack = liveFeel!.report(args, mcpSessionId, nowMs)
+      emitLiveFeed(nowMs)
+      return ack
+    },
     status: (mcpSessionId, nowMs) => {
       const { active_character, protocol_version } = liveNerves!.status()
-      return { active_character, protocol_version, ...attributedFeel(mcpSessionId, nowMs) }
+      return { active_character, protocol_version, ...liveFeel!.attributed(mcpSessionId, nowMs) }
     },
-    checkpoint: (sessionKey) => feelCheckpoint(sessionKey),
+    checkpoint: (sessionKey) => liveFeel?.checkpoint(sessionKey),
     listParameters: () => liveNerves!.listParameters(),
     previewExpression: (args, nowMs) => liveNerves!.previewExpression(args, nowMs)
   })
@@ -578,7 +508,7 @@ function registerCharacterIpc(): void {
 
   ipcMain.on('body:inventory', (event, params: unknown[], compatibility: unknown) => {
     // Any body reporting in is about to start listening for the feed.
-    feedWarmupUntil = Date.now() + FEED_WARMUP_MS
+    resendLiveFeed()
     if (overlayWindow && BrowserWindow.fromWebContents(event.sender) !== overlayWindow) return
     const selected = activeCharacter()
     const names =

@@ -115,16 +115,16 @@ describe('FeelRegister', () => {
     expect(register.displayed()).toEqual(file.latches[`claude-code:s${LATCH_CAPACITY + 3}`])
 
     const restored = new FeelRegister()
-    restored.restore(parseFeelFile(JSON.parse(JSON.stringify(file))))
+    restored.restore(parseFeelFile(JSON.parse(JSON.stringify(file)))!)
     expect(restored.file()).toEqual(file)
     expect(restored.displayed()).toEqual(register.displayed())
   })
 })
 
 describe('parseFeelFile', () => {
-  it('starts empty for anything that is not a v1 file', () => {
+  it('refuses anything that is not a v1 file, so the caller can warn', () => {
     for (const raw of [null, 'x', [], {}, { v: 2, latches: {} }, { v: 1 }, { v: 1, latches: [] }]) {
-      expect(parseFeelFile(raw).size).toBe(0)
+      expect(parseFeelFile(raw)).toBeNull()
     }
   })
 
@@ -142,7 +142,7 @@ describe('parseFeelFile', () => {
       }
     })
 
-    expect([...parsed]).toEqual([['claude-code:good', { ...TUPLE, at: 5 }]])
+    expect([...parsed!]).toEqual([['claude-code:good', { ...TUPLE, at: 5 }]])
   })
 })
 

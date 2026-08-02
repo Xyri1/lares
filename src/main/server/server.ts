@@ -81,7 +81,9 @@ function reply(res: ServerResponse, status: number, body?: unknown): void {
 }
 
 function text(value: unknown): string {
-  return JSON.stringify(value) ?? 'null'
+  // A tool that answers in prose (feel's acknowledgement, 013 §8) reaches the
+  // model as the sentence itself, not as a JSON string literal.
+  return typeof value === 'string' ? value : (JSON.stringify(value) ?? 'null')
 }
 
 async function toolResult(action: () => unknown | Promise<unknown>) {
