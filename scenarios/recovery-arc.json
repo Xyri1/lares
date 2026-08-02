@@ -182,6 +182,10 @@
       }
     },
     {
+      "at_ms": 103000,
+      "feel": { "valence": -2, "activation": 0, "control": -2 }
+    },
+    {
       "at_ms": 140000,
       "envelope": {
         "v": 1,
@@ -346,12 +350,8 @@
       }
     },
     {
-      "at_ms": 211000,
-      "emote": {
-        "cue": "pleased",
-        "intensity": 0.8,
-        "duration_s": 6
-      }
+      "at_ms": 212000,
+      "feel": { "valence": 2, "activation": 1, "control": 2 }
     },
     {
       "at_ms": 240000,

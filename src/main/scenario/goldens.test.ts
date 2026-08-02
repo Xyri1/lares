@@ -1,6 +1,5 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { SCENARIO_CUES } from './cues'
 import { loadScenario } from './load'
 import { runScenario } from './run'
 
@@ -12,8 +11,8 @@ describe('golden scenario determinism (A3)', () => {
   for (const name of GOLDENS) {
     it(`${name}: two runs produce byte-identical traces`, () => {
       const scenario = loadScenario(join(SCENARIOS_DIR, `${name}.json`))
-      const a = runScenario(scenario, SCENARIO_CUES)
-      const b = runScenario(scenario, SCENARIO_CUES)
+      const a = runScenario(scenario)
+      const b = runScenario(scenario)
       expect(a.length).toBeGreaterThan(0)
       expect(a.join('\n')).toBe(b.join('\n'))
     })
@@ -21,8 +20,8 @@ describe('golden scenario determinism (A3)', () => {
 
   it('recovery-arc: playback speed never changes the trace (1x vs 64x)', () => {
     const scenario = loadScenario(join(SCENARIOS_DIR, 'recovery-arc.json'))
-    const slow = runScenario(scenario, SCENARIO_CUES, { speed: 1 })
-    const fast = runScenario(scenario, SCENARIO_CUES, { speed: 64 })
+    const slow = runScenario(scenario, { speed: 1 })
+    const fast = runScenario(scenario, { speed: 64 })
     expect(slow.join('\n')).toBe(fast.join('\n'))
   })
 
@@ -38,17 +37,23 @@ describe('golden scenario determinism (A3)', () => {
   it('every golden trace line parses back to the expected shape', () => {
     for (const name of GOLDENS) {
       const scenario = loadScenario(join(SCENARIOS_DIR, `${name}.json`))
-      const trace = runScenario(scenario, SCENARIO_CUES)
+      const trace = runScenario(scenario)
       for (const line of trace) {
         const parsed = JSON.parse(line)
         expect(parsed).toMatchObject({
           t: expect.any(Number),
-          E: { valence: expect.any(Number), arousal: expect.any(Number) },
-          M: { valence: expect.any(Number), arousal: expect.any(Number) },
-          baselineState: expect.any(String),
-          expressionStack: expect.any(Array)
+          operational: expect.any(String)
         })
+        expect(parsed.feel === null || typeof parsed.feel === 'object').toBe(true)
       }
+    }
+  })
+
+  it('every golden reports at least one feel call at a narrative beat', () => {
+    for (const name of GOLDENS) {
+      const scenario = loadScenario(join(SCENARIOS_DIR, `${name}.json`))
+      const feelEvents = scenario.events.filter((e) => 'feel' in e)
+      expect(feelEvents.length).toBeGreaterThan(0)
     }
   })
 })

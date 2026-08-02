@@ -81,41 +81,26 @@ class FixtureRuntime
 }
 
 describe('body character load handshake', () => {
-  it('accepts only matching candidate URLs and exclusive cue variants', () => {
-    const request = (model: string, cue: Record<string, unknown>) => ({
+  it('accepts only matching candidate URLs', () => {
+    const request = (model: string) => ({
       id: 7,
-      character: { ok: true, name: 'Candidate', live2d: { model } },
-      cues: [{ name: 'cue', valence: 0, arousal: 0, ...cue }]
+      character: { ok: true, name: 'Candidate', live2d: { model } }
     })
     expect(
-      parseCharacterPrepareRequest(
-        request('lares://candidate/7/runtime/model.model3.json', {
-          motion: 'lares://candidate/7/runtime/wave.motion3.json'
-        })
-      )
+      parseCharacterPrepareRequest(request('lares://candidate/7/runtime/model.model3.json'))
     ).not.toBeNull()
     for (const invalid of [
-      request('file:///tmp/model.model3.json', { params: { Param: 1 } }),
-      request('http://localhost/model.model3.json', { params: { Param: 1 } }),
-      request('lares://candidate/8/runtime/model.model3.json', { params: { Param: 1 } }),
-      request('lares://candidate/7/%2e%2e/model.model3.json', { params: { Param: 1 } }),
-      request('lares://candidate/7/runtime/model.model3.json', {}),
-      request('lares://candidate/7/runtime/model.model3.json', {
-        params: { Param: 1 },
-        motion: 'lares://candidate/7/runtime/wave.motion3.json'
-      }),
-      request('lares://candidate/7/runtime/model.model3.json', {
-        motion: 'lares://candidate/8/runtime/wave.motion3.json'
-      })
+      request('file:///tmp/model.model3.json'),
+      request('http://localhost/model.model3.json'),
+      request('lares://candidate/8/runtime/model.model3.json'),
+      request('lares://candidate/7/%2e%2e/model.model3.json')
     ]) {
       expect(parseCharacterPrepareRequest(invalid)).toBeNull()
     }
   })
 
-  it('publishes new cues and clears playback only after model load succeeds', async () => {
+  it('commits playback only after model load succeeds', async () => {
     const runtime = new FixtureRuntime()
-    const cueParams = { First: { ParamFirst: 1 } }
-    const cueMotions = { Wave: 'Idle:0' }
     let resets = 0
     const results: unknown[] = []
     const commits: unknown[] = []
@@ -126,8 +111,6 @@ describe('body character load handshake', () => {
           resets++
         }
       },
-      cueParams,
-      cueMotions,
       (result) => results.push(result),
       (result) => commits.push(result),
       () => {
@@ -141,12 +124,9 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Broken',
         live2d: { model: 'lares://candidate/1/runtime/failure.model3.json' }
-      },
-      cues: [{ name: 'Broken', valence: 0, arousal: 0, params: { ParamBroken: 1 } }]
+      }
     })
     expect(runtime.visible).toBe('first')
-    expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
-    expect(cueMotions).toEqual({ Wave: 'Idle:0' })
     expect(resets).toBe(0)
     expect(results).toEqual([{ id: 1, ok: false, error: failure.error }])
 
@@ -156,19 +136,9 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Second',
         live2d: { model: 'lares://candidate/2/runtime/second.model3.json' }
-      },
-      cues: [
-        { name: 'Second', valence: 0.2, arousal: 0.3, params: { ParamSecond: 1 } },
-        {
-          name: 'Motion',
-          valence: null,
-          arousal: null,
-          motion: 'lares://candidate/2/runtime/wave.motion3.json'
-        }
-      ]
+      }
     })
     expect(runtime.visible).toBe('first')
-    expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
     expect(resets).toBe(0)
     expect(results.at(-1)).toEqual({
       id: 2,
@@ -176,36 +146,17 @@ describe('body character load handshake', () => {
       inventory: [{ id: 'ParamSecond', name: 'ParamSecond', min: -1, max: 1, default: 0 }]
     })
 
-    handler.commit({
-        id: 2,
-        cues: [
-          { name: 'Second', params: { ParamSecond: 1 } },
-          { name: 'Expression', params: { ParamSecond: 0.5 } },
-          {
-            name: 'Motion',
-            motion: 'lares://candidate/2/runtime/wave.motion3.json'
-          }
-        ]
-      })
+    handler.commit({ id: 2 })
     expect(commits).toEqual([{ id: 2, ok: true }])
     expect(runtime.visible).toBe('lares://candidate/2/runtime/second.model3.json')
-    expect(cueParams).toEqual({
-      Second: { ParamSecond: 1 },
-      Expression: { ParamSecond: 0.5 }
-    })
-    expect(cueMotions).toEqual({
-      Motion: 'lares://candidate/2/runtime/wave.motion3.json'
-    })
     expect(resets).toBe(1)
     expect(runtime.finalized).toEqual([])
     expect(() => handler.finalize(2)).not.toThrow()
     expect(runtime.finalized).toEqual([2])
   })
 
-  it('rolls back the tentative model and cue tables when main rejects publication', async () => {
+  it('rolls back the tentative model when main rejects publication', async () => {
     const runtime = new FixtureRuntime()
-    const cueParams = { First: { ParamFirst: 1 } }
-    const cueMotions = { Wave: 'Idle:0' }
     let driverRollbacks = 0
     const handler = createCharacterLoadHandler(
       runtime,
@@ -214,8 +165,6 @@ describe('body character load handshake', () => {
           driverRollbacks++
         }
       },
-      cueParams,
-      cueMotions,
       () => {},
       () => {}
     )
@@ -225,56 +174,20 @@ describe('body character load handshake', () => {
         ok: true as const,
         name: 'Second',
         live2d: { model: 'lares://candidate/3/runtime/second.model3.json' }
-      },
-      cues: [{ name: 'Second', valence: 0, arousal: 0, params: { ParamSecond: 1 } }]
+      }
     }
 
     await handler.prepare(request)
-    handler.commit({ id: 3, cues: request.cues })
+    handler.commit({ id: 3 })
     expect(runtime.visible).toBe('lares://candidate/3/runtime/second.model3.json')
-    expect(cueParams).toEqual({ Second: { ParamSecond: 1 } })
 
     expect(handler.rollback(3)).toBe(true)
     expect(runtime.visible).toBe('first')
-    expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
-    expect(cueMotions).toEqual({ Wave: 'Idle:0' })
     expect(driverRollbacks).toBe(1)
-  })
-
-  it('cancels prepared runtimes when post-load cue preparation fails', async () => {
-    const runtime = new FixtureRuntime()
-    const results: unknown[] = []
-    const handler = createCharacterLoadHandler(
-      runtime,
-      { characterChanged: () => {} },
-      { First: { ParamFirst: 1 } },
-      {},
-      (result) => results.push(result),
-      () => {}
-    )
-
-    await handler.prepare({
-      id: 4,
-      character: {
-        ok: true,
-        name: 'Broken',
-        live2d: { model: 'lares://candidate/4/runtime/broken.model3.json' }
-      },
-      cues: [{ name: 'Broken', valence: 0, arousal: 0, params: { Missing: 1 } }]
-    })
-
-    expect(runtime.visible).toBe('first')
-    expect(runtime.cancelled).toEqual([4])
-    expect(results.at(-1)).toEqual({
-      id: 4,
-      ok: false,
-      error: 'Cue "Broken": unknown parameter "Missing"'
-    })
   })
 
   it('reports commit failure and restores old state when body work throws after swap', async () => {
     const runtime = new FixtureRuntime()
-    const cueParams = { First: { ParamFirst: 1 } }
     const commits: unknown[] = []
     const handler = createCharacterLoadHandler(
       runtime,
@@ -283,8 +196,6 @@ describe('body character load handshake', () => {
           throw new Error('driver refresh failed')
         }
       },
-      cueParams,
-      {},
       () => {},
       (result) => commits.push(result)
     )
@@ -295,30 +206,22 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Second',
         live2d: { model: 'lares://candidate/5/runtime/second.model3.json' }
-      },
-      cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      }
     })
-    handler.commit({
-      id: 5,
-      cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
-    })
+    handler.commit({ id: 5 })
 
     expect(commits).toEqual([{ id: 5, ok: false, error: 'driver refresh failed' }])
     expect(runtime.visible).toBe('first')
-    expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
   })
 
   it('finalizes a tentative body when the finalize fast path is lost but main committed', async () => {
     vi.useFakeTimers()
     try {
       const runtime = new FixtureRuntime()
-      const cueParams = { First: { ParamFirst: 1 } }
       const getDecision = vi.fn(async () => 'commit')
       const handler = createCharacterLoadHandler(
         runtime,
         { characterChanged: () => () => {} },
-        cueParams,
-        {},
         () => {},
         () => {},
         undefined,
@@ -331,20 +234,15 @@ describe('body character load handshake', () => {
           ok: true,
           name: 'Second',
           live2d: { model: 'lares://candidate/6/runtime/second.model3.json' }
-        },
-        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+        }
       })
-      handler.commit({
-        id: 6,
-        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
-      })
+      handler.commit({ id: 6 })
       expect(runtime.visible).toBe('lares://candidate/6/runtime/second.model3.json')
 
       await vi.advanceTimersByTimeAsync(50)
 
       expect(getDecision).toHaveBeenCalledWith(6)
       expect(runtime.visible).toBe('lares://candidate/6/runtime/second.model3.json')
-      expect(cueParams).toEqual({ Second: { ParamSecond: 1 } })
       expect(runtime.finalized).toEqual([6])
     } finally {
       vi.useRealTimers()
@@ -355,13 +253,10 @@ describe('body character load handshake', () => {
     vi.useFakeTimers()
     try {
       const runtime = new FixtureRuntime()
-      const cueParams = { First: { ParamFirst: 1 } }
       const getDecision = vi.fn(async () => 'rollback')
       const handler = createCharacterLoadHandler(
         runtime,
         { characterChanged: () => () => {} },
-        cueParams,
-        {},
         () => {},
         () => {},
         undefined,
@@ -374,16 +269,14 @@ describe('body character load handshake', () => {
           ok: true,
           name: 'Second',
           live2d: { model: 'lares://candidate/7/runtime/second.model3.json' }
-        },
-        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+        }
       })
-      handler.commit({ id: 7, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+      handler.commit({ id: 7 })
 
       await vi.advanceTimersByTimeAsync(50)
 
       expect(getDecision).toHaveBeenCalledWith(7)
       expect(runtime.visible).toBe('first')
-      expect(cueParams).toEqual({ First: { ParamFirst: 1 } })
     } finally {
       vi.useRealTimers()
     }
@@ -400,8 +293,6 @@ describe('body character load handshake', () => {
       const handler = createCharacterLoadHandler(
         runtime,
         { characterChanged: () => () => {} },
-        { First: { ParamFirst: 1 } },
-        {},
         (result) => results.push(result),
         () => {},
         undefined,
@@ -414,10 +305,9 @@ describe('body character load handshake', () => {
           ok: true,
           name: 'Second',
           live2d: { model: 'lares://candidate/1/runtime/second.model3.json' }
-        },
-        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+        }
       })
-      handler.commit({ id: 1, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+      handler.commit({ id: 1 })
 
       await handler.prepare({
         id: 2,
@@ -425,8 +315,7 @@ describe('body character load handshake', () => {
           ok: true,
           name: 'Broken',
           live2d: { model: 'lares://candidate/2/runtime/failure.model3.json' }
-        },
-        cues: [{ name: 'Broken', params: { ParamSecond: 1 } }]
+        }
       })
 
       expect(runtime.visible).toBe(expectedVisible)
@@ -440,8 +329,6 @@ describe('body character load handshake', () => {
     const handler = createCharacterLoadHandler(
       runtime,
       { characterChanged: () => () => {} },
-      { First: { ParamFirst: 1 } },
-      {},
       (result) => results.push(result),
       () => {},
       undefined,
@@ -454,10 +341,9 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Second',
         live2d: { model: 'lares://candidate/1/runtime/second.model3.json' }
-      },
-      cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      }
     })
-    handler.commit({ id: 1, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+    handler.commit({ id: 1 })
 
     await handler.prepare({
       id: 2,
@@ -465,8 +351,7 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Third',
         live2d: { model: 'lares://candidate/2/runtime/third.model3.json' }
-      },
-      cues: [{ name: 'Third', params: { ParamSecond: 1 } }]
+      }
     })
 
     expect(runtime.visible).toBe('lares://candidate/1/runtime/second.model3.json')
@@ -484,8 +369,6 @@ describe('body character load handshake', () => {
     const handler = createCharacterLoadHandler(
       runtime,
       { characterChanged: () => () => {} },
-      { First: { ParamFirst: 1 } },
-      {},
       (result) => results.push(result),
       () => {},
       undefined,
@@ -500,10 +383,9 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Second',
         live2d: { model: 'lares://candidate/1/runtime/second.model3.json' }
-      },
-      cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      }
     })
-    handler.commit({ id: 1, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+    handler.commit({ id: 1 })
 
     await handler.prepare({
       id: 2,
@@ -511,8 +393,7 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Third',
         live2d: { model: 'lares://candidate/2/runtime/third.model3.json' }
-      },
-      cues: [{ name: 'Third', params: { ParamSecond: 1 } }]
+      }
     })
 
     expect(runtime.visible).toBe('lares://candidate/1/runtime/second.model3.json')
@@ -531,8 +412,6 @@ describe('body character load handshake', () => {
     const handler = createCharacterLoadHandler(
       runtime,
       { characterChanged: () => () => {} },
-      { First: { ParamFirst: 1 } },
-      {},
       (result) => results.push(result),
       () => {},
       undefined,
@@ -545,10 +424,9 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Second',
         live2d: { model: 'lares://candidate/1/runtime/second.model3.json' }
-      },
-      cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+      }
     })
-    handler.commit({ id: 1, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+    handler.commit({ id: 1 })
 
     const second = handler.prepare({
       id: 2,
@@ -556,8 +434,7 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Third',
         live2d: { model: 'lares://candidate/2/runtime/third.model3.json' }
-      },
-      cues: [{ name: 'Third', params: { ParamSecond: 1 } }]
+      }
     })
     const third = handler.prepare({
       id: 3,
@@ -565,8 +442,7 @@ describe('body character load handshake', () => {
         ok: true,
         name: 'Fourth',
         live2d: { model: 'lares://candidate/3/runtime/fourth.model3.json' }
-      },
-      cues: [{ name: 'Fourth', params: { ParamSecond: 1 } }]
+      }
     })
     await vi.waitFor(() => expect(decisions).toHaveLength(2))
     decisions[0]('commit')
@@ -593,8 +469,6 @@ describe('body character load handshake', () => {
       const handler = createCharacterLoadHandler(
         runtime,
         { characterChanged: () => () => {} },
-        { First: { ParamFirst: 1 } },
-        {},
         () => {},
         () => {},
         undefined,
@@ -607,10 +481,9 @@ describe('body character load handshake', () => {
           ok: true,
           name: 'Second',
           live2d: { model: 'lares://candidate/8/runtime/second.model3.json' }
-        },
-        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+        }
       })
-      handler.commit({ id: 8, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+      handler.commit({ id: 8 })
 
       await vi.advanceTimersByTimeAsync(100)
 
@@ -642,8 +515,6 @@ describe('body character load handshake', () => {
             }
           })
         },
-        { First: { ParamFirst: 1 } },
-        {},
         () => {},
         () => {},
         undefined,
@@ -656,10 +527,9 @@ describe('body character load handshake', () => {
           ok: true,
           name: 'Second',
           live2d: { model: 'lares://candidate/7/runtime/second.model3.json' }
-        },
-        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+        }
       })
-      handler.commit({ id: 7, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+      handler.commit({ id: 7 })
 
       expect(() => handler.finalize(7)).not.toThrow()
       expect(handler.finalize(7)).toBe(false)
@@ -680,8 +550,6 @@ describe('body character load handshake', () => {
       const handler = createCharacterLoadHandler(
         runtime,
         { characterChanged: () => () => {} },
-        { First: { ParamFirst: 1 } },
-        {},
         () => {},
         () => {},
         undefined,
@@ -694,10 +562,9 @@ describe('body character load handshake', () => {
           ok: true,
           name: 'Second',
           live2d: { model: 'lares://candidate/8/runtime/second.model3.json' }
-        },
-        cues: [{ name: 'Second', params: { ParamSecond: 1 } }]
+        }
       })
-      handler.commit({ id: 8, cues: [{ name: 'Second', params: { ParamSecond: 1 } }] })
+      handler.commit({ id: 8 })
 
       expect(handler.rollback(8)).toBe(true)
       expect(handler.finalize(8)).toBe(false)

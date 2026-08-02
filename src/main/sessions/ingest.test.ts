@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { AffectEngine } from '../affect/engine'
 import { Ingestor, probePid } from './ingest'
 import type { ClaudeCodeEnvelope } from './mapEvent'
 
@@ -8,72 +7,64 @@ function envelope(hook_event_name: string, session_id = 's1'): ClaudeCodeEnvelop
 }
 
 describe('Ingestor', () => {
-  it('flows a known event through mapEvent -> resolveBaseline -> engine', () => {
-    const engine = new AffectEngine({}, 0)
-    const ingestor = new Ingestor(engine)
+  it('flows a known event through mapEvent -> resolveBaseline -> summary', () => {
+    const ingestor = new Ingestor()
     ingestor.ingest(envelope('PreToolUse'), 0)
-    expect(engine.snapshot().baselineState).toBe('working')
+    expect(ingestor.summary(0).baseline).toBe('working')
   })
 
   it('tracks baseline changes across successive events for the same session', () => {
-    const engine = new AffectEngine({}, 0)
-    const ingestor = new Ingestor(engine)
+    const ingestor = new Ingestor()
     ingestor.ingest(envelope('SessionStart'), 0)
-    expect(engine.snapshot().baselineState).toBe('thinking')
+    expect(ingestor.summary(0).baseline).toBe('thinking')
     ingestor.ingest(envelope('PostToolUseFailure'), 1000)
-    expect(engine.snapshot().baselineState).toBe('error')
+    expect(ingestor.summary(1000).baseline).toBe('error')
     ingestor.ingest(envelope('Stop'), 2000)
-    expect(engine.snapshot().baselineState).toBe('done')
+    expect(ingestor.summary(2000).baseline).toBe('done')
   })
 
   it('drops an unknown event with no state change', () => {
-    const engine = new AffectEngine({}, 0)
-    const ingestor = new Ingestor(engine)
+    const ingestor = new Ingestor()
     ingestor.ingest(envelope('PreToolUse'), 0)
     ingestor.ingest(envelope('SomeFutureHook'), 1000)
-    expect(engine.snapshot().baselineState).toBe('working')
+    expect(ingestor.summary(1000).baseline).toBe('working')
   })
 
   it('aggregates multiple sessions by P10 priority and returns when the urgent session resolves', () => {
-    const engine = new AffectEngine({}, 0)
-    const ingestor = new Ingestor(engine)
+    const ingestor = new Ingestor()
     ingestor.ingest(envelope('PreToolUse', 'a'), 0)
     ingestor.ingest(envelope('Notification', 'b'), 1)
-    expect(engine.snapshot().baselineState).toBe('awaiting_input')
+    expect(ingestor.summary(1).baseline).toBe('awaiting_input')
     ingestor.ingest(envelope('Stop', 'b'), 2)
-    expect(engine.snapshot().baselineState).toBe('working')
+    expect(ingestor.summary(2).baseline).toBe('working')
   })
 
   it('decays done to idle after a minute', () => {
-    const engine = new AffectEngine({}, 0)
-    const ingestor = new Ingestor(engine)
+    const ingestor = new Ingestor()
     ingestor.ingest(envelope('Stop'), 0)
     ingestor.sweep(60_000)
     expect(ingestor.summary(60_000).sessions[0].state).toBe('idle')
-    expect(engine.snapshot().baselineState).toBe('idle')
+    expect(ingestor.summary(60_000).baseline).toBe('idle')
   })
 
   it('does not let silence mask an urgent live session', () => {
-    const engine = new AffectEngine({}, 0)
-    const ingestor = new Ingestor(engine)
+    const ingestor = new Ingestor()
     ingestor.ingest(envelope('Notification'), 0)
     ingestor.sweep(90_000)
-    expect(engine.snapshot().baselineState).toBe('awaiting_input')
+    expect(ingestor.summary(90_000).baseline).toBe('awaiting_input')
   })
 
   it('returns stale working and thinking sessions to idle after 90 seconds', () => {
     for (const event of ['PreToolUse', 'SessionStart']) {
-      const engine = new AffectEngine({}, 0)
-      const ingestor = new Ingestor(engine)
+      const ingestor = new Ingestor()
       ingestor.ingest(envelope(event), 0)
       ingestor.sweep(90_000)
-      expect(engine.snapshot().baselineState).toBe('idle')
+      expect(ingestor.summary(90_000).baseline).toBe('idle')
     }
   })
 
   it('tracks subagent count without going below zero', () => {
-    const engine = new AffectEngine({}, 0)
-    const ingestor = new Ingestor(engine)
+    const ingestor = new Ingestor()
     ingestor.ingest(envelope('SubagentStop'), 0)
     ingestor.ingest(envelope('SubagentStart'), 1)
     ingestor.ingest(envelope('SubagentStart'), 2)
@@ -82,8 +73,7 @@ describe('Ingestor', () => {
   })
 
   it('reaps dead pid rows but keeps live ones', () => {
-    const engine = new AffectEngine({}, 0)
-    const ingestor = new Ingestor(engine, (pid) => pid !== 10)
+    const ingestor = new Ingestor((pid) => pid !== 10)
     ingestor.ingest({ ...envelope('PreToolUse', 'dead'), pid: 10 }, 0)
     ingestor.ingest({ ...envelope('PreToolUse', 'live'), pid: 20 }, 0)
     ingestor.sweep(1)
@@ -91,9 +81,8 @@ describe('Ingestor', () => {
   })
 
   it('probes live pids at most once per thirty-second interval', () => {
-    const engine = new AffectEngine({}, 0)
     let probes = 0
-    const ingestor = new Ingestor(engine, () => {
+    const ingestor = new Ingestor(() => {
       probes++
       return true
     })
@@ -106,8 +95,7 @@ describe('Ingestor', () => {
   })
 
   it('reaps pidless rows after thirty minutes', () => {
-    const engine = new AffectEngine({}, 0)
-    const ingestor = new Ingestor(engine)
+    const ingestor = new Ingestor()
     ingestor.ingest(envelope('PreToolUse'), 0)
     ingestor.sweep(30 * 60_000)
     expect(ingestor.summary(30 * 60_000).sessions).toEqual([])

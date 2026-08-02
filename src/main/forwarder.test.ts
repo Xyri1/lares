@@ -166,14 +166,11 @@ describe('embedded-Node forwarder', () => {
   })
 
   it('survives the real plugin shell path, including a spaced Windows profile', async () => {
-    const nowMs = Date.now()
-    const nerves = new Nerves('Test', { pleased: { valence: 0.2, arousal: 0.1 } }, nowMs, (pid) =>
-      pid === process.pid
-    )
+    const nerves = new Nerves('Test', (pid) => pid === process.pid)
     const value = createServer({
       ingest: (envelope, at) => nerves.ingest(envelope, at),
       feel: () => undefined,
-      status: (_session, at) => nerves.status(at)
+      status: () => nerves.status()
     })
     servers.push(value)
     const port = await value.start(0)
@@ -215,7 +212,7 @@ describe('embedded-Node forwarder', () => {
     nerves.tick(Date.now() + 100)
 
     expect(result).toMatchObject({ code: 0, stdout: '', stderr: '' })
-    expect(nerves.status(Date.now()).sessions.sessions).toMatchObject([
+    expect(nerves.sessionState(Date.now()).sessions).toMatchObject([
       { session_id: nativeEvent.session_id, harness: 'codex', state: 'thinking' }
     ])
   })

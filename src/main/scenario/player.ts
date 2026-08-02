@@ -1,8 +1,6 @@
-import type { AffectSnapshot } from '../affect/engine'
 import type { BaselineState } from '../affect/types'
-import type { Vec2 } from '../affect/constants'
 import type { Scenario } from './types'
-import { createStepper, traceLine, STEP_MS } from './run'
+import { createStepper, traceLine, STEP_MS, type StepState } from './run'
 
 /** A/B stages (002-D2). Normal mode runs 'A' only. */
 export type StageId = 'A' | 'B'
@@ -45,15 +43,9 @@ export interface PacedPlayback {
   seek(tMs: number): void
 }
 
-// Scenario scripts still speak the retired emote vocabulary, so replay feeds
-// the operational half only and performs the neutral anchor; the goldens are
-// re-authored as feel calls in I5.
-export function feedMessage(
-  snap: AffectSnapshot,
-  tick: number,
-  stageId: StageId = 'A'
-): AffectFeedMessage {
-  return { stageId, tick, feel: null, operational: snap.baselineState }
+/** The stepper's per-tick state, shaped for the wire (013 SPEC §13). */
+export function feedMessage(state: StepState, tick: number, stageId: StageId = 'A'): AffectFeedMessage {
+  return { stageId, tick, feel: state.feel, operational: state.operational }
 }
 
 /** Clamp a UI speed multiplier to the range the pacer can safely run at. */
@@ -68,10 +60,9 @@ export function clampSpeed(speed: number): number {
 // lines accumulate in the byte format runScenario produces.
 export function playScenarioPaced(
   scenario: Scenario,
-  cues: Record<string, Vec2>,
   opts: {
     speed?: number
-    /** Active stages, default ['A']. Each stage gets its OWN engine, stepped
+    /** Active stages, default ['A']. Each stage gets its OWN stepper, stepped
      * inside the same loop iteration — identical ticks, no drift (002-D2).
      * Engine states match across stages by determinism; the visible A/B
      * difference is renderer-side preset synth only. */
@@ -85,7 +76,7 @@ export function playScenarioPaced(
   let speed = clampSpeed(opts.speed ?? 1)
   const stageIds = opts.stages ?? ['A']
   const makeStages = (): { id: StageId; stepper: ReturnType<typeof createStepper>; lines: string[] }[] =>
-    stageIds.map((id) => ({ id, stepper: createStepper(scenario, cues), lines: [] }))
+    stageIds.map((id) => ({ id, stepper: createStepper(scenario), lines: [] }))
   let stages = makeStages()
   const endMs = stages[0].stepper.endMs
   let nextT = 0
@@ -105,9 +96,9 @@ export function playScenarioPaced(
     const dueT = (Date.now() - startedWall) * speed
     while (nextT <= dueT && nextT <= endMs) {
       for (const st of stages) {
-        const snap = st.stepper.step(nextT)
-        st.lines.push(traceLine(nextT, snap))
-        opts.onFeed(feedMessage(snap, nextT / STEP_MS, st.id))
+        const state = st.stepper.step(nextT)
+        st.lines.push(traceLine(nextT, state))
+        opts.onFeed(feedMessage(state, nextT / STEP_MS, st.id))
       }
       nextT += STEP_MS
     }
@@ -134,13 +125,13 @@ export function playScenarioPaced(
     },
     seek: (tMs: number) => {
       const target = Math.min(endMs, Math.max(0, Math.floor(tMs / STEP_MS) * STEP_MS))
-      stages = makeStages() // fresh engines — never snapshot/restore
+      stages = makeStages() // fresh steppers — never snapshot/restore
       const history: AffectFeedMessage[] = []
       for (let t = 0; t <= target; t += STEP_MS) {
         for (const st of stages) {
-          const snap = st.stepper.step(t)
-          st.lines.push(traceLine(t, snap))
-          history.push(feedMessage(snap, t / STEP_MS, st.id))
+          const state = st.stepper.step(t)
+          st.lines.push(traceLine(t, state))
+          history.push(feedMessage(state, t / STEP_MS, st.id))
         }
       }
       nextT = target + STEP_MS

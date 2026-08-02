@@ -145,10 +145,9 @@ export function createServer(deps: ServerDeps): {
       'preview_expression',
       {
         description:
-          'Preview exact params or an existing performance on the live character. Pass no fields to revert. A motion performance plays once, so warn the watching user first. For explicit, user-invoked authoring only.',
+          'Preview exact params on the live character. Pass no fields to revert. For explicit, user-invoked authoring only.',
         inputSchema: {
-          params: z.record(z.string(), z.number()).optional(),
-          performance: z.string().optional()
+          params: z.record(z.string(), z.number()).optional()
         }
       },
       (args) => toolResult(() => authoring(deps.previewExpression)(args, Date.now()))

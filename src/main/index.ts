@@ -30,16 +30,8 @@ import { removeClaudeCode } from './adapters/claude-code/writer'
 import { removeCodexHooks } from './adapters/codex/hooks'
 import { writeForwarderShim } from './adapters/shim'
 import { removeHostGuidanceRule, writeHostGuidanceRule } from './hostGuidance'
-import {
-  applyExp3,
-  parseExp3File,
-  parseModelCdi3File,
-  type Exp3Parameter
-} from './characters/exp3'
-import {
-  mergeRuntimeCompatibility,
-  type CueDefinition
-} from './characters/manifest'
+import { parseModelCdi3File } from './characters/exp3'
+import { mergeRuntimeCompatibility } from './characters/manifest'
 import {
   bundledPackageRoot,
   discardManagedCharacter,
@@ -58,7 +50,6 @@ import {
   type CharacterSwitcher,
   type CharacterSwitchResult
 } from './characters/switch'
-import { calibrationLabel } from './calibration'
 import { DEFAULT_CONFIG, loadConfig, saveConfig, type AppConfig, type Scale } from './config'
 import { DensityLog } from './densityLog'
 import { errorMessage } from './errors'
@@ -79,12 +70,7 @@ import {
   type AgentIntegrationReport,
   type Harness
 } from './integrations'
-import {
-  Nerves,
-  parseInventory,
-  type ParamInfo,
-  type PreparedNervesCharacter
-} from './nerves'
+import { Nerves, parseInventory, type PreparedNervesCharacter } from './nerves'
 import {
   clampToWorkArea,
   loadPosition,
@@ -94,7 +80,6 @@ import {
   type Rect
 } from './position'
 import { productBodyTargets } from './productBody'
-import { SCENARIO_CUES } from './scenario/cues'
 import { loadScenario } from './scenario/load'
 import {
   playScenarioPaced,
@@ -150,7 +135,6 @@ let feedWarmupUntil = 0
 let nervesServer: ReturnType<typeof createServer> | null = null
 let nervesTick: ReturnType<typeof setInterval> | null = null
 let densityLog: DensityLog | null = null
-let characterInventoryErrorShown = false
 let selectedCharacter:
   | CharacterPackage
   | { ok: false; error: string }
@@ -283,11 +267,6 @@ function activeCharacter():
   return selectedCharacter
 }
 
-function activeCalibrationReport() {
-  const selected = activeCharacter()
-  return 'error' in selected ? null : selected.character.report
-}
-
 export async function switchCharacter(manifestPath: string): Promise<CharacterSwitchResult> {
   return characterSwitcher
     ? characterSwitcher.switchTo(manifestPath)
@@ -299,17 +278,6 @@ function displayNames(modelPath: string): ReadonlyMap<string, string> {
   return 'error' in selected
     ? new Map()
     : parseModelCdi3File(modelPath, dirname(selected.manifestPath))
-}
-
-function cueSource(cue: CueDefinition): 'bundled' | 'authored' | 'raw' {
-  if ('params' in cue) return 'raw'
-  return 'expression' in cue && cue.expression.startsWith('authored/') ? 'authored' : 'bundled'
-}
-
-function cueSources(
-  cues: Readonly<Record<string, CueDefinition>>
-): Record<string, 'bundled' | 'authored' | 'raw'> {
-  return Object.fromEntries(Object.entries(cues).map(([name, cue]) => [name, cueSource(cue)]))
 }
 
 function assetUrl(path: string, candidateId?: number): string {
@@ -336,53 +304,13 @@ function characterPayload(selected: CharacterPackage, candidateId?: number) {
   }
 }
 
-function cuePayload(selected: CharacterPackage, candidateId?: number) {
-  const { character, manifestPath } = selected
-  return Object.entries(character.live2d.cues ?? {}).map(([name, cue]) => {
-    const coord = character.expressions[name] ?? null
-    const base = {
-      name,
-      valence: coord?.valence ?? null,
-      arousal: coord?.arousal ?? null
-    }
-    if ('params' in cue) return { ...base, params: cue.params }
-    if ('motion' in cue) {
-      return {
-        ...base,
-        motion: assetUrl(relative(dirname(manifestPath), resolve(dirname(manifestPath), cue.motion)), candidateId)
-      }
-    }
-    return base
-  })
-}
-
 interface PreparedCharacterFiles {
-  cueDefinitions: Record<string, CueDefinition>
   names: ReadonlyMap<string, string>
-  sources: Record<string, 'bundled' | 'authored' | 'raw'>
-  expressions: ReadonlyMap<string, Exp3Parameter[]>
 }
 
 function prepareCharacterFiles(candidate: CharacterPackage): PreparedCharacterFiles {
-  const cueDefinitions = candidate.character.live2d.cues ?? {}
-  const names = parseModelCdi3File(
-    candidate.character.live2d.model,
-    dirname(candidate.manifestPath)
-  )
-  const expressions = new Map<string, Exp3Parameter[]>()
-  for (const [cue, definition] of Object.entries(cueDefinitions)) {
-    if (!('expression' in definition)) continue
-    const result = parseExp3File(resolve(dirname(candidate.manifestPath), definition.expression), names)
-    if (!result.ok) {
-      throw new Error(`Cannot prepare cue ${JSON.stringify(cue)}: ${result.error}`)
-    }
-    expressions.set(cue, result.parameters)
-  }
   return {
-    cueDefinitions,
-    names,
-    sources: cueSources(cueDefinitions),
-    expressions
+    names: parseModelCdi3File(candidate.character.live2d.model, dirname(candidate.manifestPath))
   }
 }
 
@@ -415,64 +343,7 @@ function bodyPreparePayload(candidate: CharacterPackage, id: number) {
           ? { performance: candidate.character.live2d.performance }
           : {})
       }
-    },
-    cues: cuePayload(candidate, id).filter(
-      (cue) => 'params' in cue || 'motion' in cue
-    )
-  }
-}
-
-function bodyCommitPayload(
-  candidate: CharacterPackage,
-  id: number,
-  prepared: PreparedNervesCharacter
-) {
-  const motionUrls = new Map(
-    cuePayload(candidate, id).flatMap((cue) =>
-      'motion' in cue && typeof cue.motion === 'string' ? [[cue.name, cue.motion]] : []
-    )
-  )
-  const cues: Array<
-    { name: string; params: Record<string, number> } | { name: string; motion: string }
-  > = []
-  for (const [name, playback] of prepared.resolvedCues) {
-    if ('params' in playback) {
-      cues.push({ name, params: playback.params })
-      continue
     }
-    const motion = motionUrls.get(name)
-    if (motion) cues.push({ name, motion })
-  }
-  return {
-    id,
-    cues
-  }
-}
-
-// Range overshoot is NOT an error: exp3 files legitimately exceed declared
-// ranges (rigger saturation trick) and every Live2D runtime clamps at set
-// time — so do the engine and the body. Only unknown ids mark a broken package.
-function rejectUnknownParams(
-  cue: string,
-  params: Readonly<Record<string, number>>,
-  inventory: ReadonlyMap<string, ParamInfo>
-): void {
-  const unknown = Object.keys(params).filter((id) => !inventory.has(id))
-  if (unknown.length) {
-    throw new Error(
-      `Cue ${JSON.stringify(cue)}: unknown parameter ${unknown.map((id) => JSON.stringify(id)).join(', ')}`
-    )
-  }
-}
-
-function reportCharacterInventoryIssues(): void {
-  const issues = liveNerves?.cueValidationErrors() ?? []
-  if (!issues.length) return
-  const message = issues.join('\n')
-  console.error(`[lares] character parameter validation failed:\n${message}`)
-  if (!characterInventoryErrorShown) {
-    characterInventoryErrorShown = true
-    dialog.showErrorBox(L.characterPackageInvalid, message)
   }
 }
 
@@ -553,37 +424,8 @@ async function startNerves(): Promise<void> {
   const character = 'error' in selected ? null : selected.character
   let currentSelection = 'error' in selected ? null : selected
   if ('error' in selected) console.error(`[lares] ${selected.error}`)
-  let cueDefinitions = character?.live2d.cues ?? {}
-  let names =
-    character && currentSelection
-      ? parseModelCdi3File(character.live2d.model, dirname(currentSelection.manifestPath))
-      : new Map<string, string>()
   feelRegister = loadFeelRegister()
-  liveNerves = new Nerves(character?.name ?? 'No character', character?.expressions ?? {}, Date.now(), undefined, {
-    cueSources: cueSources(cueDefinitions),
-    resolveCue: (cue, defaults, inventory) => {
-      const definition = cueDefinitions[cue]
-      if (!definition) return undefined
-      if ('params' in definition) {
-        rejectUnknownParams(cue, definition.params, inventory)
-        return { params: definition.params }
-      }
-      if ('motion' in definition) return { motion: definition.motion }
-      const result = parseExp3File(
-        resolve(dirname(currentSelection?.manifestPath ?? ''), definition.expression),
-        names
-      )
-      if (!result.ok) {
-        console.error(`[lares] cannot resolve cue ${JSON.stringify(cue)}: ${result.error}`)
-        return undefined
-      }
-      rejectUnknownParams(
-        cue,
-        Object.fromEntries(result.parameters.map((parameter) => [parameter.id, parameter.value])),
-        inventory
-      )
-      return { params: applyExp3(result.parameters, defaults) }
-    },
+  liveNerves = new Nerves(character?.name ?? 'No character', undefined, {
     preview: (value) => broadcast('authoring:preview', value),
     revertPreview: () => broadcast('authoring:revert')
   })
@@ -608,34 +450,11 @@ async function startNerves(): Promise<void> {
             ...param,
             name: files.names.get(param.id) ?? param.name
           }))
-          const prepared = liveNerves!.prepareCharacter(
-            candidate.character.name,
-            candidate.character.expressions,
-            files.sources,
-            namedInventory,
-            (cue, defaults, bodyInventory) => {
-              const definition = files.cueDefinitions[cue]
-              if (!definition) return undefined
-              if ('params' in definition) {
-                rejectUnknownParams(cue, definition.params, bodyInventory)
-                return { params: definition.params }
-              }
-              if ('motion' in definition) return { motion: definition.motion }
-              const parameters = files.expressions.get(cue)
-              if (!parameters) return undefined
-              rejectUnknownParams(
-                cue,
-                Object.fromEntries(parameters.map((parameter) => [parameter.id, parameter.value])),
-                bodyInventory
-              )
-              return { params: applyExp3(parameters, defaults) }
-            }
-          )
-          if (prepared.cueErrors.length) throw new Error(prepared.cueErrors.join('\n'))
+          const prepared = liveNerves!.prepareCharacter(candidate.character.name, namedInventory)
           return {
             files,
             nerves: prepared,
-            body: bodyCommitPayload(candidate, id, prepared)
+            body: { id }
           }
         },
         commit: (id, state) => characterLoadBroker!.commit(id, state.body),
@@ -651,14 +470,11 @@ async function startNerves(): Promise<void> {
           state: {
             files: PreparedCharacterFiles
             nerves: PreparedNervesCharacter
-            body: ReturnType<typeof bodyCommitPayload>
+            body: { id: number }
           }
         ) => {
           selectedCharacter = candidate
           currentSelection = candidate
-          cueDefinitions = state.files.cueDefinitions
-          names = state.files.names
-          characterInventoryErrorShown = false
           liveNerves!.commitCharacter(state.nerves)
           stopScenarioPlayback()
         }
@@ -674,7 +490,7 @@ async function startNerves(): Promise<void> {
     },
     feel: (args, mcpSessionId, nowMs) => feelReport(args, mcpSessionId, nowMs),
     status: (mcpSessionId, nowMs) => {
-      const { active_character, protocol_version } = liveNerves!.status(nowMs)
+      const { active_character, protocol_version } = liveNerves!.status()
       return { active_character, protocol_version, ...attributedFeel(mcpSessionId, nowMs) }
     },
     checkpoint: (sessionKey) => feelCheckpoint(sessionKey),
@@ -785,7 +601,6 @@ function registerCharacterIpc(): void {
     console.log(
       `[lares] body:inventory — ${accepted && compatible && Array.isArray(params) ? params.length : 0} parameters`
     )
-    if (accepted) reportCharacterInventoryIssues()
   })
 
   ipcMain.on('character:prepared', (event, raw: unknown) => {
@@ -801,12 +616,6 @@ function registerCharacterIpc(): void {
     return body?.id === String(event.sender.id)
       ? (characterLoadBroker?.decision(rawId) ?? null)
       : null
-  })
-
-  ipcMain.handle('cues:list', () => {
-    const selected = activeCharacter()
-    if ('error' in selected) return []
-    return cuePayload(selected)
   })
 }
 
@@ -918,7 +727,7 @@ function registerScenarioIpc(): void {
       console.log(
         `[lares] scenario:play ${name} seed=${safeSeed} speed=${safeSpeed}x stages=${stages.join(',')}`
       )
-      const controller = playScenarioPaced(scenario, SCENARIO_CUES, {
+      const controller = playScenarioPaced(scenario, {
         speed: safeSpeed,
         stages,
         // 003-D2: the feed fans out to every live window, so the overlay
@@ -1557,10 +1366,6 @@ function createTray(): void {
     getLaunchAtLogin: () => app.getLoginItemSettings().openAtLogin,
     setLaunchAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     resetPosition: resetOverlayPosition,
-    calibrationStatus: () => {
-      const report = activeCalibrationReport()
-      return report ? calibrationLabel(report) : L.calibrationUnavailable
-    },
     onAutomaticUpdatesChanged: () => updateChecks?.automaticPreferenceChanged(),
     onCheckForUpdates: () => updateChecks?.manual(),
     onConfigureAgentIntegrations: () =>

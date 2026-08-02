@@ -1,4 +1,3 @@
-import type { AffectEngine } from '../affect/engine'
 import type { BaselineState } from '../affect/types'
 import { eventName, mapEvent, type EventEnvelope, type Harness } from './mapEvent'
 import { resolveBaseline } from './resolveBaseline'
@@ -43,7 +42,6 @@ export class Ingestor {
   private lastPidProbeAt = -Infinity
 
   constructor(
-    private readonly engine: AffectEngine,
     private readonly pidProbe: PidProbe = probePid,
     private readonly pidProbeMs = PID_PROBE_MS
   ) {}
@@ -55,7 +53,6 @@ export class Ingestor {
 
     if (name === 'SessionEnd') {
       this.sessions.delete(envelope.session_id)
-      this.updateBaseline(nowMs)
       return
     }
 
@@ -82,7 +79,6 @@ export class Ingestor {
       row.since = nowMs
     }
     this.sessions.set(row.session_id, row)
-    this.updateBaseline(nowMs)
   }
 
   sweep(nowMs: number): SessionRow[] {
@@ -103,7 +99,6 @@ export class Ingestor {
       }
     }
     if (probePids) this.lastPidProbeAt = nowMs
-    this.updateBaseline(nowMs)
     return reaped
   }
 
@@ -112,10 +107,6 @@ export class Ingestor {
       baseline: this.displayedBaseline(nowMs),
       sessions: Array.from(this.sessions.values(), (row) => ({ ...row }))
     }
-  }
-
-  private updateBaseline(nowMs: number): void {
-    this.engine.setBaselineState(this.displayedBaseline(nowMs))
   }
 
   private displayedBaseline(nowMs: number): BaselineState {

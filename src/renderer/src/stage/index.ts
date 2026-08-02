@@ -56,16 +56,6 @@ async function boot(): Promise<void> {
     runtime.compatibility()
   ) // body:inventory (root SPEC §8)
 
-  // Cue name → Live2D param set. The feed carries cue NAMES only (root §8);
-  // resolving them to parameters is body-side knowledge and stops here (P6).
-  const cues = await window.lares.listCues()
-  const cueParams = Object.fromEntries(
-    cues.flatMap((c) => (c.params === undefined ? [] : [[c.name, c.params]]))
-  )
-  const cueMotions = Object.fromEntries(
-    cues.flatMap((c) => (c.motion === undefined ? [] : [[c.name, c.motion]]))
-  )
-
   // Anchors, operational overlays and expressiveness ride the same bootstrap
   // payload the character does; the brain reads `expressiveness` from the
   // hidden AppConfig field, and 1 is the default when it is absent.
@@ -74,8 +64,6 @@ async function boot(): Promise<void> {
     isSynthPreset(character.live2d.performance)
       ? character.live2d.performance
       : presetJson as SynthPreset,
-    cueParams,
-    cueMotions,
     resolveFeel(character)
   )
   let currentCharacter = character
@@ -83,8 +71,6 @@ async function boot(): Promise<void> {
     const characterLoads = createCharacterLoadHandler(
       runtime,
       driver,
-      cueParams,
-      cueMotions,
       (result) => window.lares.reportCharacterPrepared(result as CharacterPrepareResult),
       (result) => window.lares.reportCharacterCommitted(result as CharacterCommitResult),
       (request) => {
@@ -146,7 +132,7 @@ async function boot(): Promise<void> {
       return stageB.then((rb) => rb.setActive(true))
     }
 
-    mountPanel(runtime, driver, cues, setStageB)
+    mountPanel(runtime, driver, setStageB)
   }
 }
 

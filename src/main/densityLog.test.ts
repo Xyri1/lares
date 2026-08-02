@@ -11,7 +11,7 @@ afterEach(async () => {
 })
 
 describe('DensityLog', () => {
-  it('records only baseline changes and received emote outcomes as JSONL', async () => {
+  it('records only baseline changes as JSONL', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'lares-density-'))
     directories.push(directory)
     const file = join(directory, 'nested', 'density.jsonl')
@@ -20,7 +20,6 @@ describe('DensityLog', () => {
     log.recordBaseline('idle', 0)
     log.recordBaseline('idle', 1)
     log.recordBaseline('working', 2)
-    log.recordEmote('mcp:session-1', { cue: 'pleased' }, { status: 'coalesced' }, 3)
 
     expect(
       (await readFile(file, 'utf8'))
@@ -33,13 +32,6 @@ describe('DensityLog', () => {
         type: 'baseline',
         from: 'idle',
         to: 'working'
-      },
-      {
-        timestamp: '1970-01-01T00:00:00.003Z',
-        type: 'emote',
-        source: 'mcp:session-1',
-        cue: 'pleased',
-        coalesced: true
       }
     ])
   })

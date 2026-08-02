@@ -12,9 +12,6 @@ function usage() {
 
 function report(result) {
   console.log(JSON.stringify(result))
-  if (result.uncalibrated > 0) {
-    console.log(`${result.uncalibrated} cues uncalibrated — ask your agent to run the mapping flow.`)
-  }
 }
 
 export function run(argv) {

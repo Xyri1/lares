@@ -2,7 +2,6 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import defaultPreset from '../../../../presets/default.json'
 import expressivePreset from '../../../../presets/expressive.json'
-import { SCENARIO_CUES } from '../../../main/scenario/cues'
 import { loadScenario } from '../../../main/scenario/load'
 import { createStepper, traceLine, STEP_MS } from '../../../main/scenario/run'
 import { computeTarget, DEFAULT_ANCHORS } from '../feel/feel'
@@ -18,7 +17,7 @@ const GOLDEN = join(process.cwd(), 'scenarios', 'recovery-arc.json')
 
 function stageTrace(preset: SynthPreset): { engine: string[]; synth: string[] } {
   const scenario = loadScenario(GOLDEN)
-  const stepper = createStepper(scenario, SCENARIO_CUES)
+  const stepper = createStepper(scenario)
   const synth = createSynth(preset, mulberry32(SEED))
   const engine: string[] = []
   const synthLines: string[] = []

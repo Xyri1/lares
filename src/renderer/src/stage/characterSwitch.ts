@@ -8,12 +8,6 @@ import {
 import type { IRuntime } from '../runtime/iface'
 import { isSynthPreset, type SynthPreset } from '../synth/synth'
 
-interface CuePayload {
-  name: string
-  params?: Record<string, number>
-  motion?: string
-}
-
 export interface CharacterLoadRequest {
   id: number
   character: {
@@ -27,12 +21,10 @@ export interface CharacterLoadRequest {
       performance?: SynthPreset
     }
   }
-  cues: CuePayload[]
 }
 
 interface CharacterCommitRequest {
   id: number
-  cues: CuePayload[]
 }
 
 interface DriverCharacterChange {
@@ -74,33 +66,6 @@ function validId(id: unknown): id is number {
   return Number.isSafeInteger(id) && (id as number) >= 1
 }
 
-function parseCues(rawCues: unknown, id: number): CuePayload[] | null {
-  if (!Array.isArray(rawCues)) return null
-  const cues: CuePayload[] = []
-  for (const raw of rawCues) {
-    if (!record(raw) || typeof raw.name !== 'string' || !raw.name) return null
-    const hasParams = raw.params !== undefined
-    const hasMotion = raw.motion !== undefined
-    if (hasParams === hasMotion) return null
-    if (
-      hasParams &&
-      (!record(raw.params) ||
-        Object.values(raw.params).some(
-          (parameter) => typeof parameter !== 'number' || !Number.isFinite(parameter)
-        ))
-    ) {
-      return null
-    }
-    if (hasMotion && !candidateUrl(raw.motion, id)) return null
-    cues.push(
-      hasParams
-        ? { name: raw.name, params: raw.params as Record<string, number> }
-        : { name: raw.name, motion: raw.motion as string }
-    )
-  }
-  return cues
-}
-
 export function parseCharacterPrepareRequest(value: unknown): CharacterLoadRequest | null {
   if (!record(value) || !validId(value.id)) return null
   const id = value.id
@@ -129,25 +94,15 @@ export function parseCharacterPrepareRequest(value: unknown): CharacterLoadReque
   ) {
     return null
   }
-  const cues = parseCues(value.cues, id)
-  if (!cues) return null
   return {
     id,
-    character: character as unknown as CharacterLoadRequest['character'],
-    cues
+    character: character as unknown as CharacterLoadRequest['character']
   }
 }
 
 function parseCharacterCommitRequest(value: unknown): CharacterCommitRequest | null {
   if (!record(value) || !validId(value.id)) return null
-  const id = value.id
-  const cues = parseCues(value.cues, id)
-  return cues ? { id, cues } : null
-}
-
-function replace<T>(target: Record<string, T>, entries: [string, T][]): void {
-  for (const key of Object.keys(target)) delete target[key]
-  Object.assign(target, Object.fromEntries(entries))
+  return { id: value.id }
 }
 
 export function createCharacterLoadHandler(
@@ -167,8 +122,6 @@ export function createCharacterLoadHandler(
       poses?: FeelPoses
     ): void | (() => void) | DriverCharacterChange
   },
-  cueParams: Record<string, Record<string, number>>,
-  cueMotions: Record<string, string>,
   reportPrepared: (result: unknown) => void,
   reportCommitted: (result: unknown) => void,
   finalized?: (request: CharacterLoadRequest) => void,
@@ -187,8 +140,6 @@ export function createCharacterLoadHandler(
   let tentative:
     | {
         request: CharacterLoadRequest
-        params: [string, Record<string, number>][]
-        motions: [string, string][]
         rollbackDriver?: () => void
         finalizeDriver?: () => void
         watchdog?: ReturnType<typeof setTimeout>
@@ -215,12 +166,10 @@ export function createCharacterLoadHandler(
     tentative = undefined
     if (transaction.watchdog) clearTimeout(transaction.watchdog)
     runtime.rollbackLoad(rawId as number)
-    replace(cueParams, transaction.params)
-    replace(cueMotions, transaction.motions)
     try {
       transaction.rollbackDriver?.()
     } catch {
-      // Runtime and cue state are already restored.
+      // Runtime state is already restored.
     }
     return true
   }
@@ -335,17 +284,6 @@ export function createCharacterLoadHandler(
           runtime.cancelLoad(request.id)
           return
         }
-        for (const cue of request.cues) {
-          if (!cue.params) continue
-          const unknown = Object.keys(cue.params).filter(
-            (id) => !inventory.some((param) => param.id === id)
-          )
-          if (unknown.length) {
-            throw new Error(
-              `Cue ${JSON.stringify(cue.name)}: unknown parameter ${unknown.map((id) => JSON.stringify(id)).join(', ')}`
-            )
-          }
-        }
         prepared = request
         const compatibility = runtime.compatibility?.()
         const performanceIds = request.character.live2d.performance
@@ -391,26 +329,12 @@ export function createCharacterLoadHandler(
       if (!commit || prepared?.id !== commit.id) return false
       const request = prepared
       prepared = undefined
-      const previousParams = Object.entries(cueParams)
-      const previousMotions = Object.entries(cueMotions)
       if (!runtime.commitLoad(commit.id)) {
         report(reportCommitted, { id: commit.id, ok: false, error: 'runtime commit failed' })
         return false
       }
-      tentative = { request, params: previousParams, motions: previousMotions }
+      tentative = { request }
       try {
-        replace(
-          cueParams,
-          commit.cues.flatMap((cue) =>
-            cue.params === undefined ? [] : [[cue.name, cue.params]]
-          )
-        )
-        replace(
-          cueMotions,
-          commit.cues.flatMap((cue) =>
-            cue.motion === undefined ? [] : [[cue.name, cue.motion]]
-          )
-        )
         const driverChange = driver.characterChanged(
           request.character.live2d.performance,
           resolveFeel(request.character)

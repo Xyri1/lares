@@ -13,7 +13,6 @@ export const en = {
   doNotDisturb: 'Do Not Disturb',
   launchAtLogin: 'Launch at Login',
   resetPosition: 'Reset Position',
-  calibrationUnavailable: 'Expression mapping unavailable',
   automaticallyCheckForUpdates: 'Automatically Check for Updates',
   checkForUpdates: 'Check for Updates…',
   configureAgentIntegrations: 'Configure Agent Integrations…',
@@ -32,7 +31,6 @@ export const en = {
   characterCouldNotBeImported: 'Character could not be imported',
   characterImportCleanupFailed: 'Character import cleanup failed',
   laresCouldNotBeUninstalled: 'Lares could not be uninstalled',
-  characterPackageInvalid: 'Character package invalid',
   defaultCharacterUnavailable: 'Default character unavailable',
 
   // Local ingress (the affect-feed server) failing to start
@@ -82,12 +80,7 @@ export const en = {
   agentIntegrationsCodexNext:
     'Codex: start a new task in the CLI or ChatGPT desktop app, then review and trust hooks with /hooks.',
   agentIntegrationsCopyCommands: 'Copy Manual Commands',
-  agentIntegrationsDone: 'Done',
-
-  // Canonical mapping readiness (tray) — read-only; Calibrate Lar runs in the
-  // harness, so this row names it instead of offering a button.
-  expressionMapping: (mapped: number, total: number): string =>
-    `Expression mapping ${mapped}/${total}${mapped === total ? '' : ' — run Calibrate Lar'}`
+  agentIntegrationsDone: 'Done'
 }
 
 export const zhCN: typeof en = {
@@ -98,7 +91,6 @@ export const zhCN: typeof en = {
   doNotDisturb: '勿扰模式',
   launchAtLogin: '开机启动',
   resetPosition: '重置位置',
-  calibrationUnavailable: '表情映射不可用',
   automaticallyCheckForUpdates: '自动检查更新',
   checkForUpdates: '检查更新…',
   configureAgentIntegrations: '配置 Agent 集成…',
@@ -113,7 +105,6 @@ export const zhCN: typeof en = {
   characterCouldNotBeImported: '无法导入角色',
   characterImportCleanupFailed: '角色导入清理失败',
   laresCouldNotBeUninstalled: '无法卸载 Lares',
-  characterPackageInvalid: '角色包无效',
   defaultCharacterUnavailable: '默认角色不可用',
 
   ingressUnavailableTitle: 'Lares 服务不可用',
@@ -155,10 +146,7 @@ export const zhCN: typeof en = {
   agentIntegrationsCodexNext:
     'Codex：在 CLI 或 ChatGPT 桌面应用中新建任务，然后通过 /hooks 审核并信任钩子。',
   agentIntegrationsCopyCommands: '复制手动命令',
-  agentIntegrationsDone: '完成',
-
-  expressionMapping: (mapped: number, total: number): string =>
-    `表情映射 ${mapped}/${total}${mapped === total ? '' : ' — 请运行 Calibrate Lar'}`
+  agentIntegrationsDone: '完成'
 }
 
 export type Locale = 'en' | 'zh-CN'

@@ -1,4 +1,5 @@
 import presetJson from '../../../../presets/default.json'
+import { ANCHOR_KEYS } from '../feel/feel'
 import type { Live2DRuntime } from '../runtime/live2d'
 import type { SynthPreset } from '../synth/synth'
 import type { AffectDriver } from './affect'
@@ -14,12 +15,32 @@ const GOLDENS = [
   'recovery-arc'
 ]
 
+// Dev-side only (SPEC §3): the corner mnemonics never cross the model-facing
+// boundary and are not a runtime taxonomy — a label here is just a label.
+const ANCHOR_LABELS: Record<string, string> = {
+  neutral: 'neutral',
+  '+++': 'triumphant',
+  '++-': 'giddy',
+  '+-+': 'serene',
+  '+--': 'content',
+  '-++': 'determined',
+  '-+-': 'panic',
+  '--+': 'grim resolve',
+  '---': 'dejected'
+}
+
+/** Anchor key → the wire tuple that lands exactly on it (SPEC §3 corners are ±1 normalized = ±2 wire). */
+function tupleForAnchor(key: string): { valence: number; activation: number; control: number } {
+  if (key === 'neutral') return { valence: 0, activation: 0, control: 0 }
+  const sign = (ch: string): number => (ch === '+' ? 2 : -2)
+  return { valence: sign(key[0]), activation: sign(key[1]), control: sign(key[2]) }
+}
+
 // 001-D5: the gate harness. Ugly on purpose; survives behind the dev flag
 // as the standing debug surface.
 export function mountPanel(
   runtime: Live2DRuntime,
   driver: AffectDriver,
-  cues: CueListEntry[],
   setStageB?: (on: boolean) => Promise<void>
 ): void {
   const panel = document.createElement('div')
@@ -68,23 +89,24 @@ export function mountPanel(
   )
   panel.appendChild(motionRow)
 
-  // Cue preview (A6) — one button per manifest cue. Pushes a transient entry
-  // in front of the live expression stack; the compositor fades it in, holds,
-  // and fades it back out on expiry. Same path a scenario emote takes, so the
-  // preview is the truth about what playback will look like.
-  const cuesRow = document.createElement('div')
-  for (const cue of cues) {
-    cuesRow.appendChild(button(`cue: ${cue.name}`, () => driver.preview(cue.name)))
+  // Anchor preview (013 I5) — neutral plus the eight corners. Holds the
+  // target pose through the same live pose path the feed uses, then fades
+  // back out on expiry — the preview is the truth about what a feel report
+  // there will look like.
+  const posesRow = document.createElement('div')
+  for (const key of ANCHOR_KEYS) {
+    const tuple = tupleForAnchor(key)
+    posesRow.appendChild(button(`pose: ${ANCHOR_LABELS[key]}`, () => driver.previewPose(tuple)))
   }
   // Clean slate without restarting the app — the affect layer's writes are
   // sticky, so tuning sessions otherwise accumulate pinned parameters.
-  cuesRow.appendChild(
+  posesRow.appendChild(
     button('reset', () => {
       stopSweep()
       driver.reset()
     })
   )
-  panel.appendChild(cuesRow)
+  panel.appendChild(posesRow)
 
   // Expression via raw param map, 500ms fade (A7). Face params if present,
   // first param otherwise — Hiyori ships no .exp3.json to reference.

@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { runScenario } from './run'
 import type { Scenario } from './types'
 
-const CUES = { pleased: { valence: 0.55, arousal: 0.45 } }
-
 function scenario(events: Scenario['events']): Scenario {
   return { name: 't', timeScale: 1, events }
 }
@@ -21,20 +19,17 @@ describe('runScenario', () => {
         }
       }
     ])
-    const trace = runScenario(s, CUES, { tailMs: 500 })
+    const trace = runScenario(s, { tailMs: 500 })
     expect(trace).toHaveLength(6) // t = 0,100,200,300,400,500
     expect(JSON.parse(trace[0]).t).toBe(0)
     expect(JSON.parse(trace[trace.length - 1]).t).toBe(500)
   })
 
-  it('applies an emote as a cue nudge plus a queued expression', () => {
-    const s = scenario([{ at_ms: 0, emote: { cue: 'pleased', intensity: 1, duration_s: 1 } }])
-    const trace = runScenario(s, CUES, { tailMs: 200 })
+  it('latches a feel tuple at the tick it fires', () => {
+    const s = scenario([{ at_ms: 0, feel: { valence: 1, activation: 1, control: 0 } }])
+    const trace = runScenario(s, { tailMs: 200 })
     const first = JSON.parse(trace[0])
-    expect(first.E.valence).toBeGreaterThan(0.1)
-    expect(first.expressionStack).toEqual([
-      { cueOrFreeform: 'pleased', weight: 1, expiryMs: 1000 }
-    ])
+    expect(first.feel).toEqual({ valence: 1, activation: 1, control: 0 })
   })
 
   it('drives baseline state from an envelope event', () => {
@@ -49,8 +44,8 @@ describe('runScenario', () => {
         }
       }
     ])
-    const trace = runScenario(s, CUES, { tailMs: 0 })
-    expect(JSON.parse(trace[trace.length - 1]).baselineState).toBe('error')
+    const trace = runScenario(s, { tailMs: 0 })
+    expect(JSON.parse(trace[trace.length - 1]).operational).toBe('error')
   })
 
   it('is deterministic: two runs of the same scenario are identical', () => {
@@ -65,13 +60,13 @@ describe('runScenario', () => {
         }
       }
     ])
-    expect(runScenario(s, CUES)).toEqual(runScenario(s, CUES))
+    expect(runScenario(s)).toEqual(runScenario(s))
   })
 
   it('is unaffected by the speed option', () => {
-    const s = scenario([{ at_ms: 0, emote: { cue: 'pleased' } }])
-    const slow = runScenario(s, CUES, { speed: 1 })
-    const fast = runScenario(s, CUES, { speed: 64 })
+    const s = scenario([{ at_ms: 0, feel: { valence: 1, activation: 0, control: 0 } }])
+    const slow = runScenario(s, { speed: 1 })
+    const fast = runScenario(s, { speed: 64 })
     expect(slow).toEqual(fast)
   })
 })

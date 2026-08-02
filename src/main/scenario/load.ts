@@ -1,21 +1,10 @@
 import { readFileSync } from 'node:fs'
+import { parseTuple } from '../feel/register'
 import { parseEnvelope } from '../sessions/mapEvent'
-import type { EmoteEvent, Scenario, ScenarioEvent } from './types'
+import type { Scenario, ScenarioEvent } from './types'
 
 function fail(msg: string): never {
   throw new Error(`Invalid scenario: ${msg}`)
-}
-
-function checkEmote(v: unknown, where: string): asserts v is EmoteEvent {
-  if (typeof v !== 'object' || v === null) fail(`${where}.emote must be an object`)
-  const e = v as Partial<EmoteEvent>
-  if (typeof e.cue !== 'string' || !e.cue) fail(`${where}.emote.cue must be a non-empty string`)
-  if (e.intensity !== undefined && typeof e.intensity !== 'number') {
-    fail(`${where}.emote.intensity must be a number`)
-  }
-  if (e.duration_s !== undefined && typeof e.duration_s !== 'number') {
-    fail(`${where}.emote.duration_s must be a number`)
-  }
 }
 
 // Parses + validates a scenario file (root SPEC §7 shape) and applies
@@ -47,16 +36,19 @@ export function loadScenario(filePath: string): Scenario {
       fail(`${where}.at_ms must be a non-negative number`)
     }
     const hasEnvelope = 'envelope' in evt
-    const hasEmote = 'emote' in evt
-    if (hasEnvelope === hasEmote) fail(`${where} must have exactly one of envelope or emote`)
+    const hasFeel = 'feel' in evt
+    if (hasEnvelope === hasFeel) fail(`${where} must have exactly one of envelope or feel`)
     const at_ms = evt.at_ms * timeScale
     if (hasEnvelope) {
       const envelope = parseEnvelope(evt.envelope)
       if (!envelope.ok) fail(`${where}.${envelope.error}`)
       return { at_ms, envelope: envelope.value }
     }
-    checkEmote(evt.emote, where)
-    return { at_ms, emote: evt.emote }
+    // Same ingress rule as the live `feel` tool (013 SPEC §1, §8): three
+    // required integers in {-2..2}.
+    const tuple = parseTuple(evt.feel)
+    if (!tuple) fail(`${where}.feel must have integer valence, activation, control in {-2..2}`)
+    return { at_ms, feel: tuple }
   })
 
   return { name: s.name, timeScale, events }

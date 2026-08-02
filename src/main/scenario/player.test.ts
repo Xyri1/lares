@@ -3,15 +3,13 @@ import { createStepper, STEP_MS } from './run'
 import { clampSpeed, feedMessage, playScenarioPaced, type AffectFeedMessage } from './player'
 import type { Scenario } from './types'
 
-const CUES = { pleased: { valence: 0.55, arousal: 0.45 } }
-
 function scenario(): Scenario {
   return {
     name: 't',
     timeScale: 1,
     events: [
-      { at_ms: 0, emote: { cue: 'pleased', intensity: 1, duration_s: 1 } },
-      { at_ms: 500, emote: { cue: 'pleased', intensity: 1, duration_s: 1 } }
+      { at_ms: 0, feel: { valence: 1, activation: 1, control: 0 } },
+      { at_ms: 500, feel: { valence: 2, activation: 0, control: 1 } }
     ]
   }
 }
@@ -27,14 +25,14 @@ describe('clampSpeed', () => {
 
 describe('playScenarioPaced — seek', () => {
   it('recomputes the same feed prefix as stepping the pure core straight to the same tick', () => {
-    const stepperRef = createStepper(scenario(), CUES)
+    const stepperRef = createStepper(scenario())
     const reference: AffectFeedMessage[] = []
     for (let t = 0; t <= 1000; t += STEP_MS) {
       reference.push(feedMessage(stepperRef.step(t), t / STEP_MS))
     }
 
     let seekHistory: AffectFeedMessage[] = []
-    const controller = playScenarioPaced(scenario(), CUES, {
+    const controller = playScenarioPaced(scenario(), {
       onFeed: () => {},
       onSeek: (h) => (seekHistory = h),
       onDone: () => {}
@@ -48,9 +46,9 @@ describe('playScenarioPaced — seek', () => {
   })
 
   it('clamps seek targets to [0, endMs] and aligns down to the 100ms grid', () => {
-    const stepperRef = createStepper(scenario(), CUES)
+    const stepperRef = createStepper(scenario())
     let seekHistory: AffectFeedMessage[] = []
-    const controller = playScenarioPaced(scenario(), CUES, {
+    const controller = playScenarioPaced(scenario(), {
       onFeed: () => {},
       onSeek: (h) => (seekHistory = h),
       onDone: () => {}
@@ -77,7 +75,7 @@ describe('playScenarioPaced — dual stage (002-D2)', () => {
   it('emits one feed per stage per tick; per-stage engine states match (determinism)', () => {
     const feeds: AffectFeedMessage[] = []
     let done: Record<string, string[]> = {}
-    const controller = playScenarioPaced(scenario(), CUES, {
+    const controller = playScenarioPaced(scenario(), {
       stages: ['A', 'B'],
       onFeed: (f) => feeds.push(f),
       onSeek: () => {},
@@ -102,7 +100,7 @@ describe('playScenarioPaced — pause/resume', () => {
 
   it('pause stops advancing ticks; resume continues from the same position', () => {
     const feeds: AffectFeedMessage[] = []
-    const controller = playScenarioPaced(scenario(), CUES, {
+    const controller = playScenarioPaced(scenario(), {
       onFeed: (f) => feeds.push(f),
       onSeek: () => {},
       onDone: () => {}

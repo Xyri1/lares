@@ -53,7 +53,6 @@ function setup(overrides: Partial<TrayShellDependencies> = {}) {
       effects.push(`login:${enabled}`)
     },
     resetPosition: () => effects.push('reset'),
-    calibrationStatus: () => 'Expression mapping 0/6 — run Calibrate Lar',
     onAutomaticUpdatesChanged: (enabled) => {
       effects.push(`automatic:${enabled}`)
     },
@@ -85,26 +84,10 @@ describe('tray shell', () => {
     expect(item(state.menu, 'Hiyori (2)').type).toBe('radio')
     for (const label of ['Import Character…', 'Open Character Folder', '50%', '75%', '100%',
       '125%', '150%', 'Do Not Disturb', 'Launch at Login', 'Reset Position',
-      'Expression mapping 0/6 — run Calibrate Lar', 'Automatically Check for Updates',
+      'Automatically Check for Updates',
       'Check for Updates…', 'Configure Agent Integrations…', 'Quit']) {
       expect(item(state.menu, label)).toBeTruthy()
     }
-  })
-
-  it('shows mapping readiness as one disabled row and no calibration action (011-D14)', () => {
-    let mapped = 4
-    const state = setup({ calibrationStatus: () => `Expression mapping ${mapped}/6` })
-
-    const row = item(state.menu, 'Expression mapping 4/6')
-    expect(row.enabled).toBe(false)
-    expect(row.click).toBeUndefined()
-    expect(row.type).toBeUndefined()
-    expect(state.menu.flatMap((entry) => [entry, ...(entry.submenu ?? [])]).map((entry) => entry.label))
-      .not.toContain('Map expressions…')
-
-    mapped = 6
-    state.shell.refresh()
-    expect(item(state.menu, 'Expression mapping 6/6')).toBeTruthy()
   })
 
   it('dispatches scale, DND, login, update preference, reset, integration, and quit effects', async () => {

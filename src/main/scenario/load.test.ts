@@ -23,7 +23,7 @@ const VALID = {
   timeScale: 1,
   events: [
     { at_ms: 0, envelope: SESSION_START_ENVELOPE },
-    { at_ms: 500, emote: { cue: 'pleased', intensity: 0.8, duration_s: 4 } }
+    { at_ms: 500, feel: { valence: 1, activation: 0, control: 1 } }
   ]
 }
 
@@ -33,7 +33,7 @@ describe('loadScenario', () => {
     expect(s.name).toBe('test-scenario')
     expect(s.events).toHaveLength(2)
     expect(s.events[0]).toMatchObject({ at_ms: 0 })
-    expect(s.events[1]).toMatchObject({ at_ms: 500, emote: { cue: 'pleased' } })
+    expect(s.events[1]).toMatchObject({ at_ms: 500, feel: { valence: 1, activation: 0, control: 1 } })
   })
 
   it('applies timeScale to every event at_ms', () => {
@@ -55,17 +55,19 @@ describe('loadScenario', () => {
     expect(() => loadScenario(writeScenario({ ...VALID, events: {} }))).toThrow(/events/)
   })
 
-  it('rejects an event missing both envelope and emote', () => {
+  it('rejects an event missing both envelope and feel', () => {
     const bad = { ...VALID, events: [{ at_ms: 0 }] }
-    expect(() => loadScenario(writeScenario(bad))).toThrow(/envelope or emote/)
+    expect(() => loadScenario(writeScenario(bad))).toThrow(/envelope or feel/)
   })
 
-  it('rejects an event with both envelope and emote', () => {
+  it('rejects an event with both envelope and feel', () => {
     const bad = {
       ...VALID,
-      events: [{ at_ms: 0, envelope: SESSION_START_ENVELOPE, emote: { cue: 'x' } }]
+      events: [
+        { at_ms: 0, envelope: SESSION_START_ENVELOPE, feel: { valence: 0, activation: 0, control: 0 } }
+      ]
     }
-    expect(() => loadScenario(writeScenario(bad))).toThrow(/envelope or emote/)
+    expect(() => loadScenario(writeScenario(bad))).toThrow(/envelope or feel/)
   })
 
   it('rejects an envelope missing hook_event_name', () => {
@@ -92,8 +94,14 @@ describe('loadScenario', () => {
     expect(() => loadScenario(writeScenario(bad))).toThrow(message)
   })
 
-  it('rejects an emote missing cue', () => {
-    const bad = { ...VALID, events: [{ at_ms: 0, emote: {} }] }
-    expect(() => loadScenario(writeScenario(bad))).toThrow(/cue/)
+  it('rejects a feel event with a float, out-of-range, or missing axis', () => {
+    for (const feel of [
+      { valence: 1.5, activation: 0, control: 0 },
+      { valence: 3, activation: 0, control: 0 },
+      { valence: 0, activation: 0 }
+    ]) {
+      const bad = { ...VALID, events: [{ at_ms: 0, feel }] }
+      expect(() => loadScenario(writeScenario(bad))).toThrow(/feel must have integer/)
+    }
   })
 })

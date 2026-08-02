@@ -86,6 +86,10 @@
       }
     },
     {
+      "at_ms": 31000,
+      "feel": { "valence": -1, "activation": 1, "control": 0 }
+    },
+    {
       "at_ms": 60000,
       "envelope": {
         "v": 1,
@@ -183,11 +187,7 @@
     },
     {
       "at_ms": 126000,
-      "emote": {
-        "cue": "frustrated",
-        "intensity": 1,
-        "duration_s": 8
-      }
+      "feel": { "valence": -2, "activation": 1, "control": -2 }
     },
     {
       "at_ms": 170000,
@@ -346,6 +346,10 @@
           "cwd": "C:\\Users\\dev\\Projects\\lares"
         }
       }
+    },
+    {
+      "at_ms": 283000,
+      "feel": { "valence": 1, "activation": 0, "control": 1 }
     },
     {
       "at_ms": 330000,

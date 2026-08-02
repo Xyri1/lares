@@ -36,7 +36,6 @@ export interface TrayShellDependencies {
   getLaunchAtLogin(): boolean
   setLaunchAtLogin(enabled: boolean): void
   resetPosition(): void
-  calibrationStatus?: () => string
   onAutomaticUpdatesChanged?: (enabled: boolean) => void | Promise<void>
   onCheckForUpdates?: () => void | Promise<void>
   onConfigureAgentIntegrations?: () => void | Promise<void>
@@ -203,9 +202,6 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
         click: setLaunchAtLogin
       },
       { label: L.resetPosition, click: deps.resetPosition },
-      { type: 'separator' },
-      // 011-D14: read-only readiness, never a launch surface.
-      { label: deps.calibrationStatus?.() ?? L.calibrationUnavailable, enabled: false },
       { type: 'separator' },
       {
         label: L.automaticallyCheckForUpdates,

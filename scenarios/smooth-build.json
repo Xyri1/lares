@@ -359,6 +359,10 @@
       }
     },
     {
+      "at_ms": 135000,
+      "feel": { "valence": 2, "activation": 0, "control": 2 }
+    },
+    {
       "at_ms": 140000,
       "envelope": {
         "v": 1,

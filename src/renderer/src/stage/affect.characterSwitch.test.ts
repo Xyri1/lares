@@ -49,7 +49,7 @@ describe('AffectDriver character switching', () => {
         }
       }
     })
-    const driver = createAffectDriver(runtime(), PRESETS.default, {})
+    const driver = createAffectDriver(runtime(), PRESETS.default)
     const feed: AffectFeed = {
       stageId: 'A',
       tick: 1,
@@ -97,7 +97,7 @@ describe('AffectDriver character switching', () => {
         }
       }
     })
-    const driver = createAffectDriver(rt, PRESETS.default, {})
+    const driver = createAffectDriver(rt, PRESETS.default)
     const feed: AffectFeed = {
       stageId: 'A',
       tick: 1,
@@ -160,7 +160,7 @@ describe('AffectDriver character switching', () => {
         }
       }
     })
-    const driver = createAffectDriver(rt, legacyPreset, {})
+    const driver = createAffectDriver(rt, legacyPreset)
 
     present!() // sanity: idles on the outgoing (legacy) preset before any switch
     expect(vi.mocked(rt.setParams).mock.calls.at(-1)![0]).toHaveProperty('PARAM_BREATH')

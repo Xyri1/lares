@@ -44,7 +44,6 @@ const lares = {
   setScenarioSpeed: (speed: number): Promise<ControlResult> =>
     ipcRenderer.invoke('scenario:setSpeed', speed),
   seekScenario: (tMs: number): Promise<ControlResult> => ipcRenderer.invoke('scenario:seek', tMs),
-  listCues: (): Promise<CueListEntry[]> => ipcRenderer.invoke('cues:list'),
   onAffectUpdate: (cb: (feed: AffectFeed) => void): void => {
     ipcRenderer.on('affect:update', (_event, feed: AffectFeed) => cb(feed))
   },

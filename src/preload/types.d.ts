@@ -35,12 +35,10 @@ interface CharacterSynthPreset {
 interface CharacterPrepareRequest {
   id: number
   character: Extract<CharacterPayload, { ok: true }>
-  cues: CueListEntry[]
 }
 
 interface CharacterCommitRequest {
   id: number
-  cues: CueListEntry[]
 }
 
 type CharacterPrepareResult =
@@ -81,21 +79,9 @@ interface StagePresets {
 
 type ControlResult = { ok: true } | { ok: false; error: string }
 
-/** Exact authoring preview is a separate P6 channel. Expressions arrive as
- * brain-parsed opaque knob values; cue keeps motion playback body-side. */
-type AuthoringPreview = { params: Record<string, number> } | { cue: string }
-
-/** cues:list entry (slice SPEC §5/§7) — a cue's affect coordinates plus its
- * raw Live2D param set, zipped from the manifest's `expressions` and
- * `renderers.live2d.cues` blocks. */
-interface CueListEntry {
-  name: string
-  valence: number | null
-  arousal: number | null
-  params?: Record<string, number>
-  /** Indexed Live2D motion form: `group` or `group:index`. */
-  motion?: string
-}
+/** Exact authoring preview is a separate P6 channel (013 SPEC §8): brain-
+ * parsed opaque knob values, explicit user-invoked authoring only. */
+type AuthoringPreview = { params: Record<string, number> }
 
 /** Agent-integrations window (brain→page full-state push over
  * `integrations:state`); the page renders whatever phase it is handed and
@@ -159,7 +145,6 @@ interface LaresBridge {
   resumeScenario(): Promise<ControlResult>
   setScenarioSpeed(speed: number): Promise<ControlResult>
   seekScenario(tMs: number): Promise<ControlResult>
-  listCues(): Promise<CueListEntry[]>
   onAffectUpdate(cb: (feed: AffectFeed) => void): void
   onAuthoringPreview(cb: (preview: AuthoringPreview) => void): void
   onAuthoringRevert(cb: () => void): void

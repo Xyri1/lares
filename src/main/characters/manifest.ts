@@ -1,25 +1,8 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { Vec2 } from '../affect/constants'
-import {
-  CANONICAL_CUES,
-  isCanonicalCue,
-  missingCues,
-  type CanonicalCue,
-  type CueMappings
-} from '../cues.ts'
-import { parseExp3File } from './exp3.ts'
-
-export type CueCoordinates = Vec2 | null
-
-export type CueDefinition =
-  | { params: Record<string, number> }
-  | { expression: string }
-  | { motion: string }
 
 export interface Live2dBlock {
   model: string
-  cues?: Record<string, CueDefinition>
   performance?: SynthPreset
   [key: string]: unknown
 }
@@ -117,12 +100,6 @@ export interface ValidationReport {
   resources: ResourceCatalog
   performance: { configured: boolean; parameterIds: string[] }
   body: BodyCapabilities | null
-  cues: { expression: number; motion: number; authored: number; raw: number }
-  calibrated: number
-  uncalibrated: number
-  /** Canonical readiness (011-D10), beside the raw performance counts above. */
-  mappedCues: CanonicalCue[]
-  missingCues: CanonicalCue[]
 }
 
 export type ManifestResult =
@@ -132,8 +109,6 @@ export type ManifestResult =
       live2d: Live2dBlock
       anchors?: PoseOverrides
       operational?: PoseOverrides
-      expressions: Record<string, CueCoordinates>
-      cueMappings: CueMappings
       report: ValidationReport
     }
   | { ok: false; error: string; report?: ValidationReport }
@@ -147,8 +122,6 @@ interface ParsedManifest {
   live2d: Live2dBlock
   anchors?: PoseOverrides
   operational?: PoseOverrides
-  expressions: Record<string, CueCoordinates>
-  cueMappings: CueMappings
 }
 
 const EMPTY_RESOURCES: ResourceCatalog = {
@@ -173,12 +146,7 @@ function errorReport(error: string): ValidationReport {
     mocVersion: null,
     resources: EMPTY_RESOURCES,
     performance: { configured: false, parameterIds: [] },
-    body: null,
-    cues: { expression: 0, motion: 0, authored: 0, raw: 0 },
-    calibrated: 0,
-    uncalibrated: 0,
-    mappedCues: [],
-    missingCues: [...CANONICAL_CUES]
+    body: null
   }
 }
 
@@ -210,8 +178,6 @@ function parseManifest(manifestPath: string): ParsedManifest | ValidationReport 
     identity?: { name?: unknown; license?: unknown }
     anchors?: unknown
     operational?: unknown
-    expressions?: unknown
-    cueMappings?: unknown
     renderers?: { live2d?: Record<string, unknown> }
   }
   if (m.format !== 'lares/1') return errorReport(`Unsupported manifest format ${JSON.stringify(m.format)} — expected "lares/1"`)
@@ -220,12 +186,6 @@ function parseManifest(manifestPath: string): ParsedManifest | ValidationReport 
   const live2d = m.renderers?.live2d
   if (!live2d || typeof live2d.model !== 'string') return errorReport('Manifest missing renderers.live2d.model')
 
-  const expressions = parseExpressions(m.expressions)
-  if (isReport(expressions)) return expressions
-  const cues = parseCues(live2d.cues)
-  if (isReport(cues)) return cues
-  const mappings = parseCueMappings(m.cueMappings)
-  if (isReport(mappings)) return mappings
   const performance = parsePerformance(live2d.performance)
   if (isReport(performance)) return performance
   const anchors = parsePoses(m.anchors, 'anchors', ANCHOR_KEYS)
@@ -237,13 +197,10 @@ function parseManifest(manifestPath: string): ParsedManifest | ValidationReport 
     live2d: {
       ...live2d,
       model: live2d.model,
-      cues: cues.cues,
       ...(performance.performance ? { performance: performance.performance } : {})
     },
     ...(anchors.poses ? { anchors: anchors.poses } : {}),
-    ...(operational.poses ? { operational: operational.poses } : {}),
-    expressions: expressions.expressions,
-    cueMappings: mappings.cueMappings
+    ...(operational.poses ? { operational: operational.poses } : {})
   }
 }
 
@@ -363,72 +320,6 @@ function parsePerformance(
       }
     }
   }
-}
-
-function parseExpressions(raw: unknown): { ok: true; expressions: Record<string, CueCoordinates> } | ValidationReport {
-  if (raw === undefined) return { ok: true, expressions: {} }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return errorReport('Manifest expressions must be an object')
-  const expressions: Record<string, CueCoordinates> = {}
-  for (const [cue, coord] of Object.entries(raw as Record<string, unknown>)) {
-    if (coord === null) {
-      expressions[cue] = null
-      continue
-    }
-    const c = coord as { valence?: unknown; arousal?: unknown } | null
-    if (typeof c?.valence !== 'number' || !Number.isFinite(c.valence) || c.valence < -1 || c.valence > 1) {
-      return errorReport(`expressions.${cue}.valence must be a number in [-1,1]`)
-    }
-    if (typeof c.arousal !== 'number' || !Number.isFinite(c.arousal) || c.arousal < 0 || c.arousal > 1) {
-      return errorReport(`expressions.${cue}.arousal must be a number in [0,1]`)
-    }
-    expressions[cue] = { valence: c.valence, arousal: c.arousal }
-  }
-  return { ok: true, expressions }
-}
-
-function parseCues(raw: unknown): { ok: true; cues: Record<string, CueDefinition> } | ValidationReport {
-  if (raw === undefined) return { ok: true, cues: {} }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return errorReport('Manifest renderers.live2d.cues must be an object')
-  const cues: Record<string, CueDefinition> = {}
-  for (const [cue, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) return errorReport(`renderers.live2d.cues.${cue} must be an object`)
-    const def = value as { params?: unknown; expression?: unknown; motion?: unknown }
-    const keys = ['params', 'expression', 'motion'].filter((key) => def[key as keyof typeof def] !== undefined)
-    if (keys.length !== 1) return errorReport(`renderers.live2d.cues.${cue} must contain exactly one of params, expression, or motion`)
-    if (def.params !== undefined) {
-      if (typeof def.params !== 'object' || def.params === null || Array.isArray(def.params)) return errorReport(`renderers.live2d.cues.${cue}.params must be an object`)
-      for (const [param, value] of Object.entries(def.params as Record<string, unknown>)) {
-        if (typeof value !== 'number' || !Number.isFinite(value)) return errorReport(`renderers.live2d.cues.${cue}.params.${param} must be a finite number`)
-      }
-      cues[cue] = { params: def.params as Record<string, number> }
-    } else if (typeof def.expression === 'string' && def.expression !== '') {
-      cues[cue] = { expression: def.expression }
-    } else if (typeof def.motion === 'string' && def.motion !== '') {
-      cues[cue] = { motion: def.motion }
-    } else {
-      return errorReport(`renderers.live2d.cues.${cue}.${keys[0]} must be a non-empty string`)
-    }
-  }
-  return { ok: true, cues }
-}
-
-/** Partial by design (011-D5): an incomplete mapping is valid but not ready. */
-function parseCueMappings(raw: unknown): { ok: true; cueMappings: CueMappings } | ValidationReport {
-  if (raw === undefined) return { ok: true, cueMappings: {} }
-  if (!record(raw)) return errorReport('Manifest cueMappings must be an object')
-  const cueMappings: CueMappings = {}
-  for (const [cue, performance] of Object.entries(raw)) {
-    if (!isCanonicalCue(cue)) {
-      return errorReport(
-        `cueMappings.${cue} is not a canonical cue — expected one of ${CANONICAL_CUES.join(', ')}`
-      )
-    }
-    if (typeof performance !== 'string' || performance === '') {
-      return errorReport(`cueMappings.${cue} must name a character performance`)
-    }
-    cueMappings[cue] = performance
-  }
-  return { ok: true, cueMappings }
 }
 
 function pathShapeError(path: string, label: string): string | null {
@@ -638,50 +529,6 @@ export function validateCharacter(manifestPath: string): ValidationReport {
       }
     }
   }
-  const cues = { expression: 0, motion: 0, authored: 0, raw: 0 }
-  const definitions = parsed.live2d.cues ?? {}
-  for (const name of Object.keys(parsed.expressions)) {
-    if (!Object.hasOwn(definitions, name)) {
-      errors.push(`Cue ${JSON.stringify(name)} has affect coordinates but no Live2D mapping`)
-    }
-  }
-  for (const name of Object.keys(definitions)) {
-    if (!Object.hasOwn(parsed.expressions, name)) {
-      errors.push(`Cue ${JSON.stringify(name)} has a Live2D mapping but no affect coordinates`)
-    }
-  }
-  for (const [cue, performance] of Object.entries(parsed.cueMappings)) {
-    if (!Object.hasOwn(parsed.expressions, performance)) {
-      errors.push(`cueMappings.${cue} names unknown performance ${JSON.stringify(performance)}`)
-    } else if (parsed.expressions[performance] === null) {
-      errors.push(`cueMappings.${cue} names uncalibrated performance ${JSON.stringify(performance)}`)
-    }
-  }
-  for (const [name, cue] of Object.entries(definitions)) {
-    if ('params' in cue) {
-      cues.raw++
-      continue
-    }
-    const kind = 'expression' in cue ? 'expression' : 'motion'
-    const path = cue[kind]
-    const referenceError = pathError(packageRoot, path, `Cue ${JSON.stringify(name)} ${kind}`)
-    if (referenceError) errors.push(referenceError)
-    if (kind === 'expression') {
-      if (path.startsWith('authored/')) cues.authored++
-      else cues.expression++
-      if (!referenceError) {
-        const result = parseExp3File(resolve(packageRoot, path))
-        if (!result.ok) errors.push(`Cue ${JSON.stringify(name)} expression is invalid: ${result.error}`)
-      }
-    } else {
-      cues.motion++
-    }
-  }
-  const values = Object.values(parsed.expressions)
-  const missing = missingCues(
-    parsed.cueMappings,
-    (performance) => (parsed.expressions[performance] ?? null) !== null
-  )
   return {
     ok: errors.length === 0,
     errors,
@@ -703,12 +550,7 @@ export function validateCharacter(manifestPath: string): ValidationReport {
           ]
         : []
     },
-    body: null,
-    cues,
-    calibrated: values.filter((value) => value !== null).length,
-    uncalibrated: values.filter((value) => value === null).length,
-    mappedCues: CANONICAL_CUES.filter((cue) => !missing.includes(cue)),
-    missingCues: missing
+    body: null
   }
 }
 
@@ -786,8 +628,6 @@ export function loadCharacter(manifestPath: string): ManifestResult {
     },
     ...(parsed.anchors ? { anchors: parsed.anchors } : {}),
     ...(parsed.operational ? { operational: parsed.operational } : {}),
-    expressions: parsed.expressions,
-    cueMappings: parsed.cueMappings,
     report
   }
 }
