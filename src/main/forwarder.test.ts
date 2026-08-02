@@ -20,7 +20,7 @@ const nativeEvent = {
 // 012-D4: approved copy, kept in sync with src/main/hostGuidance.ts (checked
 // there) and pinned in sdd/slices/012-host-guidance/SPEC.md §3.
 const HOST_GUIDANCE_REMINDER =
-  'Lares is active for this session. If the `emote` tool is available, report genuine shifts in your appraisal of the work as they occur — mid-task, not only at completion. Steady work stays silent.'
+  'Lares is active for this session. If the `feel` tool is available, report genuine shifts in your appraisal of the work as they occur — mid-task, not only at completion. Steady work stays silent.'
 const HOST_GUIDANCE_STDOUT = JSON.stringify({
   hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: HOST_GUIDANCE_REMINDER }
 })
@@ -104,12 +104,15 @@ describe('embedded-Node forwarder', () => {
     await rm(directory, { recursive: true, force: true })
   })
 
-  function server(ingested: unknown[]): ReturnType<typeof createServer> {
+  function server(
+    ingested: unknown[],
+    checkpoint?: ServerDeps['checkpoint']
+  ): ReturnType<typeof createServer> {
     const deps: ServerDeps = {
       ingest: (envelope) => void ingested.push(envelope),
-      emote: () => undefined,
-      listPerformances: () => ({ performances: [], missing_cues: [] }),
-      status: () => ({})
+      feel: () => undefined,
+      status: () => ({}),
+      checkpoint
     }
     const value = createServer(deps)
     servers.push(value)
@@ -169,9 +172,8 @@ describe('embedded-Node forwarder', () => {
     )
     const value = createServer({
       ingest: (envelope, at) => nerves.ingest(envelope, at),
-      emote: () => undefined,
-      listPerformances: () => ({ performances: [], missing_cues: [] }),
-      status: (at) => nerves.status(at)
+      feel: () => undefined,
+      status: (_session, at) => nerves.status(at)
     })
     servers.push(value)
     const port = await value.start(0)
@@ -258,6 +260,34 @@ describe('embedded-Node forwarder', () => {
     const envelope = ingested[0] as { pid?: number }
     if (process.platform === 'win32') expect(envelope.pid).toBeUndefined()
     else expect(envelope.pid).toBe(process.pid)
+  })
+
+  // 013 SPEC §10: the prompt-submit checkpoint is the one response the
+  // forwarder waits for, and it is strictly session-keyed.
+  it('prints the checkpoint the daemon returns for its own session only', async () => {
+    const ingested: unknown[] = []
+    const value = server(ingested, (key) =>
+      key === 'claude-code:session-1' ? { valence: -1, activation: 2, control: -2 } : undefined
+    )
+    const port = await value.start(0)
+    await writeFile(runtimeFile, JSON.stringify({ version: 1, port, pid: process.pid }))
+
+    const latched = await runForwarder(runtimeFile, JSON.stringify(nativeEvent))
+    expect(latched.code).toBe(0)
+    expect(JSON.parse(latched.stdout)).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext:
+          '[Lares] Last reported feel: valence=-1, activation=2, control=-2. Reassess from here — this is your last report, not a current claim. Call feel only on a meaningful appraisal change or a direct user request; values are absolute.'
+      }
+    })
+
+    const stranger = await runForwarder(
+      runtimeFile,
+      JSON.stringify({ ...nativeEvent, session_id: 'session-2' })
+    )
+    expect(stranger).toMatchObject({ code: 0, stdout: '' })
+    expect(ingested).toHaveLength(2)
   })
 
   it('prints exactly the structured reminder on codex SessionStart when hostGuidance is true', async () => {

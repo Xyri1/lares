@@ -37,15 +37,8 @@ import {
   type Exp3Parameter
 } from './characters/exp3'
 import {
-  mapCue as mapCharacterCue,
-  saveExpression as saveCharacterExpression,
-  updateExpression as updateCharacterExpression
-} from './characters/authoring'
-import {
-  loadCharacter,
   mergeRuntimeCompatibility,
-  type CueDefinition,
-  type ManifestResult
+  type CueDefinition
 } from './characters/manifest'
 import {
   bundledPackageRoot,
@@ -67,14 +60,6 @@ import {
 } from './characters/switch'
 import { calibrationLabel } from './calibration'
 import { DEFAULT_CONFIG, loadConfig, saveConfig, type AppConfig, type Scale } from './config'
-import {
-  CANONICAL_CUES,
-  performanceInventory,
-  resolveCanonicalCue,
-  statusMappings,
-  type CanonicalCue,
-  type CueMappings
-} from './cues'
 import { DensityLog } from './densityLog'
 import { errorMessage } from './errors'
 import {
@@ -119,11 +104,7 @@ import {
 } from './scenario/player'
 import { writeTrace } from './scenario/trace'
 import { createServer } from './server/server'
-import {
-  createTrayShell,
-  hydrateInitialCharacter,
-  type TrayShell
-} from './shell'
+import { createTrayShell, hydrateInitialCharacter } from './shell'
 import {
   checkLatestRelease,
   createUpdateChecks,
@@ -179,7 +160,6 @@ let characterAssets: CharacterAssetState | null = null
 let characterLoadBroker: CharacterLoadBroker | null = null
 let appConfig: AppConfig = { ...DEFAULT_CONFIG }
 let tray: Tray | null = null
-let trayShell: TrayShell | null = null
 let updateChecks: ReturnType<typeof createUpdateChecks> | null = null
 let quitting = false
 
@@ -469,13 +449,6 @@ function bodyCommitPayload(
   }
 }
 
-function object(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(`${label} arguments must be an object`)
-  }
-  return value as Record<string, unknown>
-}
-
 // Range overshoot is NOT an error: exp3 files legitimately exceed declared
 // ranges (rigger saturation trick) and every Live2D runtime clamps at set
 // time — so do the engine and the body. Only unknown ids mark a broken package.
@@ -614,21 +587,6 @@ async function startNerves(): Promise<void> {
     preview: (value) => broadcast('authoring:preview', value),
     revertPreview: () => broadcast('authoring:revert')
   })
-  const refreshCharacterState = (): Extract<ManifestResult, { ok: true }> => {
-    if (!currentSelection) throw new Error('No active character')
-    const fresh = loadCharacter(currentSelection.manifestPath)
-    if (!fresh.ok) throw new Error(fresh.error)
-    for (const cue of Object.keys(cueDefinitions)) delete cueDefinitions[cue]
-    Object.assign(cueDefinitions, fresh.live2d.cues ?? {})
-    currentSelection.character = fresh
-    liveNerves!.reloadCues(fresh.expressions, cueSources(cueDefinitions))
-    return fresh
-  }
-  // 011-D12: the canonical vocabulary stops here. Mappings and readiness ride
-  // on the active selection, so they change atomically with the character.
-  const activeMappings = (): CueMappings => currentSelection?.character.cueMappings ?? {}
-  const activeMissing = (): readonly CanonicalCue[] =>
-    currentSelection?.character.report.missingCues ?? CANONICAL_CUES
   if (currentSelection) {
     characterAssets = new CharacterAssetState(dirname(currentSelection.manifestPath))
     characterLoadBroker = new CharacterLoadBroker(characterAssets, liveCharacterBody, 30_000)
@@ -714,75 +672,14 @@ async function startNerves(): Promise<void> {
       densityLog?.recordBaseline(liveNerves!.sessionState(nowMs).baseline, nowMs)
       emitLiveFeed(nowMs)
     },
-    emote: (args, source, nowMs) => {
-      const raw = object(args, 'emote')
-      if (!Object.hasOwn(raw, 'cue')) {
-        const result = liveNerves!.emote(raw, source, nowMs)
-        densityLog?.recordEmote(source, raw, result, nowMs)
-        return result
-      }
-      const { cue, performance } = resolveCanonicalCue(raw.cue, activeMappings(), activeMissing())
-      const result = liveNerves!.emote({ ...raw, cue: performance }, source, nowMs)
-      densityLog?.recordEmote(source, { ...raw, cue, performance }, result, nowMs)
-      return {
-        status: result.status,
-        cue,
-        performance,
-        ...(result.warning === undefined ? {} : { warning: result.warning })
-      }
+    feel: (args, mcpSessionId, nowMs) => feelReport(args, mcpSessionId, nowMs),
+    status: (mcpSessionId, nowMs) => {
+      const { active_character, protocol_version } = liveNerves!.status(nowMs)
+      return { active_character, protocol_version, ...attributedFeel(mcpSessionId, nowMs) }
     },
-    listPerformances: () =>
-      performanceInventory(liveNerves!.listCues(), cueDefinitions, activeMappings()),
-    status: (nowMs) => ({
-      ...liveNerves!.status(nowMs),
-      ...statusMappings(activeMappings(), activeMissing())
-    }),
+    checkpoint: (sessionKey) => feelCheckpoint(sessionKey),
     listParameters: () => liveNerves!.listParameters(),
-    previewExpression: (args, nowMs) => liveNerves!.previewExpression(args, nowMs),
-    mapCue: (raw) => {
-      if (!currentSelection) throw new Error('No active character')
-      const args = object(raw, 'map_cue')
-      const result = mapCharacterCue(currentSelection.manifestPath, args.cue, args.performance)
-      if (!result.ok) throw new Error(result.error)
-      refreshCharacterState()
-      trayShell?.refresh()
-      return {
-        status: 'mapped',
-        cue: args.cue,
-        performance: args.performance,
-        missing_cues: result.report.missingCues
-      }
-    },
-    saveExpression: (raw) => {
-      if (!currentSelection) throw new Error('No active character')
-      const args = object(raw, 'save_expression')
-      const params = liveNerves!.clampParams(args.params)
-      const result = saveCharacterExpression(
-        currentSelection.manifestPath,
-        args.name as string,
-        params,
-        args.affect as { valence: number; arousal: number }
-      )
-      if (!result.ok) throw new Error(result.error)
-      refreshCharacterState()
-      trayShell?.refresh()
-      return { saved: args.name, report: result.report }
-    },
-    updateExpression: (raw) => {
-      if (!currentSelection) throw new Error('No active character')
-      const args = object(raw, 'update_expression')
-      const params = args.params === undefined ? undefined : liveNerves!.clampParams(args.params)
-      const result = updateCharacterExpression(currentSelection.manifestPath, args.name as string, {
-        ...(args.affect === undefined
-          ? {}
-          : { affect: args.affect as { valence: number; arousal: number } }),
-        ...(params === undefined ? {} : { params })
-      })
-      if (!result.ok) throw new Error(result.error)
-      refreshCharacterState()
-      trayShell?.refresh()
-      return { updated: args.name, report: result.report }
-    }
+    previewExpression: (args, nowMs) => liveNerves!.previewExpression(args, nowMs)
   })
 
   try {
@@ -1618,7 +1515,7 @@ function createTray(): void {
     setInterval: (callback, milliseconds) => setInterval(callback, milliseconds),
     clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>)
   })
-  trayShell = createTrayShell({
+  createTrayShell({
     config: appConfig,
     characters: () => listCharacterPackages(charactersRoot()),
     activeCharacter: () => {

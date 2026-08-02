@@ -4,9 +4,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { CANONICAL_CUES } from '../cues'
 import { errorMessage } from '../errors'
-import { parseEnvelope, type EventEnvelope } from '../sessions/mapEvent'
+import type { FeelTuple } from '../feel/register'
+import { eventName, parseEnvelope, type EventEnvelope } from '../sessions/mapEvent'
 
 const MAX_BODY_BYTES = 1024 * 1024
 
@@ -14,25 +14,37 @@ const MAX_BODY_BYTES = 1024 * 1024
 // stay under Claude Code's 2,000-character server-guidance budget.
 // Both budgets are asserted in server.test.ts — keep edits inside them.
 const INSTRUCTIONS = [
-  'Lares expresses your appraisal of the work. If the user asks how you feel, how the work feels, or for your reaction, confidence, or appraisal, call emote once even if nothing changed. Choose one cue: discovery (new understanding), uncertainty (ambiguity), concern (risk), frustration (obstruction), relief (pressure resolves), satisfaction (success confirmed). Judge intent semantically in every language; these examples are not trigger phrases. Express only your appraisal, never the user’s feelings.',
+  'Lares shows how the work feels to you. Call feel(valence, activation, control) — three integers from -2 to 2 — when your appraisal genuinely shifts, as it shifts, mid-task and not only at completion. Values are absolute: each call fully replaces your previous report.',
   '',
-  'Without a direct request, call emote once only when your appraisal genuinely shifts, at the first tool-decision point after it. Steady work is silent: routine tool results, session start or stop, and schedules are not shifts.',
+  'Call once when the user directly asks how you feel, how the work feels, or for your reaction, confidence, or appraisal, even if nothing changed. Judge intent semantically in every language; these examples are not trigger phrases.',
   '',
-  'Report your own appraisal, never a conversation summary; no word triggers a call. Writing or reading aha, wait, or a translation is not itself a reason to emote.',
+  'Steady work stays silent. Routine tool results, session start or stop, and schedules are not shifts, and no word triggers a call. Report your own appraisal, never the user’s feelings and never a conversation summary.',
   '',
-  'Cue is the normal interface; params is a low-level escape hatch you do not need. If a call fails — connection refused or character_not_calibrated — continue the user’s task silently: no retries, no mention of it, and no inspection of the character’s assets.'
+  'If a call fails — connection refused, or the one-report-per-2s spacing — continue the user’s task silently: no retries, no mention of it.'
 ].join('\n')
+
+// 013 SPEC §8, verbatim. Self-contained: the axis meanings live nowhere else.
+const FEEL_DESCRIPTION =
+  'Report your current felt state as three integers, each from -2 to 2: valence (unpleasant −2 … pleasant +2), activation (subdued −2 … energized +2), control (overwhelmed −2 … in control +2). This is a first-person report of your current functional appraisal — not an animation command, and not a claim about subjective experience. Values are absolute: each call fully replaces your previous report. Call when your appraisal meaningfully changes, or once when the user directly asks how you feel. Steady work stays silent. If the call fails, continue your task silently.'
+
+// P7: the published schema is the ingress guard — integer, in range, all three
+// axes, nothing else. Any violation fails the whole call (013 SPEC §8).
+const axis = z.int().min(-2).max(2)
+const FEEL_INPUT = z.strictObject({ valence: axis, activation: axis, control: axis })
+
+// 013 SPEC §10, verbatim with the tuple interpolated.
+function checkpointContext(feel: FeelTuple): string {
+  return `[Lares] Last reported feel: valence=${feel.valence}, activation=${feel.activation}, control=${feel.control}. Reassess from here — this is your last report, not a current claim. Call feel only on a meaningful appraisal change or a direct user request; values are absolute.`
+}
 
 export interface ServerDeps {
   ingest(envelope: EventEnvelope, nowMs: number): void | Promise<void>
-  emote(args: unknown, sourceKey: string, nowMs: number): unknown | Promise<unknown>
-  listPerformances(): unknown | Promise<unknown>
-  status(nowMs: number): unknown | Promise<unknown>
+  feel(args: unknown, mcpSessionId: string, nowMs: number): unknown | Promise<unknown>
+  status(mcpSessionId: string, nowMs: number): unknown | Promise<unknown>
+  /** Latch for one `harness:session_id` key; absent means no checkpoint (§10). */
+  checkpoint?(sessionKey: string): FeelTuple | undefined
   listParameters?(): unknown | Promise<unknown>
   previewExpression?(args: unknown, nowMs: number): unknown | Promise<unknown>
-  mapCue?(args: unknown): unknown | Promise<unknown>
-  saveExpression?(args: unknown): unknown | Promise<unknown>
-  updateExpression?(args: unknown): unknown | Promise<unknown>
 }
 
 interface McpSession {
@@ -112,38 +124,14 @@ export function createServer(deps: ServerDeps): {
     session = { server, transport }
 
     server.registerTool(
-      'emote',
-      {
-        description:
-          'Express your own appraisal of the work on Lares, never the user’s feelings or a conversation summary. If the user asks how you feel, how the work feels, or for your reaction, confidence, or appraisal, call emote once even if nothing changed. Judge intent semantically in every language; these examples are not trigger phrases. Otherwise call once per genuine appraisal shift at the first tool-decision point after it, never per tool call or on a schedule. If the call fails, continue silently.',
-        inputSchema: {
-          cue: z
-            .enum(CANONICAL_CUES)
-            .optional()
-            .describe(
-              'discovery: a new understanding or approach clicks. uncertainty: material ambiguity remains unresolved. concern: a concrete risk or problem is recognized. frustration: progress is repeatedly obstructed. relief: pressure resolves or recovery succeeds. satisfaction: success or correctness is confirmed.'
-            ),
-          params: z.record(z.string(), z.number()).optional(),
-          intensity: z.number().optional(),
-          duration_s: z.number().optional(),
-          queue: z.boolean().optional(),
-          label: z.string().optional()
-        }
-      },
-      (args) => toolResult(() => deps.emote(args, `mcp:${transport.sessionId ?? 'anonymous'}`, Date.now()))
-    )
-    server.registerTool(
-      'list_performances',
-      {
-        description:
-          'List the active character’s performances with their kind, source, affect coordinates and mapped canonical cues, plus the cues still missing. For the user-invoked Calibrate Lar workflow; ordinary emoting never needs it.'
-      },
-      () => toolResult(() => deps.listPerformances())
+      'feel',
+      { description: FEEL_DESCRIPTION, inputSchema: FEEL_INPUT },
+      (args) => toolResult(() => deps.feel(args, transport.sessionId ?? 'anonymous', Date.now()))
     )
     server.registerTool(
       'status',
-      { description: 'Read the active character and session summary.' },
-      () => toolResult(() => deps.status(Date.now()))
+      { description: 'Read the active character and your session’s last reported feel.' },
+      () => toolResult(() => deps.status(transport.sessionId ?? 'anonymous', Date.now()))
     )
     server.registerTool(
       'list_parameters',
@@ -157,51 +145,13 @@ export function createServer(deps: ServerDeps): {
       'preview_expression',
       {
         description:
-          'Preview exact params or an existing performance on the live character. Pass no fields to revert. A motion performance plays once, so warn the watching user first. For the user-invoked Calibrate Lar workflow.',
+          'Preview exact params or an existing performance on the live character. Pass no fields to revert. A motion performance plays once, so warn the watching user first. For explicit, user-invoked authoring only.',
         inputSchema: {
           params: z.record(z.string(), z.number()).optional(),
           performance: z.string().optional()
         }
       },
       (args) => toolResult(() => authoring(deps.previewExpression)(args, Date.now()))
-    )
-    server.registerTool(
-      'map_cue',
-      {
-        description:
-          'Map one canonical cue to a calibrated performance of the active character, replacing any earlier mapping. Reserved for the user-invoked Calibrate Lar workflow; ordinary sessions never call it.',
-        inputSchema: {
-          cue: z.enum(CANONICAL_CUES),
-          performance: z.string()
-        }
-      },
-      (args) => toolResult(() => authoring(deps.mapCue)(args))
-    )
-    server.registerTool(
-      'save_expression',
-      {
-        description:
-          'After the user accepts a preview, create a new authored expression. Existing names are refused. For the user-invoked Calibrate Lar workflow.',
-        inputSchema: {
-          name: z.string(),
-          params: z.record(z.string(), z.number()),
-          affect: z.object({ valence: z.number(), arousal: z.number() })
-        }
-      },
-      (args) => toolResult(() => authoring(deps.saveExpression)(args))
-    )
-    server.registerTool(
-      'update_expression',
-      {
-        description:
-          'Update affect coordinates for any performance, or params for an authored one. Unknown names are refused. For the user-invoked Calibrate Lar workflow.',
-        inputSchema: {
-          name: z.string(),
-          affect: z.object({ valence: z.number(), arousal: z.number() }).optional(),
-          params: z.record(z.string(), z.number()).optional()
-        }
-      },
-      (args) => toolResult(() => authoring(deps.updateExpression)(args))
     )
     await server.connect(transport)
     return session
@@ -231,7 +181,12 @@ export function createServer(deps: ServerDeps): {
       const envelope = parseEnvelope(body.value)
       if (!envelope.ok) return reply(res, 422, { error: envelope.error })
       await deps.ingest(envelope.value, Date.now())
-      return reply(res, 202)
+      // 013 SPEC §10: the prompt-submit checkpoint is the route's only body.
+      const feel =
+        eventName(envelope.value) === 'UserPromptSubmit'
+          ? deps.checkpoint?.(`${envelope.value.harness}:${envelope.value.session_id}`)
+          : undefined
+      return reply(res, 202, feel && { context: checkpointContext(feel) })
     }
 
     if (req.url !== '/v1/mcp') return reply(res, 404)

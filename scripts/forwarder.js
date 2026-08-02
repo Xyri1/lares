@@ -1,5 +1,8 @@
 const startedAt = Date.now()
 let finished = false
+// 013 SPEC §10: the 500ms budget is a soft target, not a gate. The prompt-submit
+// checkpoint waits for the response with no in-script cutoff; the harness hook
+// timeout is the outer bound. Every other path keeps the hard cutoff.
 const budget = setTimeout(finish, 500)
 
 function finish() {
@@ -19,7 +22,18 @@ const fs = require('node:fs')
 
 // 012-D2/D3: approved copy, verbatim. Never derived from prompt text.
 const HOST_GUIDANCE_REMINDER =
-  'Lares is active for this session. If the `emote` tool is available, report genuine shifts in your appraisal of the work as they occur — mid-task, not only at completion. Steady work stays silent.'
+  'Lares is active for this session. If the `feel` tool is available, report genuine shifts in your appraisal of the work as they occur — mid-task, not only at completion. Steady work stays silent.'
+
+function emitContext(event, context) {
+  try {
+    fs.writeSync(
+      1,
+      JSON.stringify({
+        hookSpecificOutput: { hookEventName: event, additionalContext: context }
+      })
+    )
+  } catch {}
+}
 
 const harness = process.argv[2]
 if (harness !== 'claude-code' && harness !== 'codex') finish()
@@ -74,18 +88,12 @@ process.stdin.on('end', () => {
     event.hook_event_name === 'SessionStart' &&
     runtime.hostGuidance === true
   ) {
-    try {
-      fs.writeSync(
-        1,
-        JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: 'SessionStart',
-            additionalContext: HOST_GUIDANCE_REMINDER
-          }
-        })
-      )
-    } catch {}
+    emitContext('SessionStart', HOST_GUIDANCE_REMINDER)
   }
+
+  // Only the prompt-submit checkpoint reads the daemon's answer (013 SPEC §10);
+  // every other event stays fire-and-forget.
+  const checkpoint = event.hook_event_name === 'UserPromptSubmit'
 
   const body = JSON.stringify({
     v: 1,
@@ -107,10 +115,25 @@ process.stdin.on('end', () => {
       },
     },
     (response) => {
-      response.resume()
-      finish()
+      if (!checkpoint) {
+        response.resume()
+        return finish()
+      }
+      const answer = []
+      response.on('data', (chunk) => answer.push(chunk))
+      response.on('error', finish)
+      response.on('end', () => {
+        let context
+        try {
+          context = JSON.parse(Buffer.concat(answer).toString('utf8')).context
+        } catch {}
+        if (typeof context === 'string' && context) emitContext('UserPromptSubmit', context)
+        finish()
+      })
     }
   )
   request.on('error', finish)
+  // The checkpoint waits for its answer; a refused connection still exits fast.
+  if (checkpoint) clearTimeout(budget)
   request.end(body)
 })
