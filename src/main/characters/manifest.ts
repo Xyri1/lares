@@ -27,22 +27,53 @@ export interface Live2dBlock {
 export interface SynthPreset {
   params: {
     id: string
-    source: 'valence' | 'arousal'
+    /** A slice 013 SPEC §2 performance channel. */
+    source: string
     gain: number
     offset: number
-    weight?: number
   }[]
   idle: {
     breath: { id: string; basePeriodMs: number; amplitude: number }
-    blink: {
-      ids: string[]
-      baseIntervalMs: number
-      durationMs: number
-      valenceGain: number
-    }
+    blink: { ids: string[]; baseIntervalMs: number; durationMs: number }
     sway: { id: string; baseAmplitude: number; periodMs: number }
   }
 }
+
+// The renderer-neutral performance vocabulary (slice 013 SPEC §§2–3, 11).
+// Restated here rather than imported from the renderer's feel module: this
+// process boundary is a structural contract in this repo, not a shared import.
+const CHANNELS: readonly string[] = [
+  'mouthCurve',
+  'mouthOpen',
+  'browRaise',
+  'browKnit',
+  'eyeOpen',
+  'gazeHeight',
+  'headPitch',
+  'lean',
+  'swayAmplitude',
+  'breathRate',
+  'breathDepth',
+  'blinkRate'
+]
+
+/** Sign-ordered (valence, activation, control) corner keys, plus neutral. */
+const ANCHOR_KEYS: readonly string[] = [
+  'neutral',
+  '+++',
+  '++-',
+  '+-+',
+  '+--',
+  '-++',
+  '-+-',
+  '--+',
+  '---'
+]
+
+const OPERATIONAL_KEYS: readonly string[] = ['awaiting_input', 'error']
+
+/** Authored channel poses, keyed by anchor or operational state. */
+export type PoseOverrides = Record<string, Record<string, number>>
 
 export interface ResourceCatalog {
   moc: string | null
@@ -99,6 +130,8 @@ export type ManifestResult =
       ok: true
       name: string
       live2d: Live2dBlock
+      anchors?: PoseOverrides
+      operational?: PoseOverrides
       expressions: Record<string, CueCoordinates>
       cueMappings: CueMappings
       report: ValidationReport
@@ -112,6 +145,8 @@ export type CharacterSelection =
 interface ParsedManifest {
   name: string
   live2d: Live2dBlock
+  anchors?: PoseOverrides
+  operational?: PoseOverrides
   expressions: Record<string, CueCoordinates>
   cueMappings: CueMappings
 }
@@ -173,6 +208,8 @@ function parseManifest(manifestPath: string): ParsedManifest | ValidationReport 
   const m = json as {
     format?: unknown
     identity?: { name?: unknown; license?: unknown }
+    anchors?: unknown
+    operational?: unknown
     expressions?: unknown
     cueMappings?: unknown
     renderers?: { live2d?: Record<string, unknown> }
@@ -191,6 +228,10 @@ function parseManifest(manifestPath: string): ParsedManifest | ValidationReport 
   if (isReport(mappings)) return mappings
   const performance = parsePerformance(live2d.performance)
   if (isReport(performance)) return performance
+  const anchors = parsePoses(m.anchors, 'anchors', ANCHOR_KEYS)
+  if (isReport(anchors)) return anchors
+  const operational = parsePoses(m.operational, 'operational', OPERATIONAL_KEYS)
+  if (isReport(operational)) return operational
   return {
     name: m.identity.name,
     live2d: {
@@ -199,9 +240,49 @@ function parseManifest(manifestPath: string): ParsedManifest | ValidationReport 
       cues: cues.cues,
       ...(performance.performance ? { performance: performance.performance } : {})
     },
+    ...(anchors.poses ? { anchors: anchors.poses } : {}),
+    ...(operational.poses ? { operational: operational.poses } : {}),
     expressions: expressions.expressions,
     cueMappings: mappings.cueMappings
   }
+}
+
+/**
+ * Optional channel-pose block (slice 013 SPEC §13): known keys, known channel
+ * names, values in [-1, 1]. Anything else is a loud failure here, which is a
+ * refused import for a package the user chose and a warn-and-skip for the
+ * managed library (same two-tier path every other manifest error takes).
+ * Merging against the shipped defaults is the body's job — a package may
+ * specify any subset.
+ */
+function parsePoses(
+  raw: unknown,
+  label: string,
+  keys: readonly string[]
+): { poses?: PoseOverrides } | ValidationReport {
+  if (raw === undefined) return {}
+  if (!record(raw)) return errorReport(`Manifest ${label} must be an object`)
+  const poses: PoseOverrides = {}
+  for (const [key, pose] of Object.entries(raw)) {
+    if (!keys.includes(key)) {
+      return errorReport(`${label}.${key} is not a known key — expected one of ${keys.join(', ')}`)
+    }
+    if (!record(pose)) return errorReport(`${label}.${key} must be an object of channel values`)
+    const values: Record<string, number> = {}
+    for (const [channel, value] of Object.entries(pose)) {
+      if (!CHANNELS.includes(channel)) {
+        return errorReport(
+          `${label}.${key}.${channel} is not a performance channel — expected one of ${CHANNELS.join(', ')}`
+        )
+      }
+      if (!finite(value) || value < -1 || value > 1) {
+        return errorReport(`${label}.${key}.${channel} must be a number in [-1,1]`)
+      }
+      values[channel] = value
+    }
+    poses[key] = values
+  }
+  return { poses }
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -229,20 +310,14 @@ function parsePerformance(
       !record(raw) ||
       typeof raw.id !== 'string' ||
       raw.id === '' ||
-      (raw.source !== 'valence' && raw.source !== 'arousal') ||
+      typeof raw.source !== 'string' ||
+      !CHANNELS.includes(raw.source) ||
       !finite(raw.gain) ||
-      !finite(raw.offset) ||
-      (raw.weight !== undefined && !finite(raw.weight))
+      !finite(raw.offset)
     ) {
       return errorReport(`renderers.live2d.performance.params[${index}] is invalid`)
     }
-    params.push({
-      id: raw.id,
-      source: raw.source,
-      gain: raw.gain,
-      offset: raw.offset,
-      ...(raw.weight === undefined ? {} : { weight: raw.weight })
-    })
+    params.push({ id: raw.id, source: raw.source, gain: raw.gain, offset: raw.offset })
   }
   const breath = value.idle.breath
   const blink = value.idle.blink
@@ -258,7 +333,6 @@ function parsePerformance(
     blink.ids.some((id) => typeof id !== 'string' || id === '') ||
     !positive(blink.baseIntervalMs) ||
     !positive(blink.durationMs) ||
-    !finite(blink.valenceGain) ||
     !record(sway) ||
     typeof sway.id !== 'string' ||
     sway.id === '' ||
@@ -279,8 +353,7 @@ function parsePerformance(
         blink: {
           ids: blink.ids as string[],
           baseIntervalMs: blink.baseIntervalMs,
-          durationMs: blink.durationMs,
-          valenceGain: blink.valenceGain
+          durationMs: blink.durationMs
         },
         sway: {
           id: sway.id,
@@ -711,6 +784,8 @@ export function loadCharacter(manifestPath: string): ManifestResult {
         ? { fallbackPhysics: report.resources.physics.fallback }
         : {})
     },
+    ...(parsed.anchors ? { anchors: parsed.anchors } : {}),
+    ...(parsed.operational ? { operational: parsed.operational } : {}),
     expressions: parsed.expressions,
     cueMappings: parsed.cueMappings,
     report

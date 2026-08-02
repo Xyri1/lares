@@ -123,14 +123,13 @@ describe('loadCharacter', () => {
         live2d: {
           ...VALID.renderers.live2d,
           performance: {
-            params: [{ id: 'ParamMouthForm', source: 'valence', gain: 1, offset: 0 }],
+            params: [{ id: 'ParamMouthForm', source: 'mouthCurve', gain: 1, offset: 0 }],
             idle: {
               breath: { id: 'ParamBreath', basePeriodMs: 4000, amplitude: 1 },
               blink: {
                 ids: ['ParamEyeLOpen', 'ParamEyeROpen'],
                 baseIntervalMs: 3500,
-                durationMs: 160,
-                valenceGain: 0.15
+                durationMs: 160
               },
               sway: { id: 'ParamBodyAngleX', baseAmplitude: 6, periodMs: 5000 }
             }
@@ -183,6 +182,27 @@ describe('loadCharacter', () => {
     }
   })
 
+  it('rejects a performance param sourced from something that is not a channel', () => {
+    const result = loadCharacter(writePackage({
+      ...VALID,
+      renderers: {
+        live2d: {
+          ...VALID.renderers.live2d,
+          performance: {
+            params: [{ id: 'ParamMouthForm', source: 'valence', gain: 1, offset: 0 }],
+            idle: {
+              breath: { id: 'ParamBreath', basePeriodMs: 4000, amplitude: 1 },
+              blink: { ids: ['ParamEyeLOpen'], baseIntervalMs: 3500, durationMs: 160 },
+              sway: { id: 'ParamBodyAngleX', baseAmplitude: 6, periodMs: 5000 }
+            }
+          }
+        }
+      }
+    }))
+    expect(result).toMatchObject({ ok: false })
+    if (!result.ok) expect(result.error).toContain('performance.params[0]')
+  })
+
   it('rejects malformed character-owned performance', () => {
     const result = loadCharacter(writePackage({
       ...VALID,
@@ -195,6 +215,52 @@ describe('loadCharacter', () => {
     }))
     expect(result).toMatchObject({ ok: false })
     if (!result.ok) expect(result.error).toContain('performance.idle')
+  })
+
+  // Slice 013 SPEC §13: optional channel-pose blocks. Partial by design — the
+  // body merges each specified channel over the shipped default anchor.
+  it('accepts partial anchors and operational blocks and reports them back', () => {
+    const result = loadCharacter(writePackage({
+      ...VALID,
+      anchors: { neutral: { eyeOpen: 0.2 }, '-+-': { browRaise: 1, lean: -1 } },
+      operational: { awaiting_input: { gazeHeight: 1 } }
+    }))
+    expect(result).toMatchObject({ ok: true })
+    if (result.ok) {
+      expect(result.anchors).toEqual({
+        neutral: { eyeOpen: 0.2 },
+        '-+-': { browRaise: 1, lean: -1 }
+      })
+      expect(result.operational).toEqual({ awaiting_input: { gazeHeight: 1 } })
+    }
+  })
+
+  it('leaves anchors and operational undefined when the blocks are absent', () => {
+    const result = loadCharacter(writePackage(VALID))
+    expect(result).toMatchObject({ ok: true })
+    expect(result).not.toHaveProperty('anchors')
+    expect(result).not.toHaveProperty('operational')
+  })
+
+  it('rejects unknown anchor keys, unknown channels, and out-of-range values', () => {
+    const errorFor = (manifest: unknown): string =>
+      validateCharacter(writePackage(manifest)).errors.join('\n')
+    expect(errorFor({ ...VALID, anchors: { triumphant: { eyeOpen: 0 } } })).toContain(
+      'anchors.triumphant is not a known key'
+    )
+    expect(errorFor({ ...VALID, anchors: { neutral: { eyebrows: 0 } } })).toContain(
+      'anchors.neutral.eyebrows is not a performance channel'
+    )
+    expect(errorFor({ ...VALID, anchors: { neutral: { eyeOpen: 1.5 } } })).toContain(
+      'anchors.neutral.eyeOpen must be a number in [-1,1]'
+    )
+    expect(errorFor({ ...VALID, anchors: { neutral: 'wide' } })).toContain(
+      'anchors.neutral must be an object'
+    )
+    expect(errorFor({ ...VALID, anchors: ['neutral'] })).toContain('anchors must be an object')
+    expect(errorFor({ ...VALID, operational: { working: { eyeOpen: 0 } } })).toContain(
+      'operational.working is not a known key'
+    )
   })
 
   it('rejects an out-of-range expression valence', () => {

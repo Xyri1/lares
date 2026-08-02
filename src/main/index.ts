@@ -310,6 +310,12 @@ function bodyPreparePayload(candidate: CharacterPackage, id: number) {
     character: {
       ok: true as const,
       name: candidate.character.name,
+      // Renderer-neutral pose data crosses as-is (slice 013 SPEC §13); the
+      // body merges it over the shipped defaults.
+      ...(candidate.character.anchors ? { anchors: candidate.character.anchors } : {}),
+      ...(candidate.character.operational
+        ? { operational: candidate.character.operational }
+        : {}),
       live2d: {
         model: assetUrl(
           relative(dirname(candidate.manifestPath), candidate.character.live2d.model),

@@ -5,88 +5,6 @@
     "author": "Live2D Inc. (sample data); Lares package by Cyril Tsui",
     "license": "Live2D Free Material License Agreement and Terms of Use for Live2D Cubism Sample Data; voice data excluded"
   },
-  "expressions": {
-    "Angry": {
-      "valence": -0.8,
-      "arousal": 0.75
-    },
-    "annoyed-turn": {
-      "valence": -0.6,
-      "arousal": 0.6
-    },
-    "Blushing": {
-      "valence": 0.35,
-      "arousal": 0.45
-    },
-    "cheerful-sway": {
-      "valence": 0.7,
-      "arousal": 0.5
-    },
-    "flustered": {
-      "valence": -0.4,
-      "arousal": 0.7
-    },
-    "grimace": {
-      "valence": -0.6,
-      "arousal": 0.4
-    },
-    "happy-nod": {
-      "valence": 0.7,
-      "arousal": 0.55
-    },
-    "head-shake": {
-      "valence": -0.5,
-      "arousal": 0.5
-    },
-    "Normal": {
-      "valence": 0.0,
-      "arousal": 0.2
-    },
-    "pleading-look": {
-      "valence": -0.5,
-      "arousal": 0.35
-    },
-    "pleased-nod": {
-      "valence": 0.6,
-      "arousal": 0.4
-    },
-    "pout": {
-      "valence": -0.3,
-      "arousal": 0.3
-    },
-    "Sad": {
-      "valence": -0.75,
-      "arousal": 0.25
-    },
-    "shocked": {
-      "valence": -0.5,
-      "arousal": 0.8
-    },
-    "Smile": {
-      "valence": 0.8,
-      "arousal": 0.45
-    },
-    "startled-blush": {
-      "valence": 0.1,
-      "arousal": 0.85
-    },
-    "Surprised": {
-      "valence": 0.15,
-      "arousal": 0.95
-    },
-    "warm-smile": {
-      "valence": 0.6,
-      "arousal": 0.35
-    }
-  },
-  "cueMappings": {
-    "discovery": "Surprised",
-    "uncertainty": "pleading-look",
-    "concern": "grimace",
-    "frustration": "Angry",
-    "relief": "warm-smile",
-    "satisfaction": "pleased-nod"
-  },
   "renderers": {
     "live2d": {
       "model": "haru.model3.json",
@@ -94,38 +12,68 @@
         "params": [
           {
             "id": "PARAM_BROW_L_Y",
-            "source": "valence",
-            "gain": 0.7,
+            "source": "browRaise",
+            "gain": 0.8,
             "offset": 0
           },
           {
             "id": "PARAM_BROW_R_Y",
-            "source": "valence",
-            "gain": 0.7,
+            "source": "browRaise",
+            "gain": 0.8,
             "offset": 0
           },
           {
             "id": "PARAM_BROW_L_FORM",
-            "source": "valence",
-            "gain": 0.6,
+            "source": "browKnit",
+            "gain": -0.7,
             "offset": 0
           },
           {
             "id": "PARAM_BROW_R_FORM",
-            "source": "valence",
-            "gain": 0.6,
+            "source": "browKnit",
+            "gain": -0.7,
             "offset": 0
           },
           {
             "id": "PARAM_MOUTH_FORM",
-            "source": "valence",
+            "source": "mouthCurve",
             "gain": 1,
             "offset": 0
           },
           {
             "id": "PARAM_MOUTH_OPEN_Y",
-            "source": "arousal",
-            "gain": 0.25,
+            "source": "mouthOpen",
+            "gain": 0.5,
+            "offset": 0.5
+          },
+          {
+            "id": "PARAM_EYE_L_OPEN",
+            "source": "eyeOpen",
+            "gain": 0.3,
+            "offset": 1
+          },
+          {
+            "id": "PARAM_EYE_R_OPEN",
+            "source": "eyeOpen",
+            "gain": 0.3,
+            "offset": 1
+          },
+          {
+            "id": "PARAM_EYE_BALL_Y",
+            "source": "gazeHeight",
+            "gain": 0.5,
+            "offset": 0
+          },
+          {
+            "id": "PARAM_ANGLE_Y",
+            "source": "headPitch",
+            "gain": 12,
+            "offset": 0
+          },
+          {
+            "id": "PARAM_BODY_ANGLE_Y",
+            "source": "lean",
+            "gain": 8,
             "offset": 0
           }
         ],
@@ -141,70 +89,13 @@
               "PARAM_EYE_R_OPEN"
             ],
             "baseIntervalMs": 3500,
-            "durationMs": 160,
-            "valenceGain": 0.15
+            "durationMs": 160
           },
           "sway": {
             "id": "PARAM_BODY_ANGLE_X",
             "baseAmplitude": 6,
             "periodMs": 5000
           }
-        }
-      },
-      "cues": {
-        "Angry": {
-          "expression": "runtime/expressions/Angry.exp3.json"
-        },
-        "annoyed-turn": {
-          "motion": "runtime/motion/haru_m_02.motion3.json"
-        },
-        "Blushing": {
-          "expression": "runtime/expressions/Blushing.exp3.json"
-        },
-        "cheerful-sway": {
-          "motion": "runtime/motion/haru_m_06.motion3.json"
-        },
-        "flustered": {
-          "motion": "runtime/motion/haru_m_04.motion3.json"
-        },
-        "grimace": {
-          "expression": "runtime/expressions/f02.exp3.json"
-        },
-        "happy-nod": {
-          "motion": "runtime/motion/haru_m_08.motion3.json"
-        },
-        "head-shake": {
-          "motion": "runtime/motion/haru_m_03.motion3.json"
-        },
-        "Normal": {
-          "expression": "runtime/expressions/Normal.exp3.json"
-        },
-        "pleading-look": {
-          "motion": "runtime/motion/haru_m_09.motion3.json"
-        },
-        "pleased-nod": {
-          "motion": "runtime/motion/haru_m_01.motion3.json"
-        },
-        "pout": {
-          "expression": "runtime/expressions/f01.exp3.json"
-        },
-        "Sad": {
-          "expression": "runtime/expressions/Sad.exp3.json"
-        },
-        "shocked": {
-          "motion": "runtime/motion/haru_m_10.motion3.json"
-        },
-        "Smile": {
-          "expression": "runtime/expressions/Smile.exp3.json"
-        },
-        "startled-blush": {
-          "motion": "runtime/motion/haru_m_07.motion3.json"
-        },
-        "Surprised": {
-          "expression": "runtime/expressions/Surprised.exp3.json"
-        },
-        "warm-smile": {
-          "motion": "runtime/motion/haru_m_05.motion3.json"
         }
       }
     }
