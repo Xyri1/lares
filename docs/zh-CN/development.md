@@ -60,7 +60,7 @@ Lares 是一个 Electron 应用，分成两半，界线严格。
 ```
 工具钩子 ──┐
            ├─► 大脑（主进程） ─── 表演数据流 ──► 身体（渲染进程）
-MCP 表达 ──┘                                        │
+MCP feel ──┘                                        │
                                                      ▼
                                               Live2D 参数
 ```
@@ -73,7 +73,7 @@ MCP 表达 ──┘                                        │
 | --- | --- |
 | `server/` | HTTP 路由与 MCP 服务 |
 | `sessions/` | 会话表、事件映射和基线解析 |
-| `affect/` | 情感引擎。纯代码，零 Electron 导入 |
+| `feel/` | 感受锁存寄存器、会话归属、持久化存储和数据流闸门 |
 | `characters/` | 清单、角色库、导入、切换和创作 |
 | `scenario/` | 场景播放器 |
 | `config.ts`、`strings.ts`、`shell.ts` | 设置、本地化字符串和托盘 |
@@ -85,6 +85,7 @@ MCP 表达 ──┘                                        │
 | 模块 | 职责 |
 | --- | --- |
 | `stage/` | 窗口、数据流订阅和开发面板 |
+| `feel/` | 通道空间中的九锚点混合与运行状态叠加 |
 | `synth/` | 逐帧参数合成：呼吸、眨眼和摇摆 |
 | `runtime/` | `IRuntime` 接口背后的 `pixi-live2d-display` 适配层 |
 
@@ -93,11 +94,12 @@ MCP 表达 ──┘                                        │
 表演数据流是两半之间唯一的契约，它承载：
 
 ```
-{ E, M, baselineState, expressionStack, beats }
+{ stageId, tick, feel, operational }
 ```
 
-`E` 是快变的情绪，`M` 是慢变的心情。表情以 cue 名字或不透明的参数集形式传递。
-**资源路径绝不跨越这条界线**，由身体自行把 cue 名字解析为文件。
+`feel` 是锁存的三元组——以线上整数表示的 `{ valence, activation, control }`，
+寄存器为空时为 `null`；`operational` 是解析出的会话状态。身体把这个三元组变成
+通道空间中的姿态，再把运行状态叠加合成到它之上。**资源路径绝不跨越这条界线。**
 
 这里有两条硬规则：
 
@@ -123,7 +125,7 @@ MCP 表达 ──┘                                        │
 | 黄金场景按钮 | 播放四个场景之一 |
 | 场景页 | 选择、播放、暂停、继续，并设置 1×、8× 或 64× 速度 |
 | A/B 开关 | 并排渲染两个舞台，使用不同预设 |
-| Cue 按钮 | 预览清单中的每个 cue |
+| 姿态按钮 | 在实时角色上预览各个锚点三元组 |
 | 动作选择器 | 播放已加载模型的某个动作 |
 | 参数滑块 | 手动驱动某个参数 |
 | 全量扫描 | 让每个参数走完整个取值范围 |
@@ -168,7 +170,8 @@ pnpm build       # 先类型检查，再生产构建
 `pnpm test` 覆盖主进程侧的纯逻辑，以及不依赖 Live2D 的渲染进程模块。测试文件与被测
 文件同目录，命名为 `*.test.ts`。
 
-情感引擎的时间由调用方提供。写测试时请自行传入时间戳，不要使用真实时钟，也不要 sleep。
+感受寄存器和会话表的时间都由调用方提供。写测试时请自行传入时间戳，不要使用真实时钟，
+也不要 sleep。
 
 针对运行中的应用做在线检查：
 
@@ -196,21 +199,17 @@ pnpm smoke:nerves
    输入拼进命令。
 5. 如果旧版构建写过遗留配置，请补一个清理流程。
 
-### 调整情感行为
+### 调整感受行为
 
-所有常量都在 `src/main/affect/constants.ts`：
+| 常量 | 位置 | 默认值 | 作用 |
+| --- | --- | --- | --- |
+| `expressiveness` | 应用配置文件 | 1 | 把混合结果相对中性姿态整体放缩 |
+| `TRANSITION_MS` | `renderer/feel/feel.ts` | 700 | 每次目标变化所走的那一条缓动 |
+| `OVERLAY_WEIGHT` | `renderer/feel/feel.ts` | 0.6 | 运行状态叠加占最终姿态的比重 |
+| `FEEL_SPACING_MS` | `main/feel/register.ts` | 2 000 | 两次报告之间的最小间隔 |
+| `LATCH_CAPACITY` | `main/feel/register.ts` | 64 | 保留的会话锁存条数 |
 
-| 常量 | 默认值 | 作用 |
-| --- | --- | --- |
-| `REST_POINT` | `(0.1, 0.25)` | 情绪回归的静息点 |
-| `DECAY_HALF_LIFE_MS` | 45 000 | 情绪消退的快慢 |
-| `MOOD_TAU_MS` | 900 000 | 心情跟随情绪的慢速程度 |
-| `MOOD_REST_SHIFT` | 0.5 | 心情对静息点的移动幅度 |
-| `BASELINE_NUDGES` | 见文件 | 每次状态变化带来的推动 |
-| `SATURATION_WINDOW_MS` | 60 000 | 重复 cue 的统计窗口 |
-| `CUE_HYSTERESIS` | 0.1 | 防止 cue 抖动的余量 |
-| `QUEUE_CAP` | 4 | 表情队列深度 |
-
+锚点姿态本身放在 `renderer/feel/anchors.default.json` 与 `operational.default.json`。
 这些数字是可调默认值，改动它们不算契约变更。改动 schema、接口、状态机或验收场景才算。
 
 ### 新增一条用户可见字符串

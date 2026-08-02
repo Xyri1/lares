@@ -4,7 +4,7 @@
 Lares is an open-source desktop companion that gives AI agents a face: a
 Live2D character (a Lar) expresses the emotional arc of the agent sessions
 it watches through continuously driven animation parameters — first-person
-emotes over MCP/local HTTP, deterministic hooks as the baseline heartbeat.
+feel reports over MCP/local HTTP, deterministic hooks as the baseline heartbeat.
 State: M5a (Ship) implementation is complete; its clean-machine A8/A9
 gate remains open in sdd/slices/008-ship/ and now also verifies slice
 009 (sdd/slices/009-claude-plugin/ — both harness adapters delivered

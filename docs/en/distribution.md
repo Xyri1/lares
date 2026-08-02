@@ -116,19 +116,18 @@ Use a clean Apple Silicon Mac running macOS 13 or newer.
 6. Change character, scale, DND, launch-at-login, position, and automatic
    update preference. Restart and confirm every setting persists. Confirm DND
    hides only the body and **Reset Position** uses the primary display.
-7. Check the read-only calibration row: an uncalibrated character shows
-   `Expression mapping n/6 — run Calibrate Lar`, a fully mapped one shows
-   `Expression mapping 6/6`, and the row is never clickable. Run the
-   **Calibrate Lar** skill from a harness session and confirm the tray count
-   advances as cues are mapped, and that `emote` cue playback is refused
-   until 6/6.
+7. Call `feel` from a harness session and confirm the Lar eases to the
+   reported tuple and holds it — no drift back to neutral, and a rapid second
+   call is refused with the wait. Submit a new prompt in the same session and
+   confirm the checkpoint line naming the last tuple reaches the model.
+   Restart Lares and confirm the same performance returns with no new call.
 8. Choose **Configure Agent Integrations…** and cancel once; verify no
    marketplace or plugin changes. Choose it again, accept the disclosed
    download, and verify both installed harnesses report configured. Start a
    new Claude Code session (or run `/reload-plugins`). Start a new local Codex
    task in the CLI or ChatGPT desktop app and review/trust Lares with `/hooks`.
-   Confirm both drive baseline states and an agent emote over the plugin MCP
-   entry. On a machine that ran a pre-009 build, also confirm the first app
+   Confirm both drive baseline states and an agent `feel` report over the
+   plugin MCP entry. On a machine that ran a pre-009 build, also confirm the first app
    launch removed the legacy Claude settings/MCP block and Codex hooks file.
 9. Run **Check for Updates…** once. This is the one disclosed app-owned request to
    `https://api.github.com/repos/Xyri1/lares/releases/latest`; verify a manual

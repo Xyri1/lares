@@ -63,7 +63,7 @@ Lares is one Electron application with two halves. The split is strict.
 ```
 harness hooks ─┐
                ├─► brain (main process) ─── performance feed ──► body (renderer)
-MCP emote ─────┘                                                      │
+MCP feel ──────┘                                                      │
                                                                       ▼
                                                             Live2D parameters
 ```
@@ -76,7 +76,7 @@ The main process owns the state. It has no renderer knowledge.
 | --- | --- |
 | `server/` | The HTTP routes and the MCP server |
 | `sessions/` | The session table, the event map, and the baseline resolver |
-| `affect/` | The affect engine. Pure code, zero Electron imports |
+| `feel/` | The latch register, attribution, durable storage, and the feed gate |
 | `characters/` | The manifest, the library, import, switch, and authoring |
 | `scenario/` | The scenario player |
 | `config.ts`, `strings.ts`, `shell.ts` | Settings, localized strings, and the tray |
@@ -88,6 +88,7 @@ The renderer process owns the picture. It receives a renderer-neutral feed.
 | Module | Responsibility |
 | --- | --- |
 | `stage/` | The window, the feed subscription, and the dev panel |
+| `feel/` | The nine-anchor blend and the operational overlay, in channel space |
 | `synth/` | Per-frame parameter synthesis: breath, blink, and sway |
 | `runtime/` | The `pixi-live2d-display` adapter behind the `IRuntime` interface |
 
@@ -96,12 +97,13 @@ The renderer process owns the picture. It receives a renderer-neutral feed.
 The performance feed is the one contract between the halves. It carries:
 
 ```
-{ E, M, baselineState, expressionStack, beats }
+{ stageId, tick, feel, operational }
 ```
 
-`E` is the fast emotion. `M` is the slow mood. Expressions cross as cue names
-or as opaque parameter sets. **Asset paths never cross.** The body resolves a
-cue name to a file itself.
+`feel` is the latched tuple — `{ valence, activation, control }` as wire
+integers, or `null` for an empty register. `operational` is the resolved
+session state. The body turns the tuple into a channel-space pose and
+composites the operational overlay over it. **Asset paths never cross.**
 
 Two rules bind every change here:
 
@@ -129,7 +131,7 @@ The panel gives you:
 | Golden buttons | Play one of the four scenarios |
 | Scenario tab | Select, play, pause, resume, and set the speed to 1×, 8×, or 64× |
 | A/B toggle | Render two stages beside each other with different presets |
-| Cue buttons | Preview each manifest cue |
+| Pose buttons | Preview the anchor tuples on the live character |
 | Motion picker | Play one motion of the loaded model |
 | Parameter sliders | Drive a parameter by hand |
 | Sweep | Move each parameter through its full range |
@@ -181,8 +183,8 @@ pnpm build       # Typecheck, then a production build
 `pnpm test` covers main-side pure logic and the renderer modules that hold no
 Live2D dependency. Tests live beside their subject as `*.test.ts`.
 
-The affect engine takes its time from the caller. Write a test that supplies
-the timestamps. Do not use a wall clock, and do not sleep.
+The feel register and the session table take their time from the caller. Write
+a test that supplies the timestamps. Do not use a wall clock, and do not sleep.
 
 For a live check against a running app:
 
@@ -213,22 +215,18 @@ player injects through the same ingress path as real traffic.
 5. Add a removal pass for the legacy configuration, if an older build wrote
    one.
 
-### Tune the affect behavior
+### Tune the feel behavior
 
-Every constant sits in `src/main/affect/constants.ts`:
+| Constant | Where | Default | Effect |
+| --- | --- | --- | --- |
+| `expressiveness` | app config file | 1 | Scales the blend away from neutral |
+| `TRANSITION_MS` | `renderer/feel/feel.ts` | 700 | The one ease every target change travels |
+| `OVERLAY_WEIGHT` | `renderer/feel/feel.ts` | 0.6 | How much of the pose an operational overlay owns |
+| `FEEL_SPACING_MS` | `main/feel/register.ts` | 2 000 | The minimum spacing between two reports |
+| `LATCH_CAPACITY` | `main/feel/register.ts` | 64 | How many session latches are kept |
 
-| Constant | Default | Effect |
-| --- | --- | --- |
-| `REST_POINT` | `(0.1, 0.25)` | Where the emotion returns to |
-| `DECAY_HALF_LIFE_MS` | 45 000 | How fast a feeling fades |
-| `MOOD_TAU_MS` | 900 000 | How slow the mood follows the emotion |
-| `MOOD_REST_SHIFT` | 0.5 | How much the mood moves the rest point |
-| `BASELINE_NUDGES` | see file | The push from each state change |
-| `SATURATION_WINDOW_MS` | 60 000 | The window for repeated cues |
-| `CUE_HYSTERESIS` | 0.1 | The margin that prevents a cue flap |
-| `QUEUE_CAP` | 4 | The expression queue depth |
-
-These numbers are tunable defaults. A change to a number is not a contract
+The anchor poses themselves live in `renderer/feel/anchors.default.json` and
+`operational.default.json`. These numbers are tunable defaults. A change to a number is not a contract
 change. A change to a schema, an interface, a state machine, or a scenario is.
 
 ### Add a user-visible string
