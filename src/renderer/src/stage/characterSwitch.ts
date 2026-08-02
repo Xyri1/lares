@@ -2,7 +2,7 @@ import {
   ANCHOR_KEYS,
   isPoseOverrides,
   OPERATIONAL_KEYS,
-  resolveFeel,
+  resolvePoses,
   type FeelPoses
 } from '../feel/feel'
 import type { IRuntime } from '../runtime/iface'
@@ -337,7 +337,7 @@ export function createCharacterLoadHandler(
       try {
         const driverChange = driver.characterChanged(
           request.character.live2d.performance,
-          resolveFeel(request.character)
+          resolvePoses(request.character)
         )
         if (typeof driverChange === 'function') {
           tentative.rollbackDriver = driverChange

@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { BaselineState } from './affect/types'
+import type { BaselineState } from './sessions/mapEvent'
 
 export class DensityLog {
   private baseline: BaselineState | undefined

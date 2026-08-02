@@ -173,13 +173,18 @@ export function createAffectDriver(
   })
 
   // Dev panel pose preview, stage A only, live mode only (see previewPose
-  // on the returned driver below).
-  let posePreview: { pose: Pose; expiresAt: number } | null = null
+  // on the returned driver below). The feel target is held raw and the
+  // overlay composited at presentation, so a preview never masks a live
+  // awaiting_input — the dev panel is where P10 gets judged.
+  let posePreview: { target: Pose; expiresAt: number } | null = null
+  /** Last operational state stage A heard; the preview composites through it. */
+  let operational = 'idle'
 
   let tentativeFeeds: AffectFeed[] | null = null
   const processFeed = (f: AffectFeed): void => {
     const st = stages[f.stageId as StageId]
     if (!st) return
+    if (f.stageId === 'A') operational = f.operational
     st.feed = { pose: poseFor(f) }
     if (!st.replay) return
     pushEngine(st.trace, f)
@@ -289,7 +294,7 @@ export function createAffectDriver(
       } else {
         const feed: SynthFeed =
           id === 'A' && posePreview && now < posePreview.expiresAt
-            ? { pose: posePreview.pose }
+            ? { pose: withOverlay(posePreview.target, operational, poses.operational) }
             : st.feed
         const frame = st.live.computeFrame(feed, now)
         withAuthoring(id, st, frame)
@@ -454,7 +459,7 @@ export function createAffectDriver(
         return
       }
       posePreview = {
-        pose: poseForTuple(feel.valence, feel.activation, feel.control),
+        target: poseForTuple(feel.valence, feel.activation, feel.control),
         expiresAt: performance.now() + durationMs
       }
     }

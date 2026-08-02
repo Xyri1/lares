@@ -1,4 +1,4 @@
-import type { BaselineState } from '../affect/types'
+import type { BaselineState } from '../sessions/mapEvent'
 import type { FeelTuple } from '../feel/register'
 import { Ingestor } from '../sessions/ingest'
 import type { Scenario } from './types'

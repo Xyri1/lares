@@ -1,5 +1,10 @@
-import type { BaselineState } from '../affect/types'
-import { eventName, mapEvent, type EventEnvelope, type Harness } from './mapEvent'
+import {
+  eventName,
+  mapEvent,
+  type BaselineState,
+  type EventEnvelope,
+  type Harness
+} from './mapEvent'
 import { resolveBaseline } from './resolveBaseline'
 
 const DONE_IDLE_MS = 60_000

@@ -1,4 +1,4 @@
-import type { BaselineState } from '../affect/types'
+import type { BaselineState } from '../sessions/mapEvent'
 import type { Scenario } from './types'
 import { createStepper, traceLine, STEP_MS, type StepState } from './run'
 

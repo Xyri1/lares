@@ -1,4 +1,4 @@
-import type { BaselineState } from '../affect/types'
+import type { BaselineState } from './mapEvent'
 
 export interface SessionEntry {
   session_id: string

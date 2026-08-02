@@ -1,6 +1,14 @@
-import type { BaselineState } from '../affect/types'
-
 export type Harness = 'claude-code' | 'codex'
+
+// The operational states an event can put a session in — root SPEC §3.
+// Changing this list is a SPEC delta, not a refactor.
+export type BaselineState =
+  | 'awaiting_input'
+  | 'error'
+  | 'working'
+  | 'thinking'
+  | 'done'
+  | 'idle'
 
 export interface EventEnvelope {
   v: 1

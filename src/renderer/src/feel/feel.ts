@@ -241,15 +241,10 @@ export function isPoseOverrides(value: unknown, keys: readonly string[]): boolea
   )
 }
 
-/** Resolve a character bootstrap payload into the config the stage runs on.
+/** Resolve a character's pose blocks — the half a character switch carries.
  * Malformed data falls back to the shipped defaults rather than poisoning
  * every pose with NaN. */
-export function resolveFeel(raw: {
-  anchors?: unknown
-  operational?: unknown
-  expressiveness?: unknown
-}): FeelConfig {
-  const k = raw.expressiveness
+export function resolvePoses(raw: { anchors?: unknown; operational?: unknown }): FeelPoses {
   return {
     anchors: mergeAnchors(
       DEFAULT_ANCHORS,
@@ -260,7 +255,19 @@ export function resolveFeel(raw: {
       isPoseOverrides(raw.operational, OPERATIONAL_KEYS)
         ? (raw.operational as OperationalOverrides)
         : undefined
-    ),
+    )
+  }
+}
+
+/** The boot payload, poses plus `k` — app config, read once at launch (§4). */
+export function resolveFeel(raw: {
+  anchors?: unknown
+  operational?: unknown
+  expressiveness?: unknown
+}): FeelConfig {
+  const k = raw.expressiveness
+  return {
+    ...resolvePoses(raw),
     expressiveness: typeof k === 'number' && Number.isFinite(k) ? Math.min(10, Math.max(0, k)) : 1
   }
 }
