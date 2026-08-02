@@ -173,3 +173,20 @@ pnpm dev
 [Apache 2.0](LICENSE) です。Live2D Cubism Core と同梱のキャラクターアセット
 には、それぞれのライセンス条件が適用されます。詳しくは [NOTICE](NOTICE) を
 参照してください。
+
+## 謝辞
+
+Lares は次のプロジェクトの成果の上に成り立っています。
+
+- [Live2D Cubism SDK](https://www.live2d.com/sdk/about/) — Cubism Core と
+  Framework（© Live2D Inc.、Live2D 独自のライセンス条件が適用されます。
+  詳細は [NOTICE](NOTICE)）。同梱の Haru は Live2D のサンプルモデルです。
+- [pixi-live2d-display](https://github.com/guansss/pixi-live2d-display) —
+  PixiJS 上での Live2D モデル描画。
+- [PixiJS](https://pixijs.com/) — ステージを支える WebGL レンダラー。
+- [Electron](https://www.electronjs.org/) — デスクトップシェル。開発と
+  パッケージングには [electron-vite](https://electron-vite.org/) と
+  [electron-builder](https://www.electron.build/) を使用。
+- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
+  — 一人称の感情報告を受け取る Model Context Protocol サーバー。
+- [Zod](https://zod.dev/) — すべての入口でのスキーマ検証。

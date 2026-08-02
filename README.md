@@ -165,3 +165,21 @@ Product and design truth lives under [`sdd/`](sdd/):
 
 [Apache 2.0](LICENSE). Live2D Cubism Core and bundled character assets keep
 their own terms. See [NOTICE](NOTICE).
+
+## Acknowledgments
+
+Lares is built on the work of these projects:
+
+- [Live2D Cubism SDK](https://www.live2d.com/en/sdk/about/) — Cubism Core
+  and Framework, © Live2D Inc., under Live2D's own license terms (see
+  [NOTICE](NOTICE)). The bundled Haru sample is a Live2D sample model.
+- [pixi-live2d-display](https://github.com/guansss/pixi-live2d-display) —
+  Live2D model rendering on PixiJS.
+- [PixiJS](https://pixijs.com/) — the WebGL renderer behind the stage.
+- [Electron](https://www.electronjs.org/) — the desktop shell, with
+  [electron-vite](https://electron-vite.org/) and
+  [electron-builder](https://www.electron.build/) for the dev loop and
+  packaging.
+- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
+  — the Model Context Protocol server that receives first-person emotes.
+- [Zod](https://zod.dev/) — schema validation at every ingress point.

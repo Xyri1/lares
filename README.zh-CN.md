@@ -148,3 +148,20 @@ cue 上。运行期间请保持 Lar 可见。六个 cue 全部映射完成之前
 
 本项目采用 [Apache 2.0](LICENSE) 许可证。Live2D Cubism Core 与随附的角色
 资源仍遵循各自的许可条款，详见 [NOTICE](NOTICE)。
+
+## 致谢
+
+Lares 建立在以下项目的成果之上：
+
+- [Live2D Cubism SDK](https://www.live2d.com/en/sdk/about/) — Cubism Core
+  与 Framework，© Live2D Inc.，适用 Live2D 自有许可条款（详见
+  [NOTICE](NOTICE)）。随附的示例角色 Haru 也是 Live2D 的官方示例模型。
+- [pixi-live2d-display](https://github.com/guansss/pixi-live2d-display) —
+  在 PixiJS 上渲染 Live2D 模型。
+- [PixiJS](https://pixijs.com/) — 舞台背后的 WebGL 渲染器。
+- [Electron](https://www.electronjs.org/) — 桌面外壳；开发与打包使用
+  [electron-vite](https://electron-vite.org/) 和
+  [electron-builder](https://www.electron.build/)。
+- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
+  — 接收第一人称情绪汇报的 Model Context Protocol 服务器。
+- [Zod](https://zod.dev/) — 所有入口的模式校验。
