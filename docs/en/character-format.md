@@ -2,9 +2,9 @@
 
 A Lar is a directory under `characters/<name>/`. Its runtime model files stay
 in `runtime/`; `lar.character.json` is Lares's small mapping layer. It names
-the model and maps artist-supplied expressions or motions (plus any expression
-you author) to affect coordinates. Lares never modifies the artist's model
-files or model index.
+the model and wires the character's own rig parameters to Lares's
+renderer-neutral performance channels. Lares never modifies the artist's
+model files or model index.
 
 ## Manifest
 
@@ -18,24 +18,28 @@ files or model index.
     "author": "Model author; Lares package by you",
     "license": "The model's applicable license notice"
   },
-  "expressions": {
-    "surprised": { "valence": -0.1, "arousal": 0.85 },
-    "wave": { "valence": 0.45, "arousal": 0.6 },
-    "weary": { "valence": -0.35, "arousal": 0.15 },
-    "neutral": { "valence": 0.1, "arousal": 0.25 }
+  "anchors": {
+    "neutral": { "eyeOpen": 0.2 },
+    "+++": { "mouthCurve": 1, "browRaise": 0.6 },
+    "---": { "mouthCurve": -1, "browRaise": -0.6, "gazeHeight": -0.5 }
   },
-  "cueMappings": {
-    "discovery": "surprised",
-    "satisfaction": "wave"
+  "operational": {
+    "awaiting_input": { "browRaise": 0.5, "gazeHeight": 0.8 },
+    "error": { "browKnit": 0.7, "mouthCurve": -0.4 }
   },
   "renderers": {
     "live2d": {
       "model": "runtime/Example.model3.json",
-      "cues": {
-        "surprised": { "expression": "runtime/expressions/驚き.exp3.json" },
-        "wave": { "motion": "runtime/motions/wave.motion3.json" },
-        "weary": { "expression": "authored/weary.exp3.json" },
-        "neutral": { "params": { "ParamMouthForm": 0, "ParamEyeLOpen": 1 } }
+      "performance": {
+        "params": [
+          { "id": "ParamMouthForm", "source": "mouthCurve", "gain": 1, "offset": 0 },
+          { "id": "ParamBrowLY", "source": "browRaise", "gain": 0.8, "offset": 0 }
+        ],
+        "idle": {
+          "breath": { "id": "ParamBreath", "basePeriodMs": 4000, "amplitude": 1 },
+          "blink": { "ids": ["ParamEyeLOpen", "ParamEyeROpen"], "baseIntervalMs": 3500, "durationMs": 160 },
+          "sway": { "id": "ParamBodyAngleX", "baseAmplitude": 6, "periodMs": 5000 }
+        }
       }
     }
   }
@@ -45,23 +49,30 @@ files or model index.
 - `identity.name` and `identity.license` are required. Keep the model's
   required notice in `license`.
 - `renderers.live2d.model` is a package-relative path to the `.model3.json`.
-- A cue has exactly one source: `expression` (a package-relative `.exp3.json`
-  path), `motion` (a package-relative `.motion3.json` path), or `params` (a
-  map of parameter IDs to numeric values).
-- `expressions` maps performance names to `{ "valence", "arousal" }`. Valence
-  is between `-1` and `1`; arousal is between `0` and `1`. Imported entries
-  begin as a `null` entry and gain coordinates during calibration; `map_cue`
-  refuses a performance whose coordinates are still `null`.
-- `cueMappings` maps the six canonical cues (`discovery`, `uncertainty`,
-  `concern`, `frustration`, `relief`, `satisfaction`) to performance names.
-  The Calibrate Lar skill writes it through the daemon. Until all six are
-  present, `emote` refuses cue playback. One performance may serve several
-  cues.
-- Author new expressions under `authored/<name>.exp3.json` and reference them
-  as an `expression` cue. Do not overwrite bundled files.
-- `renderers.live2d.performance` may contain the same `params` and `idle`
-  mapping shape as `presets/default.json`. Production uses the active
-  character's mapping; presets remain dev-panel overrides.
+- `anchors` is optional. It overrides any subset of the nine authored poses —
+  `neutral` plus the eight cube corners, sign-ordered
+  (valence, activation, control): `+++`, `++-`, `+-+`, `+--`, `-++`, `-+-`,
+  `--+`, `---`. Each key holds a partial object of channel values in
+  `[-1, 1]`. A channel a package does not specify falls back to the shipped
+  default anchor. A package with no `anchors` block performs the shipped
+  defaults entirely.
+- `operational` is optional, same merge rule, for the two states that
+  present visually: `awaiting_input` and `error`.
+- The twelve performance channels are `mouthCurve`, `mouthOpen`, `browRaise`,
+  `browKnit`, `eyeOpen`, `gazeHeight`, `headPitch`, `lean`, `swayAmplitude`,
+  `breathRate`, `breathDepth`, `blinkRate`. They name observable body
+  behavior, never rig parameters directly.
+- `renderers.live2d.performance.params[]` wires one rig parameter to one
+  channel: `id` (the Live2D parameter), `source` (a channel name), `gain`,
+  and `offset`. `idle` scales the breath, blink, and sway writers by their
+  matching channels. A package with no `performance` block uses the shipped
+  default wiring — the same standard Cubism parameter IDs, re-sourced to
+  channels — so a standard-named import performs correctly with zero
+  calibration; an oddly-named rig binds nothing on those parameters and
+  needs hand-authored wiring.
+- `expressions`, `cueMappings`, and `renderers.live2d.cues` are retired from
+  the format. A manifest may still carry them as inert JSON — Lares gives
+  them no dedicated handling and no backward compatibility.
 
 ## Compatibility boundary
 
@@ -86,18 +97,18 @@ The app probes Core before pixi revives the model.
 `FileReferences` owns the MOC, textures, and registered sidecars. Import also
 scans recursively for loose `.exp3.json` and `.motion3.json` files, dedupes
 by normalized package-relative path, and keeps duplicate basenames distinct
-by using their relative paths as cue names. One loose `.physics3.json` is a
+by using their full relative paths. One loose `.physics3.json` is a
 fallback; multiple loose physics files are ambiguous. Missing MOC or textures
 blocks import. Missing pose, user data, display info, hit areas, or motion
 audio is reported as a named degradation or warning.
 
 The JSON report printed by `--check` includes the selected entry point,
 required and optional resources, registered and loose assets, ignored VTS
-metadata, performance IDs, all errors, warnings, and degradations. Runtime
-load adds the Core MOC version, parameter/group inventory, motion groups, and
-the renderer texture limit and probed texture dimensions.
+metadata, performance parameter IDs, all errors, warnings, and degradations.
+Runtime load adds the Core MOC version, parameter/group inventory, motion
+groups, and the renderer texture limit and probed texture dimensions.
 
-## Import and map a model
+## Import a model
 
 1. Create `characters/<name>/runtime/` and put the complete model directory
    there, including its `.model3.json`, textures, expressions, and motions.
@@ -107,81 +118,37 @@ the renderer texture limit and probed texture dimensions.
    pnpm run import -- characters/<name>
    ```
 
-   Import scans `runtime/` recursively for `.exp3.json` and `.motion3.json`.
-   It also reads model-index entries when present, then writes
-   `lar.character.json` with one null-coordinate cue per discovered file.
-   Names, including CJK names, are preserved verbatim.
+   Import finds the package's one `.model3.json` and writes a minimal
+   `lar.character.json` naming it. It refuses a tree with zero or with more
+   than one model file, because a guess would be wrong.
 3. Review without writing changes at any time:
 
    ```sh
    pnpm run import -- --check characters/<name>
    ```
 
-   The check mode names broken files and shows bundled, motion, authored,
-   calibrated, and uncalibrated cue counts, plus the mapped and missing
-   canonical cues. Fix reported paths or malformed expression files before
+   The check mode names broken files and shows the full resource catalog —
+   registered and loose expressions, motions, and physics — independent of
+   any wiring. Fix reported paths or malformed expression files before
    loading the package.
-4. Start Lares, select the character, then run the **Calibrate Lar** skill
-   from your agent — `/lares:calibrate-lar` in Claude Code,
-   `$lares:calibrate-lar` in Codex. Preview is visual: keep the character
-   visible and make mapping choices with the person at the desktop.
+4. Start Lares and select the character. It performs the shipped default
+   anchors and wiring immediately, with zero calibration required.
 
-## Calibration flow
+## Hand-author anchors and wiring
 
-The **Calibrate Lar** skill ships with both harness plugins. It is
-user-invoked only and works entirely through the Lares MCP server — the
-daemon is the only validator, and the skill never edits package files
-directly:
-
-1. `status` reads the active character and its missing canonical cues.
-2. `list_performances` inventories the performances. Non-emotive ones
-   (idle, physics, tap reactions) stay exactly as they are; nothing is
-   deleted or renamed.
-3. A clearly named performance gets affect coordinates from its name via
-   `update_expression`; an opaque one (`f01`, `m_03`) is shown with
-   `preview_expression` and the user says what it conveys. Then
-   `map_cue({ cue, performance })` records the mapping.
-4. If no performance fits a cue, the skill authors one as a last resort:
-   `list_parameters`, `preview_expression({ params })`, and
-   `save_expression` once the user accepts the visible result.
-5. `status` again — the character is calibrated only when no canonical cue
-   is missing.
-
-Every `map_cue` and `save_expression` persists immediately, so an
-interrupted run resumes from stored state. The user can also edit the
-manifest by hand if an MCP client is unavailable; run `--check` afterward.
-
-## Worked synthetic example
-
-After importing a fictional model, its manifest may contain an artist
-expression (`驚き`), an artist motion (`wave`), and an authored gap (`weary`):
-
-```json
-{
-  "expressions": {
-    "驚き": { "valence": -0.1, "arousal": 0.85 },
-    "wave": { "valence": 0.45, "arousal": 0.6 },
-    "weary": { "valence": -0.35, "arousal": 0.15 }
-  },
-  "renderers": {
-    "live2d": {
-      "cues": {
-        "驚き": { "expression": "runtime/expressions/驚き.exp3.json" },
-        "wave": { "motion": "runtime/motions/wave.motion3.json" },
-        "weary": { "expression": "authored/weary.exp3.json" }
-      }
-    }
-  }
-}
-```
-
-This is illustrative data after mapping. Immediately after import, each
-coordinate entry is `null` until it is mapped with the visible model.
+An in-app calibration workflow — preview poses and wiring from your agent —
+is planned but not yet built. Until it exists, matching a character's own
+expressions more closely means hand-editing `anchors` and
+`renderers.live2d.performance` in its manifest against the channel list
+above, then re-running `--check` to validate. `list_parameters` and
+`preview_expression` on the Lares MCP server let an agent inspect the live
+model's parameters and hold an exact params set on screen while you look,
+but neither writes the manifest — the file stays yours to edit.
 
 ## Haru is the bundled default
 
-Haru is the build-selected default and ships fully calibrated. Cues may
-also drive raw parameters via `params` instead of referencing an
-`.exp3.json` — the escape hatch for models that bundle no expression
-files; third-party models commonly provide expressions and motions for
-import.
+Haru is the build-selected default and ships with wiring for its own rig
+parameters, re-sourced to the twelve performance channels — no calibration
+step required. A character with no `performance` block instead falls back to
+the shipped standard-id wiring; either way, `renderers.live2d.performance`
+is optional, never required for a package to load.

@@ -5,8 +5,8 @@
 > 英文版为准。译文与英文不一致时，以[英文原文](../en/character-format.md)为准。
 
 一个 Lar 就是 `characters/<名字>/` 下的一个目录。它的运行时模型文件放在 `runtime/`
-里；`lar.character.json` 是 Lares 的一层轻量映射。它指明模型，并把作者提供的表情或
-动作（以及你创作的任何表情）映射到情感坐标。Lares 绝不修改作者的模型文件或模型索引。
+里；`lar.character.json` 是 Lares 的一层轻量映射。它指明模型，并把角色自身的骨骼
+参数接到 Lares 那套渲染器无关的表演通道上。Lares 绝不修改作者的模型文件或模型索引。
 
 ## 清单文件
 
@@ -20,24 +20,28 @@
     "author": "Model author; Lares package by you",
     "license": "The model's applicable license notice"
   },
-  "expressions": {
-    "surprised": { "valence": -0.1, "arousal": 0.85 },
-    "wave": { "valence": 0.45, "arousal": 0.6 },
-    "weary": { "valence": -0.35, "arousal": 0.15 },
-    "neutral": { "valence": 0.1, "arousal": 0.25 }
+  "anchors": {
+    "neutral": { "eyeOpen": 0.2 },
+    "+++": { "mouthCurve": 1, "browRaise": 0.6 },
+    "---": { "mouthCurve": -1, "browRaise": -0.6, "gazeHeight": -0.5 }
   },
-  "cueMappings": {
-    "discovery": "surprised",
-    "satisfaction": "wave"
+  "operational": {
+    "awaiting_input": { "browRaise": 0.5, "gazeHeight": 0.8 },
+    "error": { "browKnit": 0.7, "mouthCurve": -0.4 }
   },
   "renderers": {
     "live2d": {
       "model": "runtime/Example.model3.json",
-      "cues": {
-        "surprised": { "expression": "runtime/expressions/驚き.exp3.json" },
-        "wave": { "motion": "runtime/motions/wave.motion3.json" },
-        "weary": { "expression": "authored/weary.exp3.json" },
-        "neutral": { "params": { "ParamMouthForm": 0, "ParamEyeLOpen": 1 } }
+      "performance": {
+        "params": [
+          { "id": "ParamMouthForm", "source": "mouthCurve", "gain": 1, "offset": 0 },
+          { "id": "ParamBrowLY", "source": "browRaise", "gain": 0.8, "offset": 0 }
+        ],
+        "idle": {
+          "breath": { "id": "ParamBreath", "basePeriodMs": 4000, "amplitude": 1 },
+          "blink": { "ids": ["ParamEyeLOpen", "ParamEyeROpen"], "baseIntervalMs": 3500, "durationMs": 160 },
+          "sway": { "id": "ParamBodyAngleX", "baseAmplitude": 6, "periodMs": 5000 }
+        }
       }
     }
   }
@@ -46,19 +50,25 @@
 
 - `identity.name` 和 `identity.license` 为必填。请把模型要求的声明写进 `license`。
 - `renderers.live2d.model` 是指向 `.model3.json` 的包内相对路径。
-- 每个 cue 只能有一个来源：`expression`（包内相对的 `.exp3.json` 路径）、`motion`
-  （包内相对的 `.motion3.json` 路径），或 `params`（参数 ID 到数值的映射）。
-- `expressions` 把表演名字映射为 `{ "valence", "arousal" }`。valence（效价）取值
-  在 `-1` 到 `1` 之间，arousal（唤醒度）在 `0` 到 `1` 之间。导入的条目初始为 `null`，
-  在校准过程中获得坐标；`map_cue` 会拒绝坐标仍为 `null` 的表演。
-- `cueMappings` 把六个规范 cue（`discovery`、`uncertainty`、`concern`、
-  `frustration`、`relief`、`satisfaction`）映射到表演名字。它由 Calibrate Lar
-  技能通过守护进程写入。六个 cue 齐全之前，`emote` 会拒绝播放 cue。一个表演
-  可以同时对应多个 cue。
-- 新表情请创作在 `authored/<名字>.exp3.json` 下，并作为 `expression` 类型的 cue
-  引用。不要覆盖随包附带的文件。
-- `renderers.live2d.performance` 可以包含与 `presets/default.json` 相同的 `params`
-  和 `idle` 映射结构。生产环境使用当前角色的映射；预设仅作为开发面板的覆盖项。
+- `anchors` 为可选项，可以覆盖九个已授权姿态中的任意子集——`neutral` 加上立方体
+  的八个角，按符号顺序（valence、activation、control）排列：`+++`、`++-`、`+-+`、
+  `+--`、`-++`、`-+-`、`--+`、`---`。每个键下是一个通道值的部分对象，取值范围
+  `[-1, 1]`。包里没写的通道会回退到内置的默认锚点。完全没有 `anchors` 块的包会
+  整体使用内置默认值。
+- `operational` 为可选项，合并规则相同，用于两个会视觉呈现的状态：
+  `awaiting_input` 和 `error`。
+- 十二个表演通道分别是 `mouthCurve`、`mouthOpen`、`browRaise`、`browKnit`、
+  `eyeOpen`、`gazeHeight`、`headPitch`、`lean`、`swayAmplitude`、`breathRate`、
+  `breathDepth`、`blinkRate`。它们命名的是可观察的身体行为，绝不直接对应骨骼参数。
+- `renderers.live2d.performance.params[]` 把一个骨骼参数接到一个通道：`id`
+  （Live2D 参数）、`source`（通道名）、`gain` 和 `offset`。`idle` 用对应通道去
+  缩放呼吸、眨眼和摇摆这几个写入器。没有 `performance` 块的包会使用内置的默认
+  接线——同一套标准 Cubism 参数 ID，重新接到通道上——因此标准命名的导入包无需
+  任何校准即可正确表现；命名不规范的骨骼在这些参数上则接不上任何东西，需要手写
+  接线。
+- `expressions`、`cueMappings` 和 `renderers.live2d.cues` 已从格式中退役。清单
+  仍然可以带着它们，作为不起作用的 JSON——Lares 不再为它们提供任何专门处理，也
+  不提供向后兼容。
 
 ## 兼容性边界
 
@@ -80,16 +90,16 @@ Lares 支持 VTube Studio 风格的模型资源目录，但不支持 VTube Studi
 之前先探测 Core。
 
 `FileReferences` 负责 MOC、贴图和已注册的附属文件。导入时还会递归扫描散落的
-`.exp3.json` 和 `.motion3.json` 文件，按归一化的包内相对路径去重，并用相对路径作为
-cue 名字来区分同名文件。散落的 `.physics3.json` 只有一个时作为兜底；多个则视为歧义。
+`.exp3.json` 和 `.motion3.json` 文件，按归一化的包内相对路径去重，并用完整的相对
+路径来区分同名文件。散落的 `.physics3.json` 只有一个时作为兜底；多个则视为歧义。
 缺少 MOC 或贴图会阻止导入。缺少姿势、用户数据、显示信息、命中区域或动作音频，会作为
 具名降级或警告被报告。
 
 `--check` 打印的 JSON 报告包含所选入口点、必需与可选资源、已注册与散落资源、被忽略的
-VTS 元数据、performance ID，以及全部错误、警告和降级项。运行时加载还会追加 Core 的
-MOC 版本、参数与分组清单、动作分组，以及渲染器贴图上限和探测到的贴图尺寸。
+VTS 元数据、performance 参数 ID，以及全部错误、警告和降级项。运行时加载还会追加 Core
+的 MOC 版本、参数与分组清单、动作分组，以及渲染器贴图上限和探测到的贴图尺寸。
 
-## 导入并映射一个模型
+## 导入一个模型
 
 1. 创建 `characters/<名字>/runtime/`，把完整的模型目录放进去，包括它的
    `.model3.json`、贴图、表情和动作。
@@ -99,9 +109,9 @@ MOC 版本、参数与分组清单、动作分组，以及渲染器贴图上限�
    pnpm run import -- characters/<名字>
    ```
 
-   导入会递归扫描 `runtime/` 下的 `.exp3.json` 和 `.motion3.json`。存在模型索引条目
-   时也会一并读取，然后写出 `lar.character.json`，为每个发现的文件生成一个空坐标 cue。
-   名字（包括中日韩文字）原样保留。
+   导入会找到包里唯一的 `.model3.json`，并写出一个只指明模型的最小
+   `lar.character.json`。如果目录树里有零个或多个模型文件，导入会拒绝——猜测只会
+   猜错。
 
 3. 你可以随时查看而不写入任何改动：
 
@@ -109,65 +119,24 @@ MOC 版本、参数与分组清单、动作分组，以及渲染器贴图上限�
    pnpm run import -- --check characters/<名字>
    ```
 
-   检查模式会指出损坏的文件，并显示随包、动作、创作、已校准和未校准的 cue 数量，
-   以及已映射和缺失的规范 cue。加载该包之前，请先修复报告中的路径或格式错误的
+   检查模式会指出损坏的文件，并展示完整的资源清单——已注册和散落的表情、动作、
+   物理文件——与任何接线无关。加载该包之前，请先修复报告中的路径或格式错误的
    表情文件。
 
-4. 启动 Lares，选中该角色，然后在你的 agent 里运行 **Calibrate Lar** 技能——
-   Claude Code 中输入 `/lares:calibrate-lar`，Codex 中输入
-   `$lares:calibrate-lar`。预览是视觉过程：请保持角色可见，并与坐在桌前的人
-   一起做映射决定。
+4. 启动 Lares 并选中该角色。它会立即演出内置的默认锚点和接线，无需任何校准。
 
-## 校准流程
+## 手写锚点和接线
 
-**Calibrate Lar** 技能随两个 harness 插件一起分发。它只能由用户发起，并且
-完全通过 Lares 的 MCP 服务工作——守护进程是唯一的校验者，技能绝不直接编辑
-包内文件：
-
-1. `status` 读取当前角色及其缺失的规范 cue。
-2. `list_performances` 盘点全部表演。非情感类表演（待机、物理、点击反应）
-   原样保留，不删除也不重命名。
-3. 名字清晰的表演直接按名字通过 `update_expression` 获得情感坐标；含义不明
-   的（`f01`、`m_03`）先用 `preview_expression` 展示，由用户说出它传达了
-   什么。然后 `map_cue({ cue, performance })` 记录映射。
-4. 如果没有任何表演适合某个 cue，技能才会创作一个：`list_parameters`、
-   `preview_expression({ params })`，在用户接受可见效果后调用
-   `save_expression`。
-5. 再次 `status`——只有当没有任何规范 cue 缺失时，角色才算校准完成。
-
-每次 `map_cue` 和 `save_expression` 都立即持久化，中断的流程会从已保存的
-状态继续。若手边没有 MCP 客户端，用户也可以手工编辑清单文件，改完之后运行
-`--check`。
-
-## 一个完整的示例
-
-导入一个虚构模型后，它的清单文件可能包含一个作者表情（`驚き`）、一个作者动作
-（`wave`），以及一个创作补齐的表情（`weary`）：
-
-```json
-{
-  "expressions": {
-    "驚き": { "valence": -0.1, "arousal": 0.85 },
-    "wave": { "valence": 0.45, "arousal": 0.6 },
-    "weary": { "valence": -0.35, "arousal": 0.15 }
-  },
-  "renderers": {
-    "live2d": {
-      "cues": {
-        "驚き": { "expression": "runtime/expressions/驚き.exp3.json" },
-        "wave": { "motion": "runtime/motions/wave.motion3.json" },
-        "weary": { "expression": "authored/weary.exp3.json" }
-      }
-    }
-  }
-}
-```
-
-这是映射完成后的示意数据。刚导入时，每个坐标条目都是 `null`，直到对着可见的模型完成
-映射为止。
+应用内的校准工作流——由 agent 预览姿态和接线——已在规划中，但尚未实现。在它
+出现之前，想让角色更贴合自己的表情，就需要对照上面的通道列表，手工编辑清单里的
+`anchors` 和 `renderers.live2d.performance`，改完后重新运行 `--check` 校验。
+Lares MCP 服务上的 `list_parameters` 和 `preview_expression` 可以让 agent 查看
+实机模型的参数，并把一组精确的参数值保持在屏幕上供你查看，但两者都不会写入清单
+文件——文件的编辑权始终在你手里。
 
 ## Haru 是随包默认角色
 
-Haru 是构建时选定的默认角色，并且出厂即完成校准。cue 也可以通过 `params` 直接驱动
-原始参数，而不引用 `.exp3.json` —— 这是为不附带表情文件的模型准备的应急出口；第三方
-模型通常都会提供可供导入的表情和动作。
+Haru 是构建时选定的默认角色，出厂即带有自身骨骼参数的接线，已重新接到十二个表演
+通道上——无需任何校准步骤。没有 `performance` 块的角色则会回退到内置的标准 ID
+接线；无论哪种情况，`renderers.live2d.performance` 都是可选项，包的加载从不要求
+它存在。

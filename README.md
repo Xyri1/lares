@@ -7,7 +7,7 @@
 
 <p align="center">
   <strong>Give your AI agent a face.</strong><br>
-  A local Live2D companion for Claude Code and Codex.
+  A local Live2D companion that turns your agent's own appraisal into a living performance.
 </p>
 
 <p align="center">
@@ -26,11 +26,16 @@ Lares turns an agent session into a continuously animated desktop character —
 a **Lar**. You can see it think, get stuck, wait, recover, and finish. You do
 not need to open another activity panel.
 
-Lares does not read transcripts. It does not guess sentiment. Agents report
-feelings in the first person over MCP. Deterministic lifecycle hooks give the
-baseline heartbeat. Emotion and mood keep history across the session.
+Most agent pets map lifecycle events to fixed animations. Lares gives the
+model a tiny first-person interface — `feel(valence, activation, control)` —
+for projecting its current appraisal into the character. Lares turns that
+sparse report into a continuous, character-specific performance, locally and
+deterministically.
 
-`agent hooks + MCP → local affect engine → Live2D performance`
+Lares does not read transcripts or model internals. The model reports its own
+state; hooks report only operational facts such as working or awaiting input.
+
+`agent appraisal → feel(v, a, c) → local character performance → Live2D`
 
 ## Install
 
@@ -82,9 +87,9 @@ Start a new agent session so the hooks and the local MCP connection can load.
 Claude Code can reload plugins with `/reload-plugins`. Codex will ask you to
 review the Lares hooks. Trust them when Codex asks.
 
-Then work as usual. The Lar follows the session state and the agent's
-first-person emotes. Use the tray to change the character, the scale, or Do
-Not Disturb.
+Then work as usual. The Lar shows the session's operational state and the
+agent's first-person feeling reports. Use the tray to change the character,
+the scale, or Do Not Disturb.
 
 For manual setup, see the [Claude Code](plugins/claude-code/README.md) and
 [Codex](plugins/codex/README.md) plugin guides.
@@ -93,10 +98,12 @@ For manual setup, see the [Claude Code](plugins/claude-code/README.md) and
 
 - Lives on your desktop in a transparent, draggable, always-on-top overlay.
 - Connects to Claude Code and Codex through their native plugin systems.
+- Turns a three-axis feeling report into continuous performance instead of
+  selecting from a fixed emote list.
 - Keeps the runtime local. The daemon binds only to loopback. No transcript
   leaves your machine.
-- Imports extracted VTube Studio-style Cubism SDK 3.0–4.2 model folders and
-  maps their expressions into a portable Lar package.
+- Imports extracted VTube Studio-style Cubism SDK 3.0–4.2 model folders into
+  a portable Lar package.
 
 The only app-initiated network request is the disclosed GitHub update check.
 Agent plugin downloads start only after you request them and confirm them.
@@ -119,16 +126,13 @@ From the tray, choose **Import Character…**. Select an extracted Live2D model
 folder. Lares copies it into the managed character library. It validates the
 package before it switches. It does not change the original folder.
 
-A newly imported model then needs calibration. Run the **Calibrate Lar**
-skill from your agent — `/lares:calibrate-lar` in Claude Code,
-`$lares:calibrate-lar` in Codex. The agent previews the model's expressions
-on your desktop, asks you about what it cannot see, and maps them onto the
-six canonical cues. Keep the Lar visible while it runs. Until all six are
-mapped, the tray shows `Expression mapping n/6` and the affect engine does
-not play cues on its own.
+A newly imported model performs the shipped default anchors immediately,
+with zero calibration required. To match its own expressions more closely,
+hand-author `anchors` and `renderers.live2d.performance` wiring in its
+manifest — an in-app calibration workflow is planned but not yet built.
 
 See the [character package guide](docs/en/character-format.md) for
-compatibility, the `lares/1` manifest, expression mapping, and the
+compatibility, the `lares/1` manifest, anchor and wiring authoring, and the
 command-line import flow.
 
 ## Development
@@ -181,5 +185,6 @@ Lares is built on the work of these projects:
   [electron-builder](https://www.electron.build/) for the dev loop and
   packaging.
 - [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
-  — the Model Context Protocol server that receives first-person emotes.
+  — the Model Context Protocol server that receives first-person feeling
+  reports.
 - [Zod](https://zod.dev/) — schema validation at every ingress point.

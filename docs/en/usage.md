@@ -26,9 +26,9 @@ Lares gets its information in two ways:
 | Source | What it gives | Who sends it |
 | --- | --- | --- |
 | Lifecycle hooks | The baseline state of each session | The harness |
-| MCP `emote` calls | First-person feelings | The agent |
+| MCP `feel` calls | A first-person appraisal — valence, activation, control | The agent |
 
-The chain is `agent hooks + MCP → local affect engine → Live2D performance`.
+The chain is `agent appraisal (feel) + hooks → character performance → Live2D`.
 
 Three limits apply always:
 
@@ -152,19 +152,22 @@ awaiting_input > error > working > thinking > done > idle
 A session that waits for you is never masked by a session that works. When
 you answer the prompt, the lower state returns within one second.
 
-### Time changes the face
+### The feeling holds until the agent reports again
 
-Lares keeps a history. The same event does not always look the same.
+There is no decay and no mood average. The Lar performs your agent's most
+recent `feel` report — valence, activation, control — until a new one
+replaces it, however long that takes. Silence is not a signal: three minutes
+without a report still shows the same performance, not a drift back to
+neutral.
 
-- **Decay.** A feeling returns to the rest point. Half of the displacement is
-  gone after 45 seconds.
-- **Mood.** A slow average of the recent emotion moves the rest point. A long
-  and difficult session leaves a mark that one success does not clear.
-- **Saturation.** Repeated identical emotes have less effect each time. Five
-  frustrated emotes in one minute move the face less than two times one emote.
-- **Sleep.** After 10 minutes of idle time, the Lar goes to sleep.
+Before the first report of a session, the Lar performs a resting, neutral
+pose. That is not itself a claim about how the agent feels — it is just what
+"no report yet" looks like.
 
-This history is the reason a third failure reads worse than the first.
+Two states still show on top of whatever the Lar is performing, regardless of
+the last report: **awaiting_input** and **error**. They read as an overlay —
+a more alert, more strained cast to the current pose — and clear back to the
+unchanged feeling once the session moves on.
 
 ---
 
@@ -177,7 +180,6 @@ This history is the reason a third failure reads worse than the first.
 | **Do Not Disturb** | Hide the Lar |
 | **Launch at Login** | Start Lares when you sign in |
 | **Reset Position** | Move the Lar to the bottom right of the primary display |
-| *Expression mapping n/6* | A read-only line that reports the cue mapping state. You cannot select it |
 | **Automatically Check for Updates** | Enable or disable the daily check |
 | **Check for Updates…** | Check now |
 | **Configure Agent Integrations…** | Install the harness plugins |
@@ -188,9 +190,9 @@ The tray holds no uninstall action. See section 10.
 
 Notes:
 
-- **Do Not Disturb** hides the body only. The server, the sessions, the affect
-  engine, and the mood continue to run. When you disable it, the Lar shows the
-  current state immediately.
+- **Do Not Disturb** hides the body only. The server and the session table
+  keep running. When you disable it, the Lar shows the current state
+  immediately.
 - **Launch at Login** and **Do Not Disturb** are off by default. Automatic
   update checks are on by default.
 - Lares saves every setting. The settings survive a restart.
@@ -224,28 +226,17 @@ MOC version 5 or later.
 
 ### Calibrate the character
 
-A new character arrives with performances, but with no emotional meaning. The
-tray shows one read-only line:
+A newly imported character performs the shipped default anchor poses
+immediately — zero calibration required, and every axis reads correctly from
+the first session.
 
-| Tray line | Meaning |
-| --- | --- |
-| Expression mapping *n*/6 — run Calibrate Lar | Some canonical cues have no performance yet |
-| Expression mapping 6/6 | Every canonical cue is mapped |
+To match the character's own expressions more closely, hand-author `anchors`
+and `renderers.live2d.performance` wiring in its manifest. An in-app
+calibration workflow — preview-and-map from your agent — is planned but not
+yet built.
 
-Until all six cues are mapped, `emote` refuses cue playback and the affect
-engine plays nothing on its own. Only the raw parameter escape hatch works.
-
-To map the cues, run the **Calibrate Lar** skill from your agent —
-`/lares:calibrate-lar` in Claude Code, `$lares:calibrate-lar` in Codex. The
-skill is user-invoked only; the agent never starts it by itself. The agent
-then previews each performance on your desktop and asks you what it needs to
-know.
-
-Keep the Lar visible during this flow. Mapping is a visual decision, and the
-agent needs your eyes.
-
-The [character package guide](character-format.md) holds the manifest schema
-and the command-line import flow.
+The [character package guide](character-format.md) holds the manifest schema,
+the channel table, and the command-line import flow.
 
 ---
 
@@ -255,32 +246,29 @@ The Lares MCP server gives your agent these tools:
 
 | Tool | What it does |
 | --- | --- |
-| `emote` | Play one of the six canonical cues, or drive parameters directly |
-| `list_performances` | List the performances, their affect coordinates, and the missing cues |
-| `status` | Report the active character and a session summary |
-| `list_parameters` | List the parameters of the loaded model |
-| `preview_expression` | Show an exact expression or performance, for calibration |
-| `map_cue` | Map a canonical cue to a performance, during calibration |
-| `save_expression` | Write a new authored expression |
-| `update_expression` | Change the coordinates or the parameters of a performance |
+| `feel` | Report the agent's current felt state as three integers: valence, activation, control |
+| `status` | Report the active character, protocol version, and the caller's own latest report |
+| `list_parameters` | List the parameters of the loaded model, before authoring a preview |
+| `preview_expression` | Hold an exact raw parameter set on the live character; explicit, user-invoked only |
 
-The server tells the agent when to emote: once per genuine shift in its own
-appraisal of the work, never per tool call and never on a schedule.
+`feel` is the sole runtime affect action. The server tells the agent when to
+call it: once per genuine shift in its own appraisal of the work, or once
+when you directly ask how it feels — never per tool call and never on a
+schedule.
 
 The server enforces every limit itself. Your agent cannot exceed them:
 
 | Limit | Value |
 | --- | --- |
-| Intensity | 0 to 1 |
-| Duration | 30 seconds maximum, 6 seconds by default |
-| Queue depth | 4 expressions |
-| Freeform parameters | 24 per call |
-| Emote rate | One each 2 seconds, per source |
-| Authored expressions | 50 per package |
+| Axes | Three required integers, each −2 to 2: valence, activation, control |
+| Report rate | One `feel` call each 2 seconds, per attributed session |
+| Preview parameters | 24 per `preview_expression` call |
+| Preview hold | 60 seconds, then the preview auto-reverts |
 
-A value out of range is clamped. An unknown parameter is dropped. An emote
-that arrives too soon is merged: the feeling still applies, but no new
-expression starts.
+A malformed `feel` call — a float, an out-of-range integer, a missing or
+extra axis — fails the whole call and leaves the last report unchanged. A
+call that arrives too soon is rejected with the remaining wait; the agent's
+task continues either way.
 
 ---
 
@@ -311,8 +299,9 @@ can be on a display that you disconnected.
 This is correct behavior for the transparent area. The body itself accepts
 clicks and drags.
 
-**My character shows no emotion of its own.**
-Map its expressions. See section 6.
+**My character's performance looks generic.**
+It is running the shipped default anchor poses. Hand-author `anchors` and
+`renderers.live2d.performance` wiring in its manifest. See section 6.
 
 ---
 
@@ -361,7 +350,7 @@ by default:
 
 | Checkbox | Result |
 | --- | --- |
-| Clear | Your characters, authored expressions, calibration, settings, and window position remain. A new installation reuses them. |
+| Clear | Your characters, settings, and window position remain. A new installation reuses them. |
 | Selected | Lares deletes all of that data. |
 
 The harness plugins are yours, and they stay. Remove them yourself:
