@@ -16,6 +16,7 @@ import {
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   realpathSync,
   unlinkSync,
   writeFileSync
@@ -76,6 +77,15 @@ import {
 } from './cues'
 import { DensityLog } from './densityLog'
 import { errorMessage } from './errors'
+import {
+  attribute,
+  FeedGate,
+  FeelRegister,
+  FEEL_SPACING_MS,
+  parseFeelFile,
+  type Latch
+} from './feel/register'
+import { atomicWrite } from './fs'
 import { L, resolveLocale, setLocale } from './strings'
 import {
   configureAgentIntegrations,
@@ -102,7 +112,6 @@ import { productBodyTargets } from './productBody'
 import { SCENARIO_CUES } from './scenario/cues'
 import { loadScenario } from './scenario/load'
 import {
-  feedMessage,
   playScenarioPaced,
   type AffectFeedMessage,
   type PacedPlayback,
@@ -149,6 +158,14 @@ const defaultCharacterRoot = (): string =>
 const runtimeFile = (): string => join(homedir(), '.lares', 'runtime.json')
 
 let liveNerves: Nerves | null = null
+let feelRegister: FeelRegister | null = null
+const liveFeedGate = new FeedGate()
+// A body attaches its feed listener a beat after it reports inventory, so a
+// single on-change message can sail past it and a restored latch would never
+// reach a fresh boot (013-S9). Resend every tick for a short warmup instead.
+// ponytail: fixed window; a body:ready handshake would be exact if it drifts.
+const FEED_WARMUP_MS = 2000
+let feedWarmupUntil = 0
 let nervesServer: ReturnType<typeof createServer> | null = null
 let nervesTick: ReturnType<typeof setInterval> | null = null
 let densityLog: DensityLog | null = null
@@ -178,6 +195,89 @@ function sendLiveFeed(feed: AffectFeedMessage): void {
   for (const win of productBodyTargets(overlayWindow, BrowserWindow.getAllWindows())) {
     if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
   }
+}
+
+/**
+ * On-change emission (013 SPEC §13). The 100ms sweep still runs the session
+ * table's liveness, but the body only hears a message when the displayed tuple
+ * or the resolved operational state actually moves — including a change the
+ * sweep itself produces, such as done→idle.
+ */
+function emitLiveFeed(nowMs: number): void {
+  if (liveNerves === null) return
+  if (activePlayback !== null) {
+    // Playback owns the channel; resend once live takes it back.
+    liveFeedGate.reset()
+    return
+  }
+  const latch = feelRegister?.displayed()
+  const feel =
+    latch === undefined
+      ? null
+      : { valence: latch.valence, activation: latch.activation, control: latch.control }
+  const operational = liveNerves.sessionState(nowMs).baseline
+  if (nowMs < feedWarmupUntil) liveFeedGate.reset()
+  if (!liveFeedGate.changed(feel, operational)) return
+  sendLiveFeed({ stageId: 'A', tick: Math.floor(nowMs / 100), feel, operational })
+}
+
+// Durable latch storage (013 SPEC §12): restore at boot, write through on
+// every accepted report. An unreadable or malformed file starts empty with a
+// warning and never a crash.
+function loadFeelRegister(): FeelRegister {
+  const path = feelFile()
+  const register = new FeelRegister((file) => {
+    void atomicWrite(path, file).catch((error) =>
+      console.warn(`[lares] cannot write ${path}: ${errorMessage(error)}`)
+    )
+  })
+  try {
+    register.restore(parseFeelFile(JSON.parse(readFileSync(path, 'utf8'))))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[lares] ignoring unreadable ${path}: ${errorMessage(error)}`)
+    }
+  }
+  return register
+}
+
+/**
+ * The caller's attributed session key and its latch (013 SPEC §§8, 9) — the
+ * feel half of a reshaped `status()`, and the key `feelReport` writes.
+ */
+export function attributedFeel(
+  mcpSessionId: string,
+  nowMs: number
+): { session: string; feel: Latch | null } {
+  if (liveNerves === null || feelRegister === null) throw new Error('Lares is not ready')
+  const session = attribute(liveNerves.sessionState(nowMs).sessions) ?? `mcp:${mcpSessionId}`
+  return { session, feel: feelRegister.get(session) ?? null }
+}
+
+/**
+ * The brain half of the `feel` tool (013 SPEC §§1, 8): validate, attribute,
+ * latch, persist, push the feed. Throws the tool error for an invalid tuple or
+ * a rate-capped call; either way the latch is untouched.
+ */
+export function feelReport(
+  args: unknown,
+  mcpSessionId: string,
+  nowMs: number
+): { status: 'latched'; session: string } {
+  const { session } = attributedFeel(mcpSessionId, nowMs)
+  const result = feelRegister!.tryFeel(session, args, nowMs)
+  if (result.status === 'rejected') {
+    throw new Error(
+      `one feel per session every ${FEEL_SPACING_MS / 1000}s; wait ${Math.ceil(result.waitMs / 1000)}s`
+    )
+  }
+  emitLiveFeed(nowMs)
+  return { status: 'latched', session }
+}
+
+/** Prompt-submit checkpoint lookup (013 SPEC §10) — keyed, never attributed. */
+export function feelCheckpoint(sessionKey: string): Latch | undefined {
+  return feelRegister?.get(sessionKey)
 }
 
 function broadcast(channel: 'authoring:preview' | 'authoring:revert', value?: unknown): void {
@@ -244,6 +344,8 @@ function characterPayload(selected: CharacterPackage, candidateId?: number) {
   const fallbackPhysics = selected.character.live2d.fallbackPhysics
   return {
     ...selected.character,
+    // Expressiveness is app config, not manifest — it scales the blend body-side (§4).
+    expressiveness: appConfig.expressiveness,
     live2d: {
       ...selected.character.live2d,
       model: assetUrl(model, candidateId),
@@ -483,12 +585,9 @@ async function startNerves(): Promise<void> {
     character && currentSelection
       ? parseModelCdi3File(character.live2d.model, dirname(currentSelection.manifestPath))
       : new Map<string, string>()
+  feelRegister = loadFeelRegister()
   liveNerves = new Nerves(character?.name ?? 'No character', character?.expressions ?? {}, Date.now(), undefined, {
     cueSources: cueSources(cueDefinitions),
-    resolveHookCue: (cue) =>
-      currentSelection?.character.report.missingCues.length === 0
-        ? currentSelection.character.cueMappings[cue]
-        : undefined,
     resolveCue: (cue, defaults, inventory) => {
       const definition = cueDefinitions[cue]
       if (!definition) return undefined
@@ -608,11 +707,12 @@ async function startNerves(): Promise<void> {
       }
     )
   }
-  densityLog?.recordBaseline(liveNerves.status(Date.now()).sessions.baseline, Date.now())
+  densityLog?.recordBaseline(liveNerves.sessionState(Date.now()).baseline, Date.now())
   nervesServer = createServer({
     ingest: (envelope, nowMs) => {
       liveNerves!.ingest(envelope, nowMs)
-      densityLog?.recordBaseline(liveNerves!.status(nowMs).sessions.baseline, nowMs)
+      densityLog?.recordBaseline(liveNerves!.sessionState(nowMs).baseline, nowMs)
+      emitLiveFeed(nowMs)
     },
     emote: (args, source, nowMs) => {
       const raw = object(args, 'emote')
@@ -696,13 +796,13 @@ async function startNerves(): Promise<void> {
     if (appConfig.hostGuidance) writeHostGuidanceRule()
     else removeHostGuidanceRule()
     await syncAdapters()
+    // The sweep still runs at 100ms — the session table's liveness needs it —
+    // but the feed it drives now emits only on change (013 SPEC §13).
     nervesTick = setInterval(() => {
       const nowMs = Date.now()
       liveNerves!.tick(nowMs)
-      densityLog?.recordBaseline(liveNerves!.status(nowMs).sessions.baseline, nowMs)
-      if (activePlayback === null) {
-        sendLiveFeed(feedMessage(liveNerves!.snapshot(), Math.floor(nowMs / 100)))
-      }
+      densityLog?.recordBaseline(liveNerves!.sessionState(nowMs).baseline, nowMs)
+      emitLiveFeed(nowMs)
     }, 100)
     console.log(`[lares] listening on http://127.0.0.1:${port}`)
   } catch (error) {
@@ -764,6 +864,8 @@ function registerCharacterIpc(): void {
   })
 
   ipcMain.on('body:inventory', (event, params: unknown[], compatibility: unknown) => {
+    // Any body reporting in is about to start listening for the feed.
+    feedWarmupUntil = Date.now() + FEED_WARMUP_MS
     if (overlayWindow && BrowserWindow.fromWebContents(event.sender) !== overlayWindow) return
     const selected = activeCharacter()
     const names =
@@ -1045,6 +1147,7 @@ let overlayWindow: BrowserWindow | null = null
 
 const positionFile = (): string => join(app.getPath('userData'), 'window.json')
 const configFile = (): string => join(app.getPath('userData'), 'config.json')
+const feelFile = (): string => join(app.getPath('userData'), 'feel.json')
 const updateCacheFile = (): string => join(app.getPath('userData'), 'updates.json')
 
 function integrationLabel(harness: Harness): string {

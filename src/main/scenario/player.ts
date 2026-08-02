@@ -1,4 +1,5 @@
 import type { AffectSnapshot } from '../affect/engine'
+import type { BaselineState } from '../affect/types'
 import type { Vec2 } from '../affect/constants'
 import type { Scenario } from './types'
 import { createStepper, traceLine, STEP_MS } from './run'
@@ -6,20 +7,20 @@ import { createStepper, traceLine, STEP_MS } from './run'
 /** A/B stages (002-D2). Normal mode runs 'A' only. */
 export type StageId = 'A' | 'B'
 
-// Performance feed message (root SPEC §4, slice SPEC §5): renderer-neutral —
-// cue names and numbers cross this seam, Live2D knowledge never does (P6).
+// Performance feed message (013 SPEC §13): renderer-neutral — the latched
+// tuple and one operational state cross this seam, Live2D knowledge never
+// does (P6). Structural twin of `AffectFeed` in src/preload/types.d.ts; the
+// seam is the contract, not a shared import.
 export interface AffectFeedMessage {
   stageId: StageId
   /** Scenario tick index (t = tick·100ms). Renderer keys off this instead of
    * counting arrivals — closes a fragile-counter bug and lets seeks jump the
    * tick cleanly (002 step-6 decision 1). */
   tick: number
-  E: AffectSnapshot['E']
-  M: AffectSnapshot['M']
-  baselineState: AffectSnapshot['baselineState']
-  expressionStack: AffectSnapshot['expressionStack']
-  /** Motion triggers — empty placeholder this slice. */
-  beats: string[]
+  /** Wire integers in {-2..2}; `null` selects the neutral anchor (§11). */
+  feel: { valence: number; activation: number; control: number } | null
+  /** Resolved root §3 session state. */
+  operational: BaselineState
 }
 
 export interface PacedPlayback {
@@ -44,20 +45,15 @@ export interface PacedPlayback {
   seek(tMs: number): void
 }
 
+// Scenario scripts still speak the retired emote vocabulary, so replay feeds
+// the operational half only and performs the neutral anchor; the goldens are
+// re-authored as feel calls in I5.
 export function feedMessage(
   snap: AffectSnapshot,
   tick: number,
   stageId: StageId = 'A'
 ): AffectFeedMessage {
-  return {
-    stageId,
-    tick,
-    E: snap.E,
-    M: snap.M,
-    baselineState: snap.baselineState,
-    expressionStack: snap.expressionStack,
-    beats: []
-  }
+  return { stageId, tick, feel: null, operational: snap.baselineState }
 }
 
 /** Clamp a UI speed multiplier to the range the pacer can safely run at. */

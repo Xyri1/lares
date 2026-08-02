@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createStepper, traceLine, STEP_MS } from './run'
-import { clampSpeed, playScenarioPaced, type AffectFeedMessage } from './player'
+import { createStepper, STEP_MS } from './run'
+import { clampSpeed, feedMessage, playScenarioPaced, type AffectFeedMessage } from './player'
 import type { Scenario } from './types'
 
 const CUES = { pleased: { valence: 0.55, arousal: 0.45 } }
@@ -26,10 +26,12 @@ describe('clampSpeed', () => {
 })
 
 describe('playScenarioPaced — seek', () => {
-  it('recomputes the same trace prefix as stepping the pure core straight to the same tick', () => {
+  it('recomputes the same feed prefix as stepping the pure core straight to the same tick', () => {
     const stepperRef = createStepper(scenario(), CUES)
-    let refLine = ''
-    for (let t = 0; t <= 1000; t += STEP_MS) refLine = traceLine(t, stepperRef.step(t))
+    const reference: AffectFeedMessage[] = []
+    for (let t = 0; t <= 1000; t += STEP_MS) {
+      reference.push(feedMessage(stepperRef.step(t), t / STEP_MS))
+    }
 
     let seekHistory: AffectFeedMessage[] = []
     const controller = playScenarioPaced(scenario(), CUES, {
@@ -41,14 +43,7 @@ describe('playScenarioPaced — seek', () => {
     controller.seek(1000)
 
     expect(seekHistory).toHaveLength(11) // t = 0,100,...,1000
-    const last = seekHistory[seekHistory.length - 1]
-    const lastLine = traceLine(last.tick * STEP_MS, {
-      E: last.E,
-      M: last.M,
-      baselineState: last.baselineState,
-      expressionStack: last.expressionStack
-    })
-    expect(lastLine).toBe(refLine)
+    expect(seekHistory).toEqual(reference)
     controller.cancel()
   })
 

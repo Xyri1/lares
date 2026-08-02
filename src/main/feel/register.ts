@@ -1,8 +1,8 @@
-// Feel register (slice 013 SPEC §§1, 9, 12) — the latched tuple per session
-// key, its durable file format, and attribution of an MCP call to a session.
-// Pure: no Electron, no clock, no IO. Time and persistence arrive from the
-// caller. The register is a latch: nothing but a valid report writes it, and
-// nothing decays it (013-D7).
+// Feel register (slice 013 SPEC §§1, 9, 12, 13) — the latched tuple per
+// session key, its durable file format, attribution of an MCP call to a
+// session, and the live feed's on-change gate. Pure: no Electron, no clock, no
+// IO. Time and persistence arrive from the caller. The register is a latch:
+// nothing but a valid report writes it, and nothing decays it (013-D7).
 import type { SessionRow } from '../sessions/ingest'
 
 /** Wire integers in {-2..2} — stored and fed raw, never normalized (§12). */
@@ -122,6 +122,27 @@ export class FeelRegister {
       }
       this.latches.delete(oldest!)
     }
+  }
+}
+
+/**
+ * On-change gate for the live feed (§13). A tick emits only when the displayed
+ * tuple or the resolved operational state moved — a change the session sweep
+ * produced included. `reset` forces the next tick through, for whenever
+ * something else has owned the channel or a body has just come up.
+ */
+export class FeedGate {
+  private last: string | null = null
+
+  changed(feel: FeelTuple | null, operational: string): boolean {
+    const key = JSON.stringify([feel, operational])
+    if (key === this.last) return false
+    this.last = key
+    return true
+  }
+
+  reset(): void {
+    this.last = null
   }
 }
 

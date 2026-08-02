@@ -67,8 +67,8 @@ async function boot(): Promise<void> {
   )
 
   // Anchors, operational overlays and expressiveness ride the same bootstrap
-  // payload the character does; `expressiveness` is absent until the brain
-  // starts sending the hidden AppConfig field (013 I3), and 1 is the default.
+  // payload the character does; the brain reads `expressiveness` from the
+  // hidden AppConfig field, and 1 is the default when it is absent.
   const driver = createAffectDriver(
     runtime,
     isSynthPreset(character.live2d.performance)

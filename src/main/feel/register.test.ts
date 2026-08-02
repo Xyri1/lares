@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SessionRow } from '../sessions/ingest'
 import {
   attribute,
+  FeedGate,
   FeelRegister,
   FEEL_SPACING_MS,
   LATCH_CAPACITY,
@@ -142,6 +143,32 @@ describe('parseFeelFile', () => {
     })
 
     expect([...parsed]).toEqual([['claude-code:good', { ...TUPLE, at: 5 }]])
+  })
+})
+
+describe('FeedGate', () => {
+  it('emits only when the tuple or the operational state moves', () => {
+    const gate = new FeedGate()
+    expect(gate.changed(null, 'idle')).toBe(true)
+    expect(gate.changed(null, 'idle')).toBe(false)
+
+    // A sweep-produced operational change still emits.
+    expect(gate.changed(null, 'done')).toBe(true)
+    expect(gate.changed(null, 'idle')).toBe(true)
+    expect(gate.changed(null, 'idle')).toBe(false)
+
+    expect(gate.changed(TUPLE, 'idle')).toBe(true)
+    expect(gate.changed({ ...TUPLE }, 'idle')).toBe(false)
+    expect(gate.changed({ ...TUPLE, control: 0 }, 'idle')).toBe(true)
+    expect(gate.changed(null, 'idle')).toBe(true)
+  })
+
+  it('lets an unchanged state through again after a reset', () => {
+    const gate = new FeedGate()
+    expect(gate.changed(TUPLE, 'working')).toBe(true)
+    expect(gate.changed(TUPLE, 'working')).toBe(false)
+    gate.reset()
+    expect(gate.changed(TUPLE, 'working')).toBe(true)
   })
 })
 

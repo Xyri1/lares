@@ -1,9 +1,8 @@
 import { AffectEngine, type AffectSnapshot, type FreeformExpression } from './affect/engine'
 import type { CueCoordinates } from './characters/manifest'
-import type { CanonicalCue } from './cues'
 import { errorMessage } from './errors'
 import { Ingestor, type PidProbe, type SessionSummary } from './sessions/ingest'
-import { eventName, mapEvent, type EventEnvelope } from './sessions/mapEvent'
+import type { EventEnvelope } from './sessions/mapEvent'
 
 const DEFAULT_DURATION_S = 6
 const MAX_DURATION_S = 30
@@ -37,7 +36,6 @@ export type AuthoringPreview = { params: Record<string, number> } | { cue: strin
 
 export interface NervesOptions {
   cueSources?: Readonly<Record<string, CueInfo['source']>>
-  resolveHookCue?(cue: CanonicalCue): string | undefined
   resolveCue?: (
     cue: string,
     defaults: Readonly<Record<string, number>>,
@@ -134,9 +132,6 @@ export class Nerves {
   private cueErrors: string[] = []
   private cueSources: Record<string, CueInfo['source']>
   private readonly lastPlayedAt = new Map<string, number>()
-  private readonly hookFailureStreaks = new Map<string, number>()
-  private readonly hookFailureBeats = new Map<string, CanonicalCue>()
-  private readonly hookSuccessfulTurns = new Set<string>()
   private previewExpiresAt: number | null = null
 
   constructor(
@@ -152,60 +147,19 @@ export class Nerves {
     this.cueSources = { ...options.cueSources }
   }
 
+  // The D35 deterministic hook beats retired with slice 013 (SPEC §11): hook
+  // events are operational facts only, and the register carries the feeling.
   ingest(envelope: EventEnvelope, nowMs: number): void {
     this.sessions.ingest(envelope, nowMs)
-    const name = eventName(envelope)
-    const source = `hook:${envelope.harness}:${envelope.session_id}`
-    const state = mapEvent(envelope)
-    if (state !== null && state !== 'error') this.hookFailureBeats.delete(source)
-    if (name === 'UserPromptSubmit') {
-      this.clearHookHistory(source)
-    } else if (name === 'PostToolUseFailure') {
-      const failures = (this.hookFailureStreaks.get(source) ?? 0) + 1
-      this.hookFailureStreaks.set(source, failures)
-      const cue: CanonicalCue = failures >= 3 ? 'frustration' : 'concern'
-      this.hookFailureBeats.delete(source)
-      this.hookFailureBeats.set(source, cue)
-      if (failures === 1 || failures === 3) {
-        const performance = this.options.resolveHookCue?.(cue)
-        if (performance !== undefined) this.engine.applyCueNudge(performance, source, nowMs)
-      }
-    } else if (name === 'PostToolUse') {
-      if (this.hookFailureStreaks.delete(source)) {
-        this.hookFailureBeats.delete(source)
-        this.playHookBeat('relief', source, nowMs)
-      }
-      this.hookSuccessfulTurns.add(source)
-    } else if (name === 'Stop') {
-      if (this.hookSuccessfulTurns.has(source) && !this.hookFailureStreaks.has(source)) {
-        this.playHookBeat('satisfaction', source, nowMs)
-      }
-      this.clearHookHistory(source)
-    } else if (name === 'SessionEnd') {
-      this.clearHookHistory(source)
-    }
   }
 
-  private clearHookHistory(source: string): void {
-    this.hookFailureStreaks.delete(source)
-    this.hookFailureBeats.delete(source)
-    this.hookSuccessfulTurns.delete(source)
-  }
-
-  private playHookBeat(cue: CanonicalCue, source: string, nowMs: number): void {
-    const performance = this.options.resolveHookCue?.(cue)
-    if (performance === undefined) return
-    try {
-      this.emote({ cue: performance }, source, nowMs)
-    } catch (error) {
-      if (errorMessage(error) !== 'expression queue is full') throw error
-    }
+  /** Session table state — the live feed's operational half and feel attribution. */
+  sessionState(nowMs: number): SessionSummary {
+    return this.sessions.summary(nowMs)
   }
 
   tick(nowMs: number): void {
-    for (const { harness, session_id } of this.sessions.sweep(nowMs)) {
-      this.clearHookHistory(`hook:${harness}:${session_id}`)
-    }
+    this.sessions.sweep(nowMs)
     this.engine.tick(nowMs)
     if (this.previewExpiresAt !== null && nowMs >= this.previewExpiresAt) {
       this.previewExpiresAt = null
@@ -220,15 +174,11 @@ export class Nerves {
     const snapshot = this.engine.snapshot()
     const [head, ...rest] = snapshot.expressionStack
     let resolved = snapshot
-    if (head && typeof head.cueOrFreeform === 'string') {
-      const hookFailureCue =
-        head.cueOrFreeform === 'error' ? [...this.hookFailureBeats.values()].at(-1) : undefined
-      const cue =
-        hookFailureCue === undefined
-          ? head.cueOrFreeform === 'awaiting_input' || head.cueOrFreeform === 'error'
-            ? this.engine.selectCue()
-            : null
-          : (this.options.resolveHookCue?.(hookFailureCue) ?? this.engine.selectCue())
+    if (
+      head &&
+      (head.cueOrFreeform === 'awaiting_input' || head.cueOrFreeform === 'error')
+    ) {
+      const cue = this.engine.selectCue()
       if (cue !== null) {
         resolved = {
           ...snapshot,
