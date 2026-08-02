@@ -1,6 +1,6 @@
 # ROADMAP — Lares
 
-**Artifact:** ROADMAP · **Project:** Lares · **Status:** Living · **Date:** 2026-07-24
+**Artifact:** ROADMAP · **Project:** Lares · **Status:** Living · **Date:** 2026-08-02
 
 Milestones are gated, not dated: each closes on its exit gate, and a slice doc set (SPEC, DECISIONS, PLAN under `sdd/slices/NNN-name/`) attaches per milestone. Sequence reflects dependency order, not importance.
 
@@ -21,11 +21,12 @@ pixi-live2d-display behind the runtime interface, inside the body (P6/D31); bund
 Affect engine as a pure TS module: two-timescale dynamics (emotion/mood), event ingestion, decay, per-source saturation, cue selection by affect distance — physics frozen against unit tests here, before any tuning (D28). Performance feed live brain→body; idle modulation body-side (breath rate, blink interval, sway amplitude driven by mood/arousal). In-app scenario player with the golden scenarios (brutal-debugging-session, smooth-build, long-wait-for-input, recovery-arc) at real and accelerated time — deterministic replay, side-by-side A/B playback, parameter-trace overlay: the player is the tuning harness, so it closes before tuning starts. Starter cue set for Hiyori (she bundles no `.exp3.json` — slice 001 close-out).
 **Exit gate:** golden scenarios replay deterministically through the live engine driving the rendered model; physics unit tests green and frozen; A/B playback and trace overlay usable. Agent-verifiable by construction.
 **Closed 2026-07-26** — A1–A7 green on Windows, render smoke on macOS; close-out notes in `sdd/slices/002-soul/PLAN.md`. Note the one gate defect that every automated check missed and only the eye caught: authored expressions were being overwritten before they were drawn.
+The affect engine and cue stack above remain historical close-out evidence; slice 013 retires them from the target runtime rather than carrying them forward.
 
 ## M2b — Performance
 
-The D28 tuning ladder: subjective iteration confined to the affect→parameter mapping layer, descending the retreat rungs (continuous curves → exaggerated/body-weighted mapping → history-through-cues) as the owner judges — no timebox, no drop rule (D28 amended 2026-07-27); recordings at default Lar size (400 logical px model height, root §7) stay normative. Human-judged by design — fenced off from build work by the M2a gate.
-**Exit gate:** history-dependence demonstrable on recording at the current rung. The full §9 criteria bind M5b (D28), not this milestone.
+The original D28 history-through-cues tuning ladder is superseded by slice 013 and receives no further work. Human-judged performance tuning resumes against the deterministic `feel`→performance mapping after slice 013 defines it; recordings at default Lar size (400 logical px model height, root §7) remain normative.
+**Exit gate:** the slice 013 behavioral and visible-performance criteria pass at the threshold its SPEC defines.
 
 ## M1b — Skeleton
 
@@ -40,14 +41,16 @@ Loopback HTTP server in main: event route + streamable-HTTP MCP endpoint; discov
 **Exit gate:** synthetic clients over real loopback HTTP (event route + MCP) drive the Lar end-to-end — caps enforced (S10-class checks), daemon down/up degrading gracefully (S9). Agent-verifiable, no real harness required.
 **Closed 2026-07-27** — 171 tests green on Windows and macOS, visual smoke confirmed on both; close-out notes in `sdd/slices/004-nerves/PLAN.md`. The gate defect worth remembering was in the contract, not the code: A8's 50ms forwarder budget was written spawn-inclusive, which process startup alone makes impossible — 004-D8 re-bound it to in-script time.
 **Post-close emoting research (2026-07-31):** slice `sdd/slices/011-interjection/` records the model-owned semantic-action direction: the agent voluntarily reports its own appraisal through the existing callable emote interface, independent of language and without Lares observing chain of thought or inferring from text. The discarded token branch has no SPEC or PLAN. Multilingual, cross-model, cross-harness behavioral evidence must justify any later instruction or protocol change (D34).
-**Host-guidance follow-up (2026-08-01):** slice `sdd/slices/012-host-guidance/` records the first fresh adoption failure after tool exposure was verified and opens a second, host-level instruction vector (012-D1). MCP remains the canonical emote contract; concise plugin-delivered context will reinforce it without moving appraisal into hooks. Delivery is session-scoped per host (012-D4): an app-owned `~/.claude/rules/lares.md` on Claude Code and `SessionStart.additionalContext` on Codex, both gated on app liveness and a hidden settings toggle; per-turn injection was tried (012-D2) and retired. The A/B moment-coverage gate (G1) remains open.
+**Host-guidance follow-up (2026-08-01):** slice `sdd/slices/012-host-guidance/` records the first fresh adoption failure after tool exposure was verified and opens a second, host-level instruction vector (012-D1). MCP remains the canonical emote contract; concise plugin-delivered context will reinforce it without moving appraisal into hooks. Delivery is session-scoped per host (012-D4): an app-owned `~/.claude/rules/lares.md` on Claude Code and `SessionStart.additionalContext` on Codex, both gated on app liveness and a hidden settings toggle; per-turn injection was tried (012-D2) and retired. Its emote-based A/B moment-coverage gate (G1) is superseded by slice 013's model-behavior gate.
+**Feel replacement (2026-08-02):** slice `sdd/slices/013-feel/` replaces the model-facing `emote(cue | params)` contract with the three-axis absolute `feel(valence, activation, control)` report. The fixed runtime cue vocabulary, freeform animation input, engine-owned emotional history, and hook-synthesized emotion are retired rather than retained as compatibility paths. Supplied Live2D expressions and motions may remain as character-owned calibration material; they are no longer agent-facing semantic choices.
+**Lar-instance binding follow-up (slice 014):** binding is deliberately outside slice 013. Slice 014 binds each Lar instance to one harness; another harness requires another Lar instance. Lares still launches every configured Lar, each in a visually identifiable hibernation presentation, and wakes the bound Lar on its first valid invocation. Hibernation is operational presentation rather than a neutral feeling: it does not clear a previously latched `feel` tuple, which becomes visible again on wake unless the waking invocation replaces it.
 
 ## M3b — Senses
 
 Claude Code adapter (command hooks incl. PostToolUseFailure and the `permission_prompt` Notification matcher, plus the MCP entry, auto-registered in one managed block — D29) and Codex adapter as a Lares plugin (hooks + MCP entry, GitHub-hosted marketplace, installed through Codex's own trust flow; JSONL fallback deleted — P11, D15 as amended). Harness skills are reinforcement only; both plugins now ship the same `emoting` skill. Verifications: Codex plugin-format and failure-signal recon against the installed version; one real-session emote-density measurement to calibrate D26's instruction wording.
 **Exit gate:** a real Claude Code session and a real Codex session simultaneously drive the Lar end-to-end — baseline states via hooks, emotes via MCP — with the daemon down/up cycle behaving as designed (connection refused ⇒ agents degrade gracefully).
 Live-smoke discovery (2026-07-28): Codex trust-reviews plugin hooks but never executes them (`plugin_hooks` removed upstream — D15 as amended), so the Codex half of the gate delivers MCP emotes only; the baseline-states half rides on the D15 design-around (user-level `~/.codex/hooks.json` writer). Slice 005 is frozen as implemented; slice 006 (`sdd/slices/006-codex-hooks/`) carries the writer and the remaining live checks, and closes this gate.
-**Closed 2026-07-28** — user-level hooks writer live on both channels (standalone CLI proven in the 006 prelim research, desktop app at the live gate) and both OSes; both harnesses drove the Lar simultaneously with down/up degrading as designed. D26 density tuning deferred to post-demo by the maintainer (wording stands). Close-out notes in `sdd/slices/006-codex-hooks/PLAN.md`. The gate defect worth remembering: the plugin-hooks surface trust-reviews but never executes — caught by doing the prelim research live against the installed binary instead of trusting docs folklore.
+**Closed 2026-07-28** — user-level hooks writer live on both channels (standalone CLI proven in the 006 prelim research, desktop app at the live gate) and both OSes; both harnesses drove the Lar simultaneously with down/up degrading as designed. The then-deferred D26 emote-density tuning is superseded by slice 013's model-behavior acceptance. Close-out notes in `sdd/slices/006-codex-hooks/PLAN.md`. The gate defect worth remembering: the plugin-hooks surface trust-reviews but never executes — caught by doing the prelim research live against the installed binary instead of trusting docs folklore.
 
 ## M4 — Format
 
@@ -96,14 +99,14 @@ GitHub Actions builds and publishes intentionally unsigned macOS and
 Windows installers to the public GitHub Release page, the sole public
 distribution channel. Release notes publish SHA-256 checksums, disclose
 the unsigned artifacts, and document the exact Gatekeeper/SmartScreen
-bypasses; production one-line installer URLs complete D30. Full §9
-emotion criteria pass on recording (D28 — the deferred half of the M2b
-gate; the one item that can bounce work back into tuning). Bilingual
+bypasses; production one-line installer URLs complete D30. Slice 013's
+replacement emotion criteria pass on recording—the one item that can
+bounce work back into M2b tuning. Bilingual
 README and docs (en, zh-CN, no preference); app-UI strings already
 bilingual per amended D22, leaving installer strings to localize with
 packaging here. Demo recordings cut from the scenario player. Launch.
-**Exit gate:** §9 criteria on recording; public GitHub Release.
+**Exit gate:** slice 013 criteria on recording; public GitHub Release.
 
 ## Parking lot (post-v1, in no order)
 
-Multiple concurrent Lares (per-session pets and affect isolation — D11's deferred half). Observer-LLM dual mode (D05's phase two). Agent-generated models, with the generation skill authoring pre-baked expression sets (D25). VRM/3D body attaching at the D31 performance feed, with its renderer block behind the D08 seam; richer body-mode feedback in the emote protocol (`status()` beyond active-body name — D31's deferred half); phase-2 service exploration. Additional harness adapters as community contributions via the protocol. Success-metrics regime, if ever wanted (D21 deferred it). Frame-rate governor and occlusion-paused rendering (v1 ships a flat 30fps cap — though Chromium already throttles a hidden window's rAF to ~0.2fps, observed at the M2a gate run, so part of this arrives for free). Climbing back up the M2b retreat ladder if the alpha shipped below rung (a).
+Multiple concurrent sessions within one harness, including per-session pets and affect isolation (D11's deferred half). Observer-LLM dual mode (D05's phase two). Agent-generated models, with the generation skill authoring pre-baked expression sets (D25). VRM/3D body attaching at the D31 performance feed, with its renderer block behind the D08 seam; richer body-mode feedback in the performance protocol (`status()` beyond active-body name — D31's deferred half); phase-2 service exploration. Additional harness adapters as community contributions via the protocol. Success-metrics regime, if ever wanted (D21 deferred it). Frame-rate governor and occlusion-paused rendering (v1 ships a flat 30fps cap — though Chromium already throttles a hidden window's rAF to ~0.2fps, observed at the M2a gate run, so part of this arrives for free). Further M2b tuning if slice 013's visible-performance gate exposes a gap.
