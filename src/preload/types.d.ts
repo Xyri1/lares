@@ -2,6 +2,13 @@ type CharacterPayload =
   | {
       ok: true
       name: string
+      /** Anchor and operational overlay overrides (slice 013 SPEC §13),
+       * renderer-neutral: channel names and numbers, never rig ids. */
+      anchors?: Record<string, Record<string, number>>
+      operational?: Record<string, Record<string, number>>
+      /** Expressiveness `k` (slice 013 SPEC §4) — a hidden app-config float,
+       * read at launch; absent means 1. */
+      expressiveness?: number
       live2d: {
         model: string
         fallbackPhysics?: string
@@ -11,21 +18,16 @@ type CharacterPayload =
   | { ok: false; error: string }
 
 interface CharacterSynthPreset {
+  /** `source` names a performance channel (slice 013 SPEC §2). */
   params: {
     id: string
-    source: 'valence' | 'arousal'
+    source: string
     gain: number
     offset: number
-    weight?: number
   }[]
   idle: {
     breath: { id: string; basePeriodMs: number; amplitude: number }
-    blink: {
-      ids: string[]
-      baseIntervalMs: number
-      durationMs: number
-      valenceGain: number
-    }
+    blink: { ids: string[]; baseIntervalMs: number; durationMs: number }
     sway: { id: string; baseAmplitude: number; periodMs: number }
   }
 }
@@ -52,8 +54,8 @@ type CharacterCommitResult =
 type CharacterDecision = 'commit' | 'rollback' | null
 
 /**
- * Performance feed (root SPEC §4, slice SPEC §5), brain→body over
- * `affect:update`. Renderer-neutral: cue names and numbers only (P6).
+ * Performance feed (slice 013 SPEC §13), brain→body over `affect:update`.
+ * Renderer-neutral: the latched tuple and one operational state (P6).
  * Declared structurally here — this seam is the contract, not a shared import.
  */
 interface AffectFeed {
@@ -61,15 +63,11 @@ interface AffectFeed {
   /** Scenario tick index (t = tick·100ms) — the renderer keys replay/synth
    * timing off this, not off arrival order (002 step-6 decision 1). */
   tick: number
-  E: { valence: number; arousal: number }
-  M: { valence: number; arousal: number }
-  baselineState: string
-  expressionStack: {
-    cueOrFreeform: string | { params: Record<string, number>; label?: string }
-    weight: number
-    expiryMs: number
-  }[]
-  beats: string[]
+  /** Wire integers in {-2..2}; `null` selects the neutral anchor — resting
+   * presentation, not `feel(0, 0, 0)` (SPEC §11). */
+  feel: { valence: number; activation: number; control: number } | null
+  /** Root §3 session state; only `awaiting_input` and `error` present. */
+  operational: string
 }
 
 type ScenarioPlayResult = { ok: true; endMs: number } | { ok: false; error: string }

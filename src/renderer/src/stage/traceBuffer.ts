@@ -8,9 +8,9 @@ import type { SynthFrame } from './synthReplay'
 
 export interface EnginePoint {
   t: number
-  E: { valence: number; arousal: number }
-  M: { valence: number; arousal: number }
-  baselineState: string
+  /** Normalized tuple (wire ÷ 2); null before the first report (SPEC §11). */
+  feel: { valence: number; activation: number; control: number } | null
+  operational: string
 }
 
 export interface TraceBuffer {
@@ -30,5 +30,12 @@ export function resetBuffer(buf: TraceBuffer): void {
 }
 
 export function pushEngine(buf: TraceBuffer, feed: AffectFeed): void {
-  buf.engine.push({ t: feed.tick * 100, E: feed.E, M: feed.M, baselineState: feed.baselineState })
+  const f = feed.feel
+  buf.engine.push({
+    t: feed.tick * 100,
+    feel: f
+      ? { valence: f.valence / 2, activation: f.activation / 2, control: f.control / 2 }
+      : null,
+    operational: feed.operational
+  })
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import presetJson from '../../../../presets/default.json'
+import { computeTarget, DEFAULT_ANCHORS } from '../feel/feel'
 import { createSynth, mulberry32, type SynthFeed, type SynthPreset } from '../synth/synth'
 import { composeFrame, FADE_MS, initialFade, type CueParams, type StackEntry } from './compose'
 import { driveTick, replayHistory } from './synthReplay'
@@ -174,7 +175,10 @@ describe('compose — determinism through the replay path', () => {
   type Feed = SynthFeed & { expressionStack: StackEntry[] }
 
   const history: Feed[] = Array.from({ length: 60 }, (_, tick) => ({
-    E: { valence: 0.8 * Math.sin(tick / 5), arousal: 0.5 + 0.45 * Math.sin(tick / 3) },
+    pose: computeTarget(
+      [Math.sin(tick / 5), Math.sin(tick / 3), Math.cos(tick / 7)],
+      DEFAULT_ANCHORS
+    ),
     expressionStack:
       tick >= 10 && tick < 30 ? [entry('pleased')] : tick >= 40 ? [entry('dejected')] : []
   }))

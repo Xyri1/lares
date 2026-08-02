@@ -1,0 +1,30 @@
+{
+  "awaiting_input": {
+    "mouthCurve": 0.2,
+    "mouthOpen": 0.1,
+    "browRaise": 0.7,
+    "browKnit": 0,
+    "eyeOpen": 0.6,
+    "gazeHeight": 1,
+    "headPitch": 0.4,
+    "lean": 0.7,
+    "swayAmplitude": 0.4,
+    "breathRate": 0.2,
+    "breathDepth": 0.1,
+    "blinkRate": 0.4
+  },
+  "error": {
+    "mouthCurve": -0.6,
+    "mouthOpen": 0.2,
+    "browRaise": -0.2,
+    "browKnit": 0.8,
+    "eyeOpen": -0.3,
+    "gazeHeight": -0.3,
+    "headPitch": -0.4,
+    "lean": -0.4,
+    "swayAmplitude": -0.6,
+    "breathRate": 0.3,
+    "breathDepth": -0.3,
+    "blinkRate": -0.2
+  }
+}

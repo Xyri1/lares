@@ -1,3 +1,10 @@
+import {
+  ANCHOR_KEYS,
+  isPoseOverrides,
+  OPERATIONAL_KEYS,
+  resolveFeel,
+  type FeelPoses
+} from '../feel/feel'
 import type { IRuntime } from '../runtime/iface'
 import { isSynthPreset, type SynthPreset } from '../synth/synth'
 
@@ -12,6 +19,8 @@ export interface CharacterLoadRequest {
   character: {
     ok: true
     name: string
+    anchors?: Record<string, Record<string, number>>
+    operational?: Record<string, Record<string, number>>
     live2d: {
       model: string
       fallbackPhysics?: string
@@ -111,6 +120,15 @@ export function parseCharacterPrepareRequest(value: unknown): CharacterLoadReque
   ) {
     return null
   }
+  if (character.anchors !== undefined && !isPoseOverrides(character.anchors, ANCHOR_KEYS)) {
+    return null
+  }
+  if (
+    character.operational !== undefined &&
+    !isPoseOverrides(character.operational, OPERATIONAL_KEYS)
+  ) {
+    return null
+  }
   const cues = parseCues(value.cues, id)
   if (!cues) return null
   return {
@@ -144,7 +162,10 @@ export function createCharacterLoadHandler(
     | 'compatibility'
   >,
   driver: {
-    characterChanged(preset?: SynthPreset): void | (() => void) | DriverCharacterChange
+    characterChanged(
+      preset?: SynthPreset,
+      poses?: FeelPoses
+    ): void | (() => void) | DriverCharacterChange
   },
   cueParams: Record<string, Record<string, number>>,
   cueMotions: Record<string, string>,
@@ -390,7 +411,10 @@ export function createCharacterLoadHandler(
             cue.motion === undefined ? [] : [[cue.name, cue.motion]]
           )
         )
-        const driverChange = driver.characterChanged(request.character.live2d.performance)
+        const driverChange = driver.characterChanged(
+          request.character.live2d.performance,
+          resolveFeel(request.character)
+        )
         if (typeof driverChange === 'function') {
           tentative.rollbackDriver = driverChange
         } else if (driverChange) {

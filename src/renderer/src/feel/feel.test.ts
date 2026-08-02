@@ -4,8 +4,14 @@ import {
   CHANNELS,
   CORNER_KEYS,
   DEFAULT_ANCHORS,
+  DEFAULT_OPERATIONAL,
+  TRANSITION_MS,
   computeTarget,
+  easeStep,
   mergeAnchors,
+  mergeOperational,
+  resolveFeel,
+  withOverlay,
   type AnchorSet,
   type Channel,
   type CornerKey
@@ -211,5 +217,118 @@ describe('anchor merge (SPEC §13)', () => {
     expect(merged['---'].headPitch).toBe(-1)
     expect(merged['---'].gazeHeight).toBe(-1)
     expect(merged['---'].breathRate).toBe(DEFAULT_ANCHORS['---'].breathRate)
+  })
+})
+
+describe('operational overlay (SPEC §11)', () => {
+  const target = computeTarget([1, 1, 1], DEFAULT_ANCHORS)
+
+  it('composites at 0.6 over the current target, per channel', () => {
+    const shown = withOverlay(target, 'error', DEFAULT_OPERATIONAL)
+    for (const ch of CHANNELS) {
+      expect(shown[ch]).toBeCloseTo(
+        0.4 * target[ch] + 0.6 * DEFAULT_OPERATIONAL.error[ch],
+        12
+      )
+    }
+  })
+
+  it('leaves the target untouched for states with no overlay', () => {
+    for (const state of ['working', 'thinking', 'done', 'idle', '', 'nonsense']) {
+      expect(withOverlay(target, state, DEFAULT_OPERATIONAL)).toEqual(target)
+    }
+  })
+
+  it('stays loud however small the feel target is (P10)', () => {
+    // k is applied before this point and never scales the overlay, so a
+    // fully attenuated target still shows 60% of awaiting_input.
+    const attenuated = computeTarget([1, 1, 1], DEFAULT_ANCHORS, 0)
+    const shown = withOverlay(attenuated, 'awaiting_input', DEFAULT_OPERATIONAL)
+    expect(shown.gazeHeight).toBeCloseTo(0.6 * DEFAULT_OPERATIONAL.awaiting_input.gazeHeight, 12)
+  })
+
+  it('merges overlay overrides per channel', () => {
+    const merged = mergeOperational(DEFAULT_OPERATIONAL, { error: { mouthCurve: -1 } })
+    expect(merged.error.mouthCurve).toBe(-1)
+    expect(merged.error.browKnit).toBe(DEFAULT_OPERATIONAL.error.browKnit)
+    expect(merged.awaiting_input).toEqual(DEFAULT_OPERATIONAL.awaiting_input)
+    expect(mergeOperational(DEFAULT_OPERATIONAL)).toEqual(DEFAULT_OPERATIONAL)
+  })
+})
+
+describe('transition ease (SPEC §6)', () => {
+  // Drive one channel from 0 to 1 on a 60fps grid and record the path.
+  function travel(dtMs = 1000 / 60, steps = 120): number[] {
+    let value = 0
+    let velocity = 0
+    const path: number[] = []
+    for (let i = 0; i < steps; i++) {
+      const step = easeStep(value, velocity, 1, dtMs)
+      value = step.value
+      velocity = step.velocity
+      path.push(value)
+    }
+    return path
+  }
+
+  it('settles to ~98% of the travel within TRANSITION_MS and never overshoots', () => {
+    const dtMs = 1000 / 60
+    const path = travel(dtMs)
+    const atTransition = path[Math.round(TRANSITION_MS / dtMs) - 1]
+    expect(atTransition).toBeGreaterThan(0.97)
+    expect(Math.max(...path)).toBeLessThanOrEqual(1)
+  })
+
+  it('is monotone — critically damped, so no ringing back past the target', () => {
+    const path = travel()
+    for (let i = 1; i < path.length; i++) expect(path[i]).toBeGreaterThanOrEqual(path[i - 1])
+  })
+
+  it('a long frame gap lands where the small steps do, not past the target', () => {
+    const short = travel(10, 70)
+    const long = easeStep(0, 0, 1, 700)
+    expect(long.value).toBeCloseTo(short[short.length - 1], 6)
+    expect(long.value).toBeLessThan(1)
+  })
+
+  it('holds once it has arrived', () => {
+    const settled = easeStep(1, 0, 1, 5000)
+    expect(settled.value).toBe(1)
+    expect(settled.velocity).toBe(0)
+  })
+})
+
+describe('resolveFeel (SPEC §§4, 13)', () => {
+  it('merges valid overrides and clamps expressiveness into [0, 10]', () => {
+    const resolved = resolveFeel({
+      anchors: { neutral: { eyeOpen: 0.5 } },
+      operational: { error: { mouthCurve: -1 } },
+      expressiveness: 2.5
+    })
+    expect(resolved.anchors.neutral.eyeOpen).toBe(0.5)
+    expect(resolved.anchors['+++']).toEqual(DEFAULT_ANCHORS['+++'])
+    expect(resolved.operational.error.mouthCurve).toBe(-1)
+    expect(resolved.expressiveness).toBe(2.5)
+    expect(resolveFeel({ expressiveness: 99 }).expressiveness).toBe(10)
+    expect(resolveFeel({ expressiveness: -1 }).expressiveness).toBe(0)
+  })
+
+  it('falls back to the shipped defaults for anything malformed (P7)', () => {
+    expect(resolveFeel({}).anchors).toEqual(DEFAULT_ANCHORS)
+    expect(resolveFeel({}).expressiveness).toBe(1)
+    expect(resolveFeel({ expressiveness: 'loud' }).expressiveness).toBe(1)
+    for (const anchors of [
+      { unknownKey: { eyeOpen: 0 } },
+      { neutral: { unknownChannel: 0 } },
+      { neutral: { eyeOpen: 2 } },
+      { neutral: { eyeOpen: 'wide' } },
+      { neutral: null },
+      'anchors'
+    ]) {
+      expect(resolveFeel({ anchors }).anchors).toEqual(DEFAULT_ANCHORS)
+    }
+    expect(resolveFeel({ operational: { idle: { eyeOpen: 0 } } }).operational).toEqual(
+      DEFAULT_OPERATIONAL
+    )
   })
 })

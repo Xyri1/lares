@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import presetJson from '../../../../presets/default.json'
+import { computeTarget, DEFAULT_ANCHORS } from '../feel/feel'
 import { createSynth, mulberry32, type SynthFeed, type SynthPreset } from '../synth/synth'
 import { driveTick, replayHistory } from './synthReplay'
 
@@ -7,10 +8,10 @@ const PRESET = presetJson as SynthPreset
 
 function feedAt(tick: number): SynthFeed {
   return {
-    E: {
-      valence: 0.8 * Math.sin(tick / 5),
-      arousal: 0.5 + 0.45 * Math.sin(tick / 3)
-    }
+    pose: computeTarget(
+      [Math.sin(tick / 5), Math.sin(tick / 3), Math.cos(tick / 7)],
+      DEFAULT_ANCHORS
+    )
   }
 }
 

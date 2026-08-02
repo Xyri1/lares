@@ -1,4 +1,12 @@
 import defaultPresetJson from '../../../../presets/default.json'
+import {
+  computeTarget,
+  withOverlay,
+  DEFAULT_FEEL,
+  type FeelConfig,
+  type FeelPoses,
+  type Pose
+} from '../feel/feel'
 import type { IRuntime } from '../runtime/iface'
 import { createSynth, mulberry32, type Synth, type SynthFeed, type SynthPreset } from '../synth/synth'
 import { composeFrame, initialFade, type CueParams, type FadeState, type StackEntry } from './compose'
@@ -47,12 +55,8 @@ export interface AffectDriver {
    * Leaves the trace buffer alone — the overlay is history, not state. */
   reset(): void
   /** Tentatively refresh model defaults; finalize stops package-specific playback. */
-  characterChanged(preset?: SynthPreset): CharacterChangeTransaction
+  characterChanged(preset?: SynthPreset, poses?: FeelPoses): CharacterChangeTransaction
 }
-
-/** What a stage's synth reads, plus the expression stack the compositor
- * reads — one object per feed message, so both stay in lockstep. */
-type StageFeed = SynthFeed & { expressionStack?: readonly StackEntry[] }
 
 // Per-stage state: own runtime, own synth instances, own rng stream (one
 // mulberry32 per stage seeded with the SAME seed — stages never consume each
@@ -63,13 +67,12 @@ interface StageState {
   defaults: Record<string, number>
   /** Every id this stage has ever written — see `write()`. */
   driven: Set<string>
-  feed: StageFeed
+  feed: SynthFeed
   live: Synth
   fade: FadeState
   replay: { synth: Synth; preset: SynthPreset; seed: number; lines: string[] } | null
   latest: Record<string, number> | null
   trace: TraceBuffer
-  motionCue: string | null
 }
 
 /** Preview values win only for their own knobs; synth keeps driving the rest. */
@@ -140,11 +143,32 @@ export function createAffectDriver(
   runtime: IRuntime,
   preset: SynthPreset,
   cues: CueParams,
-  motions: CueMotions = {}
+  motions: CueMotions = {},
+  feel: FeelConfig = DEFAULT_FEEL
 ): AffectDriver {
-  // Rest-point feed so a Lar idles before any brain tick arrives.
-  const restFeed = (): StageFeed => ({ E: { valence: 0.1, arousal: 0.25 } })
   let idlePreset = preset
+  let poses: FeelPoses = feel
+  // Expressiveness is app config, read once at launch (SPEC §4) — a character
+  // switch replaces the poses around it, never the constant itself.
+  const expressiveness = feel.expressiveness
+
+  // An empty register performs the authored neutral anchor: resting
+  // presentation, not feel(0, 0, 0) (SPEC §11).
+  const restFeed = (): SynthFeed => ({ pose: poses.anchors.neutral })
+
+  /** Wire integer → normalized axis; junk reads as 0 rather than as NaN (P7). */
+  const axis = (value: number): number => (Number.isFinite(value) ? value / 2 : 0)
+
+  /** Feed message → the pose the body performs (SPEC §§4, 11). */
+  const poseFor = (f: AffectFeed): Pose => {
+    const p = f.feel
+    const target = computeTarget(
+      p ? [axis(p.valence), axis(p.activation), axis(p.control)] : [0, 0, 0],
+      poses.anchors,
+      expressiveness
+    )
+    return withOverlay(target, f.operational, poses.operational)
+  }
 
   const makeStage = (rt: IRuntime): StageState => ({
     runtime: rt,
@@ -155,8 +179,7 @@ export function createAffectDriver(
     fade: initialFade(),
     replay: null,
     latest: null,
-    trace: createTraceBuffer(),
-    motionCue: null
+    trace: createTraceBuffer()
   })
 
   const stages: Partial<Record<StageId, StageState>> = { A: makeStage(runtime) }
@@ -179,10 +202,12 @@ export function createAffectDriver(
     return r.params
   }
 
+  // The feed carries no expression stack any more (SPEC §13); the compositor
+  // stays in the replay path for the panel preview, which prepends its own.
   const composer =
     (st: StageState) =>
-    (params: Record<string, number>, feed: StageFeed, tMs: number): Record<string, number> =>
-      compose(st, params, feed.expressionStack ?? [], tMs)
+    (params: Record<string, number>, _feed: SynthFeed, tMs: number): Record<string, number> =>
+      compose(st, params, [], tMs)
 
   // Transient panel preview, stage A only. ponytail: ignored while a replay
   // runs — the replay's composed output must stay a pure function of the feed
@@ -232,13 +257,10 @@ export function createAffectDriver(
   const processFeed = (f: AffectFeed): void => {
     const st = stages[f.stageId as StageId]
     if (!st) return
-    st.feed = f
-    const motion = nextMotionCue(st.motionCue, f.expressionStack ?? [], motions, f.tick * 100)
-    st.motionCue = motion.next
-    if (motion.play) playMotionRef(st.runtime, motion.play)
+    st.feed = { pose: poseFor(f) }
     if (!st.replay) return
     pushEngine(st.trace, f)
-    for (const frame of driveTick(st.replay.synth, f, f.tick, composer(st))) {
+    for (const frame of driveTick(st.replay.synth, st.feed, f.tick, composer(st))) {
       st.replay.lines.push(frameToLine(frame))
       st.trace.synth.push(frame)
       st.latest = frame.params
@@ -269,14 +291,14 @@ export function createAffectDriver(
       st.fade = initialFade()
       const replayed = replayHistory(
         () => createSynth(rp.preset, mulberry32(rp.seed)),
-        mine,
+        mine.map((f): SynthFeed => ({ pose: poseFor(f) })),
         () => composer(st)
       )
       rp.synth = replayed.synth
       rp.lines = replayed.frames.map(frameToLine)
       st.trace.synth.push(...replayed.frames)
       if (replayed.frames.length) st.latest = replayed.frames[replayed.frames.length - 1].params
-      if (mine.length) st.feed = mine[mine.length - 1]
+      if (mine.length) st.feed = { pose: poseFor(mine[mine.length - 1]) }
     }
   })
 
@@ -350,7 +372,7 @@ export function createAffectDriver(
         // Replay frames were composed on tick arrival, on the scenario clock.
         if (st.latest) withAuthoring(id, st, st.latest)
       } else {
-        const stack = previewed(id, st.feed.expressionStack ?? [])
+        const stack = previewed(id, [])
         const frame = compose(st, st.live.computeFrame(st.feed, now), stack, now)
         withAuthoring(id, st, frame)
       }
@@ -384,7 +406,6 @@ export function createAffectDriver(
       st.feed = restFeed()
       st.fade = initialFade()
       st.driven.clear()
-      st.motionCue = null
       st.runtime.resetParams()
     }
   }
@@ -458,11 +479,15 @@ export function createAffectDriver(
     reset(): void {
       reset()
     },
-    characterChanged(nextPreset: SynthPreset = defaultPreset): CharacterChangeTransaction {
+    characterChanged(
+      nextPreset: SynthPreset = defaultPreset,
+      nextPoses: FeelPoses = DEFAULT_FEEL
+    ): CharacterChangeTransaction {
       const st = stages.A!
       const bufferedFeeds: AffectFeed[] = []
       const before = {
         preset: idlePreset,
+        poses,
         preview,
         authoringPreview,
         defaults: st.defaults,
@@ -470,12 +495,12 @@ export function createAffectDriver(
         feed: st.feed,
         fade: st.fade,
         live: st.live,
-        latest: st.latest,
-        motionCue: st.motionCue
+        latest: st.latest
       }
       const rollback = (): void => {
         if (tentativeFeeds !== bufferedFeeds) return
         idlePreset = before.preset
+        poses = before.poses
         preview = before.preview
         authoringPreview = before.authoringPreview
         st.defaults = before.defaults
@@ -484,13 +509,13 @@ export function createAffectDriver(
         st.fade = before.fade
         st.live = before.live
         st.latest = before.latest
-        st.motionCue = before.motionCue
         tentativeFeeds = null
         for (const feed of bufferedFeeds) processFeed(feed)
       }
       try {
         tentativeFeeds = bufferedFeeds
         idlePreset = nextPreset
+        poses = nextPoses
         preview = null
         authoringPreview = null
         st.defaults = Object.fromEntries(st.runtime.parameters().map((p) => [p.id, p.default]))
@@ -499,7 +524,6 @@ export function createAffectDriver(
         st.fade = initialFade()
         st.live = createSynth(idlePreset, Math.random)
         st.driven = new Set()
-        st.motionCue = null
         st.runtime.resetParams()
         return {
           rollback,

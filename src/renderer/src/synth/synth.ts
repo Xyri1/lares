@@ -1,35 +1,32 @@
-// Body-side synth (root SPEC §4 idle modulation + slice SPEC §5 rung-(a)
-// trend curves). Pure: no pixi, no DOM, no Electron, no wall clock, no
-// Math.random — time and randomness are injected, so replay determinism
-// (002-D3) holds by construction. Live2D parameter ids arrive as preset
-// DATA; this code stays renderer-generic (P6).
+// Body-side synth (slice 013 SPEC §§5–6): the performance target pose in,
+// rig parameter values out. Pure: no pixi, no DOM, no Electron, no wall
+// clock, no Math.random — time and randomness are injected, so replay
+// determinism (002-D3) holds by construction. Live2D parameter ids arrive as
+// preset DATA and channel names are renderer-neutral; this code stays
+// renderer-generic (P6).
 
-/** The slice of the performance feed the synth reads. */
+import { CHANNELS, easeStep, type Channel, type Pose } from '../feel/feel'
+
+/** The slice of the performance feed the synth reads: one target pose. */
 export interface SynthFeed {
-  E: { valence: number; arousal: number }
+  pose: Pose
 }
 
-export interface TrendBinding {
+/** One static channel wired to a rig parameter (SPEC §5). */
+export interface ParamBinding {
   id: string
-  source: 'valence' | 'arousal'
+  source: Channel
   gain: number
   offset: number
-  /** Scales the whole contribution; defaults to 1. */
-  weight?: number
 }
 
-/** Mapping preset (slice SPEC §5): data, not code — lives under presets/. */
+/** Adapter wiring (SPEC §5/§13): data, not code — lives under presets/ and
+ * in each character's `renderers.live2d.performance` block. */
 export interface SynthPreset {
-  params: TrendBinding[]
+  params: ParamBinding[]
   idle: {
     breath: { id: string; basePeriodMs: number; amplitude: number }
-    blink: {
-      ids: string[]
-      baseIntervalMs: number
-      durationMs: number
-      /** Eye-openness trend from valence: openness base = 1 + gain·valence. */
-      valenceGain: number
-    }
+    blink: { ids: string[]; baseIntervalMs: number; durationMs: number }
     sway: { id: string; baseAmplitude: number; periodMs: number }
   }
 }
@@ -45,10 +42,9 @@ export function isSynthPreset(value: unknown): value is SynthPreset {
       (binding) =>
         typeof binding?.id !== 'string' ||
         binding.id === '' ||
-        (binding.source !== 'valence' && binding.source !== 'arousal') ||
+        !(CHANNELS as readonly string[]).includes(binding.source) ||
         !finite(binding.gain) ||
-        !finite(binding.offset) ||
-        (binding.weight !== undefined && !finite(binding.weight))
+        !finite(binding.offset)
     )
   ) {
     return false
@@ -66,7 +62,6 @@ export function isSynthPreset(value: unknown): value is SynthPreset {
     blink.baseIntervalMs > 0 &&
     finite(blink.durationMs) &&
     blink.durationMs > 0 &&
-    finite(blink.valenceGain) &&
     typeof sway?.id === 'string' &&
     sway.id !== '' &&
     finite(sway.baseAmplitude) &&
@@ -94,15 +89,20 @@ export interface Synth {
   /**
    * Per-frame parameter values at time tMs (scenario time in replay, wall
    * time live). Output key order is stable: preset param list order, then
-   * breath, blink ids, sway — the synth trace's byte format relies on it.
+   * breath, blink ids, sway, each id appearing at its first position — the
+   * synth trace's byte format relies on it.
    */
   computeFrame(feed: SynthFeed, tMs: number): Record<string, number>
 }
 
-// Stateful across frames (breath phase, blink schedule) but deterministic:
-// same preset + rng seed + (feed, tMs) sequence → same outputs.
+// Stateful across frames (eased pose, breath phase, blink schedule) but
+// deterministic: same preset + rng seed + (feed, tMs) sequence → same
+// outputs. Writer randomness (blink jitter, sway phase) is mechanical
+// renderer state and never reaches the pure mapping (SPEC §5).
 export function createSynth(preset: SynthPreset, rng: Rng): Synth {
   let lastTMs: number | null = null
+  let pose: Pose | null = null
+  const velocity = {} as Pose
   let breathPhase = 0 // cycles
   let nextBlinkAtMs: number | null = null
   let blinkStartedAtMs = -Infinity
@@ -110,27 +110,44 @@ export function createSynth(preset: SynthPreset, rng: Rng): Synth {
 
   return {
     computeFrame(feed: SynthFeed, tMs: number): Record<string, number> {
-      const { valence, arousal } = feed.E
-      const out: Record<string, number> = {}
-
-      // rung-(a) trend curves: value = (offset + gain·source) · weight
-      for (const p of preset.params) {
-        const src = p.source === 'valence' ? valence : arousal
-        out[p.id] = (p.offset + p.gain * src) * (p.weight ?? 1)
-      }
-
-      // breath — rate = base · (0.7 + 0.6·arousal); phase accumulates so
-      // rate changes bend the wave instead of jumping it.
       const dtMs = lastTMs === null ? 0 : Math.max(0, tMs - lastTMs)
       lastTMs = tMs
-      const breath = preset.idle.breath
-      breathPhase += ((0.7 + 0.6 * arousal) / breath.basePeriodMs) * dtMs
-      out[breath.id] = breath.amplitude * (0.5 - 0.5 * Math.cos(2 * Math.PI * breathPhase))
 
-      // blink — interval = base / (0.6 + 0.8·arousal), jittered ±25% by rng;
-      // openness base trends with valence, dips to 0 mid-blink (triangle).
+      // One fixed critically damped ease for every change, target and overlay
+      // alike (SPEC §6). The first frame snaps: nothing is on screen to
+      // travel from.
+      if (pose === null) {
+        pose = { ...feed.pose }
+        for (const ch of CHANNELS) velocity[ch] = 0
+      } else {
+        for (const ch of CHANNELS) {
+          const step = easeStep(pose[ch], velocity[ch], feed.pose[ch], dtMs)
+          pose[ch] = step.value
+          velocity[ch] = step.velocity
+        }
+      }
+
+      const out: Record<string, number> = {}
+
+      // static channels: value = offset + gain·channel
+      for (const p of preset.params) out[p.id] = p.offset + p.gain * pose[p.source]
+
+      // breath — period shortens with breathRate, depth scales amplitude
+      // (SPEC §13). Phase accumulates so a rate change bends the wave
+      // instead of jumping it.
+      const breath = preset.idle.breath
+      breathPhase += dtMs / (breath.basePeriodMs * (1 - 0.35 * pose.breathRate))
+      out[breath.id] =
+        breath.amplitude *
+        (1 + 0.5 * pose.breathDepth) *
+        (0.5 - 0.5 * Math.cos(2 * Math.PI * breathPhase))
+
+      // blink — interval shortens with blinkRate, jittered ±25% by rng. The
+      // envelope multiplies whatever the eyeOpen wiring already produced for
+      // these ids (1 where the character wires none), so the static channel
+      // survives its own blink.
       const blink = preset.idle.blink
-      const intervalMs = blink.baseIntervalMs / (0.6 + 0.8 * arousal)
+      const intervalMs = blink.baseIntervalMs * (1 - 0.4 * pose.blinkRate)
       if (nextBlinkAtMs === null) nextBlinkAtMs = tMs + intervalMs * (0.75 + 0.5 * rng())
       if (tMs >= nextBlinkAtMs) {
         blinkStartedAtMs = tMs
@@ -138,14 +155,13 @@ export function createSynth(preset: SynthPreset, rng: Rng): Synth {
       }
       const p01 = (tMs - blinkStartedAtMs) / blink.durationMs
       const envelope = p01 >= 1 ? 1 : p01 < 0.5 ? 1 - 2 * p01 : 2 * p01 - 1
-      const openness = (1 + blink.valenceGain * valence) * envelope
-      for (const id of blink.ids) out[id] = openness
+      for (const id of blink.ids) out[id] = (out[id] ?? 1) * envelope
 
-      // sway — fixed period, seeded phase, amplitude scaled by arousal
+      // sway — fixed period, seeded phase; channel −1 is still.
       const sway = preset.idle.sway
       out[sway.id] =
         sway.baseAmplitude *
-        (0.3 + arousal) *
+        (1 + pose.swayAmplitude) *
         Math.sin((2 * Math.PI * tMs) / sway.periodMs + swayPhaseRad)
 
       return out

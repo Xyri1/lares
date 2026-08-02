@@ -1,19 +1,23 @@
 {
   "params": [
-    { "id": "ParamBrowLY", "source": "valence", "gain": 1.4, "offset": 0.1 },
-    { "id": "ParamBrowRY", "source": "valence", "gain": 1.4, "offset": 0.1 },
-    { "id": "ParamBrowLForm", "source": "valence", "gain": 1.1, "offset": 0.1 },
-    { "id": "ParamBrowRForm", "source": "valence", "gain": 1.1, "offset": 0.1 },
-    { "id": "ParamMouthForm", "source": "valence", "gain": 1.8, "offset": 0.2 },
-    { "id": "ParamMouthOpenY", "source": "arousal", "gain": 0.6, "offset": 0.05 }
+    { "id": "ParamBrowLY", "source": "browRaise", "gain": 1.4, "offset": 0.1 },
+    { "id": "ParamBrowRY", "source": "browRaise", "gain": 1.4, "offset": 0.1 },
+    { "id": "ParamBrowLForm", "source": "browKnit", "gain": -1.1, "offset": 0.1 },
+    { "id": "ParamBrowRForm", "source": "browKnit", "gain": -1.1, "offset": 0.1 },
+    { "id": "ParamMouthForm", "source": "mouthCurve", "gain": 1.8, "offset": 0.2 },
+    { "id": "ParamMouthOpenY", "source": "mouthOpen", "gain": 0.6, "offset": 0.5 },
+    { "id": "ParamEyeLOpen", "source": "eyeOpen", "gain": 0.5, "offset": 1 },
+    { "id": "ParamEyeROpen", "source": "eyeOpen", "gain": 0.5, "offset": 1 },
+    { "id": "ParamEyeBallY", "source": "gazeHeight", "gain": 0.8, "offset": 0 },
+    { "id": "ParamAngleY", "source": "headPitch", "gain": 20, "offset": 0 },
+    { "id": "ParamBodyAngleY", "source": "lean", "gain": 12, "offset": 0 }
   ],
   "idle": {
     "breath": { "id": "ParamBreath", "basePeriodMs": 3000, "amplitude": 1 },
     "blink": {
       "ids": ["ParamEyeLOpen", "ParamEyeROpen"],
       "baseIntervalMs": 2400,
-      "durationMs": 140,
-      "valenceGain": 0.3
+      "durationMs": 140
     },
     "sway": { "id": "ParamBodyAngleX", "baseAmplitude": 10, "periodMs": 3600 }
   }

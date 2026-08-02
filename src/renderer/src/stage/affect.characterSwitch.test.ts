@@ -53,11 +53,8 @@ describe('AffectDriver character switching', () => {
     const feed: AffectFeed = {
       stageId: 'A',
       tick: 1,
-      E: { valence: 0, arousal: 0 },
-      M: { valence: 0, arousal: 0 },
-      baselineState: 'steady',
-      expressionStack: [],
-      beats: []
+      feel: { valence: 0, activation: 0, control: 0 },
+      operational: 'working'
     }
 
     driver.play('smooth-build', 1)
@@ -100,51 +97,45 @@ describe('AffectDriver character switching', () => {
         }
       }
     })
-    const driver = createAffectDriver(rt, PRESETS.default, {}, { Wave: 'Idle:0' })
+    const driver = createAffectDriver(rt, PRESETS.default, {})
     const feed: AffectFeed = {
       stageId: 'A',
       tick: 1,
-      E: { valence: 0, arousal: 0 },
-      M: { valence: 0, arousal: 0 },
-      baselineState: 'steady',
-      expressionStack: [],
-      beats: []
+      feel: { valence: 0, activation: 0, control: 0 },
+      operational: 'working'
     }
 
     driver.play('smooth-build', 1)
     affectUpdate?.(feed)
     const transaction = driver.characterChanged()
-    vi.mocked(rt.playMotion).mockClear()
     vi.mocked(rt.setParams).mockClear()
 
-    affectUpdate?.({
-      ...feed,
-      tick: 2,
-      expressionStack: [{ cueOrFreeform: 'Wave', weight: 1, expiryMs: 1000 }]
-    })
+    affectUpdate?.({ ...feed, tick: 2, feel: { valence: 2, activation: 1, control: -1 } })
 
     expect(driver.buffer().engine).toHaveLength(1)
-    expect(rt.playMotion).not.toHaveBeenCalled()
     expect(rt.setParams).not.toHaveBeenCalled()
 
     transaction.rollback()
 
     expect(driver.buffer().engine.map((entry) => entry.t)).toEqual([100, 200])
-    expect(rt.playMotion).toHaveBeenCalledWith('Idle', 0)
+    expect(driver.buffer().engine.at(-1)!.feel).toEqual({
+      valence: 1,
+      activation: 0.5,
+      control: -0.5
+    })
   })
 
   it('falls back to the bundled default preset when the incoming character has no performance mapping, and rollback restores the previous preset', () => {
     // Stand-in for an outgoing character with a legacy uppercase-ID mapping
     // (e.g. Haru), deliberately using ids the bundled default preset doesn't.
     const legacyPreset: SynthPreset = {
-      params: [{ id: 'PARAM_MOUTH_FORM', source: 'valence', gain: 1, offset: 0 }],
+      params: [{ id: 'PARAM_MOUTH_FORM', source: 'mouthCurve', gain: 1, offset: 0 }],
       idle: {
         breath: { id: 'PARAM_BREATH', basePeriodMs: 4000, amplitude: 1 },
         blink: {
           ids: ['PARAM_EYE_L_OPEN', 'PARAM_EYE_R_OPEN'],
           baseIntervalMs: 3500,
-          durationMs: 160,
-          valenceGain: 0.15
+          durationMs: 160
         },
         sway: { id: 'PARAM_ANGLE_X', baseAmplitude: 6, periodMs: 5000 }
       }

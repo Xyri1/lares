@@ -5,6 +5,7 @@ import expressivePreset from '../../../../presets/expressive.json'
 import { SCENARIO_CUES } from '../../../main/scenario/cues'
 import { loadScenario } from '../../../main/scenario/load'
 import { createStepper, traceLine, STEP_MS } from '../../../main/scenario/run'
+import { computeTarget, DEFAULT_ANCHORS } from '../feel/feel'
 import { createSynth, mulberry32, type SynthPreset } from '../synth/synth'
 import { driveTick, frameToLine } from './synthReplay'
 
@@ -22,9 +23,18 @@ function stageTrace(preset: SynthPreset): { engine: string[]; synth: string[] } 
   const engine: string[] = []
   const synthLines: string[] = []
   for (let t = 0; t <= stepper.endMs; t += STEP_MS) {
+    const tick = t / STEP_MS
     const snap = stepper.step(t)
     engine.push(traceLine(t, snap))
-    for (const frame of driveTick(synth, snap, t / STEP_MS)) synthLines.push(frameToLine(frame))
+    // The synth reads a target pose now, so the stages are driven by a fixed
+    // pose sequence instead of the engine snapshot (the feed cuts over at I3).
+    const feed = {
+      pose: computeTarget(
+        [Math.sin(tick / 50), Math.sin(tick / 30), Math.cos(tick / 70)],
+        DEFAULT_ANCHORS
+      )
+    }
+    for (const frame of driveTick(synth, feed, tick)) synthLines.push(frameToLine(frame))
   }
   return { engine, synth: synthLines }
 }

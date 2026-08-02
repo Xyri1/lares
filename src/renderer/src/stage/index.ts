@@ -1,4 +1,5 @@
 import presetJson from '../../../../presets/default.json'
+import { resolveFeel } from '../feel/feel'
 import { Live2DRuntime } from '../runtime/live2d'
 import { isSynthPreset, type SynthPreset } from '../synth/synth'
 import { createAffectDriver } from './affect'
@@ -65,13 +66,17 @@ async function boot(): Promise<void> {
     cues.flatMap((c) => (c.motion === undefined ? [] : [[c.name, c.motion]]))
   )
 
+  // Anchors, operational overlays and expressiveness ride the same bootstrap
+  // payload the character does; `expressiveness` is absent until the brain
+  // starts sending the hidden AppConfig field (013 I3), and 1 is the default.
   const driver = createAffectDriver(
     runtime,
     isSynthPreset(character.live2d.performance)
       ? character.live2d.performance
       : presetJson as SynthPreset,
     cueParams,
-    cueMotions
+    cueMotions,
+    resolveFeel(character)
   )
   let currentCharacter = character
   if (OVERLAY) {

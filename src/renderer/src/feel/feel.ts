@@ -4,6 +4,7 @@
 // module stays renderer-generic and knows nothing about rig parameters.
 
 import defaultAnchorsJson from './anchors.default.json'
+import defaultOperationalJson from './operational.default.json'
 
 /** The twelve performance channels (SPEC §2). Every channel is in [-1, 1]. */
 export type Channel =
@@ -121,3 +122,145 @@ export function mergeAnchors(defaults: AnchorSet, overrides?: AnchorOverrides): 
 
 /** Shipped default anchor set (SPEC §3), seeded from research/human-feeling-space.md. */
 export const DEFAULT_ANCHORS = defaultAnchorsJson as AnchorSet
+
+// ---------------------------------------------------------------------------
+// Operational overlay (SPEC §11)
+// ---------------------------------------------------------------------------
+
+/** The only two root §3 states that present visually in this slice. */
+export type OperationalKey = 'awaiting_input' | 'error'
+
+/** Highest root §3 priority first: awaiting_input outranks error (P10). */
+export const OPERATIONAL_KEYS: readonly OperationalKey[] = ['awaiting_input', 'error']
+
+export type OperationalPoses = Record<OperationalKey, Pose>
+export type OperationalOverrides = Partial<Record<OperationalKey, Partial<Pose>>>
+
+/** Shipped default overlay poses (SPEC §11). */
+export const DEFAULT_OPERATIONAL = defaultOperationalJson as OperationalPoses
+
+/** How much of the shown pose the overlay owns while it is up *(default)*. */
+const OVERLAY_WEIGHT = 0.6
+
+/**
+ * Composite the operational overlay over a feel target (SPEC §11). States
+ * without an overlay pass the target through untouched, so clearing one
+ * reveals the unchanged latched target. `k` never reaches this side — an
+ * awaiting_input Lar stays loud at any expressiveness (P10).
+ */
+export function withOverlay(target: Pose, operational: string, poses: OperationalPoses): Pose {
+  const key = OPERATIONAL_KEYS.find((candidate) => candidate === operational)
+  if (key === undefined) return target
+  const overlay = poses[key]
+  const out = {} as Pose
+  for (const ch of CHANNELS) out[ch] = target[ch] + (overlay[ch] - target[ch]) * OVERLAY_WEIGHT
+  return out
+}
+
+/** Per-channel overlay merge (SPEC §13) — same rule as `mergeAnchors`. */
+export function mergeOperational(
+  defaults: OperationalPoses,
+  overrides?: OperationalOverrides
+): OperationalPoses {
+  if (!overrides) return defaults
+  const merged = {} as OperationalPoses
+  for (const key of OPERATIONAL_KEYS) merged[key] = { ...defaults[key], ...overrides[key] }
+  return merged
+}
+
+// ---------------------------------------------------------------------------
+// Transition (SPEC §6)
+// ---------------------------------------------------------------------------
+
+/** The one fixed travel every target and overlay change eases through. */
+export const TRANSITION_MS = 700
+
+// Critically damped: ~98% of a step is travelled within TRANSITION_MS (the
+// 2% settling time of a critically damped second-order system is ≈ 5.8/ω).
+const OMEGA = 6 / TRANSITION_MS
+
+/**
+ * One channel of the critically damped ease, exact rather than the usual
+ * per-frame approximation — a long frame gap (throttled rAF, 64× replay)
+ * lands on the analytic value instead of overshooting.
+ */
+export function easeStep(
+  current: number,
+  velocity: number,
+  target: number,
+  dtMs: number
+): { value: number; velocity: number } {
+  const d = current - target
+  const decay = Math.exp(-OMEGA * dtMs)
+  const c = velocity + OMEGA * d
+  return {
+    value: target + (d + c * dtMs) * decay,
+    velocity: (velocity - OMEGA * c * dtMs) * decay
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Character-supplied feel data (SPEC §13)
+// ---------------------------------------------------------------------------
+
+/** The character-owned half: anchor and overlay poses, already merged. */
+export interface FeelPoses {
+  anchors: AnchorSet
+  operational: OperationalPoses
+}
+
+/** Plus expressiveness `k`, which is app config and is read once at launch. */
+export interface FeelConfig extends FeelPoses {
+  expressiveness: number
+}
+
+export const DEFAULT_FEEL: FeelConfig = {
+  anchors: DEFAULT_ANCHORS,
+  operational: DEFAULT_OPERATIONAL,
+  expressiveness: 1
+}
+
+/** Override block shape check for the IPC crossing (P7): known keys, known
+ * channels, values in range. Main already validates the same rules at load;
+ * this is the body refusing to build a pose out of anything else. */
+export function isPoseOverrides(value: unknown, keys: readonly string[]): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  return Object.entries(value).every(
+    ([key, pose]) =>
+      keys.includes(key) &&
+      typeof pose === 'object' &&
+      pose !== null &&
+      !Array.isArray(pose) &&
+      Object.entries(pose as Record<string, unknown>).every(
+        ([channel, v]) =>
+          (CHANNELS as readonly string[]).includes(channel) &&
+          typeof v === 'number' &&
+          v >= -1 &&
+          v <= 1
+      )
+  )
+}
+
+/** Resolve a character bootstrap payload into the config the stage runs on.
+ * Malformed data falls back to the shipped defaults rather than poisoning
+ * every pose with NaN. */
+export function resolveFeel(raw: {
+  anchors?: unknown
+  operational?: unknown
+  expressiveness?: unknown
+}): FeelConfig {
+  const k = raw.expressiveness
+  return {
+    anchors: mergeAnchors(
+      DEFAULT_ANCHORS,
+      isPoseOverrides(raw.anchors, ANCHOR_KEYS) ? (raw.anchors as AnchorOverrides) : undefined
+    ),
+    operational: mergeOperational(
+      DEFAULT_OPERATIONAL,
+      isPoseOverrides(raw.operational, OPERATIONAL_KEYS)
+        ? (raw.operational as OperationalOverrides)
+        : undefined
+    ),
+    expressiveness: typeof k === 'number' && Number.isFinite(k) ? Math.min(10, Math.max(0, k)) : 1
+  }
+}

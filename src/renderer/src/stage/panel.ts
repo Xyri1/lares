@@ -2,7 +2,7 @@ import presetJson from '../../../../presets/default.json'
 import type { Live2DRuntime } from '../runtime/live2d'
 import type { SynthPreset } from '../synth/synth'
 import type { AffectDriver } from './affect'
-import { drawOverlay, xToT, type OverlayToggles } from './overlayCanvas'
+import { drawOverlay, FEEL_AXES, xToT, type OverlayToggles } from './overlayCanvas'
 import { PRESETS } from './presets'
 
 const PANEL_WIDTH = 260 // must match #dev-panel width in index.html
@@ -196,18 +196,14 @@ function mountScenarioTab(
   section.appendChild(transportRow)
 
   const toggles: OverlayToggles = {
-    eValence: true,
-    eArousal: true,
-    mValence: false,
-    mArousal: false,
+    valence: true,
+    activation: true,
+    control: true,
     synthParams: new Set()
   }
   const togglesRow = document.createElement('div')
   togglesRow.append(
-    checkbox('E.valence', toggles.eValence, (v) => (toggles.eValence = v)),
-    checkbox('E.arousal', toggles.eArousal, (v) => (toggles.eArousal = v)),
-    checkbox('M.valence', toggles.mValence, (v) => (toggles.mValence = v)),
-    checkbox('M.arousal', toggles.mArousal, (v) => (toggles.mArousal = v))
+    ...FEEL_AXES.map((axis) => checkbox(axis, toggles[axis], (v) => (toggles[axis] = v)))
   )
   for (const p of (presetJson as SynthPreset).params) {
     togglesRow.appendChild(

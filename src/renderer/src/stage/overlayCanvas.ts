@@ -1,14 +1,12 @@
 // Dev-panel trace overlay: plain 2D canvas, no chart library (002 step 6,
-// decision 4). Draws E/M curves, a baseline-state band strip, and any
-// selected synth param curves over scenario time; click maps back to a
-// seek target using the same x<->t mapping the draw pass uses.
+// decision 4). Draws the normalized feel axes, an operational-state band
+// strip, and any selected synth param curves over scenario time; click maps
+// back to a seek target using the same x<->t mapping the draw pass uses.
 import type { TraceBuffer } from './traceBuffer'
 
-export interface OverlayToggles {
-  eValence: boolean
-  eArousal: boolean
-  mValence: boolean
-  mArousal: boolean
+export const FEEL_AXES = ['valence', 'activation', 'control'] as const
+
+export type OverlayToggles = Record<(typeof FEEL_AXES)[number], boolean> & {
   synthParams: Set<string>
 }
 
@@ -22,10 +20,9 @@ const BASELINE_COLORS: Record<string, string> = {
 }
 
 const CURVE_COLORS = {
-  eValence: '#ff6b6b',
-  eArousal: '#ffa94d',
-  mValence: '#4dabf7',
-  mArousal: '#94d82d'
+  valence: '#ff6b6b',
+  activation: '#ffa94d',
+  control: '#4dabf7'
 } as const
 
 const BAND_HEIGHT = 14
@@ -65,8 +62,8 @@ function drawCurve(
   ctx.beginPath()
   points.forEach((p, i) => {
     const x = tToX(p.t, width, maxT)
-    // valence ~[-1,1], arousal ~[0,1] — both fit the same [-1,1] vertical
-    // scale without per-curve rescaling (legible, not precise — decision 4).
+    // Every axis is normalized into [-1, 1], so one vertical scale fits all
+    // of them without per-curve rescaling (decision 4).
     const y = plotHeight - ((p.v + 1) / 2) * plotHeight
     if (i === 0) ctx.moveTo(x, y)
     else ctx.lineTo(x, y)
@@ -85,54 +82,25 @@ export function drawOverlay(
   const maxT = Math.max(buf.endMs, 1)
   const plotHeight = height - BAND_HEIGHT
 
-  // baseline-state band strip
+  // operational-state band strip
   for (let i = 0; i < buf.engine.length; i++) {
     const p = buf.engine[i]
     const next = buf.engine[i + 1]
     const x0 = tToX(p.t, width, maxT)
     const x1 = next ? tToX(next.t, width, maxT) : tToX(p.t + 100, width, maxT)
-    ctx.fillStyle = BASELINE_COLORS[p.baselineState] ?? '#888'
+    ctx.fillStyle = BASELINE_COLORS[p.operational] ?? '#888'
     ctx.fillRect(x0, plotHeight, Math.max(1, x1 - x0), BAND_HEIGHT)
   }
 
-  if (toggles.eValence) {
+  for (const axis of FEEL_AXES) {
+    if (!toggles[axis]) continue
     drawCurve(
       ctx,
-      buf.engine.map((p) => ({ t: p.t, v: p.E.valence })),
+      buf.engine.flatMap((p) => (p.feel ? [{ t: p.t, v: p.feel[axis] }] : [])),
       width,
       plotHeight,
       maxT,
-      CURVE_COLORS.eValence
-    )
-  }
-  if (toggles.eArousal) {
-    drawCurve(
-      ctx,
-      buf.engine.map((p) => ({ t: p.t, v: p.E.arousal })),
-      width,
-      plotHeight,
-      maxT,
-      CURVE_COLORS.eArousal
-    )
-  }
-  if (toggles.mValence) {
-    drawCurve(
-      ctx,
-      buf.engine.map((p) => ({ t: p.t, v: p.M.valence })),
-      width,
-      plotHeight,
-      maxT,
-      CURVE_COLORS.mValence
-    )
-  }
-  if (toggles.mArousal) {
-    drawCurve(
-      ctx,
-      buf.engine.map((p) => ({ t: p.t, v: p.M.arousal })),
-      width,
-      plotHeight,
-      maxT,
-      CURVE_COLORS.mArousal
+      CURVE_COLORS[axis]
     )
   }
   for (const id of toggles.synthParams) {
