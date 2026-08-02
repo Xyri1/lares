@@ -26,16 +26,34 @@ Lares turns an agent session into a continuously animated desktop character —
 a **Lar**. You can see it think, get stuck, wait, recover, and finish. You do
 not need to open another activity panel.
 
-Most agent pets map lifecycle events to fixed animations. Lares gives the
-model a tiny first-person interface — `feel(valence, activation, control)` —
-for projecting its current appraisal into the character. Lares turns that
-sparse report into a continuous, character-specific performance, locally and
-deterministically.
+## Why Lares is different
+
+Typical agent pets map lifecycle events to fixed reactions: working means
+busy, failure means sad, and completion means happy. They show what happened,
+but not how the model appraises the work.
+
+Lares keeps lifecycle events as an operational heartbeat, then adds a separate
+first-person channel. The model projects its contextual appraisal through
+`feel(valence, activation, control)` — unpleasant to pleasant, subdued to
+energized, and overwhelmed to in control. Lares turns that small report into
+a continuous, character-specific performance.
+
+`model appraisal → feel(v, a, c) → local deterministic performance → Lar`
 
 Lares does not read transcripts or model internals. The model reports its own
-state; hooks report only operational facts such as working or awaiting input.
+appraisal; hooks report only operational facts such as working or awaiting
+input.
 
-`agent appraisal → feel(v, a, c) → local character performance → Live2D`
+That expressiveness is intentionally cheap. Fixed event-driven pets need almost
+no model output but are limited to canned reactions. Asking an agent to author
+expressions, parameters, or animation curves would offer more freedom, but
+would burn tokens and could produce inconsistent motion. Lares asks for three
+bounded values when the agent's appraisal meaningfully changes; unchanged
+feelings produce no call. Everything continuous happens locally — no animation
+prompts, keyframes, or per-frame model inference.
+
+> Broad emotional range from sparse three-value reports — not a fixed reaction
+> list or a stream of animation tokens.
 
 ## Install
 
