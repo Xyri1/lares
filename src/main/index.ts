@@ -21,7 +21,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -1046,66 +1046,160 @@ function integrationLabel(harness: Harness): string {
 }
 
 function integrationResult(report: AgentIntegrationReport): {
-  message: string
-  detail: string
+  rows: IntegrationsResultRow[]
+  next: string[]
   manualCommands: string[]
 } {
   const manual: string[] = []
-  const messages = report.harnesses.map((result) => {
+  const rows = report.harnesses.map((result): IntegrationsResultRow => {
     const label = integrationLabel(result.harness)
-    if (result.status === 'configured') return L.agentIntegrationConfigured(label)
-    if (result.status === 'already-configured') return L.agentIntegrationAlreadyConfigured(label)
+    if (result.status === 'configured') {
+      return { status: 'ok', text: L.agentIntegrationConfigured(label) }
+    }
+    if (result.status === 'already-configured') {
+      return { status: 'ok', text: L.agentIntegrationAlreadyConfigured(label) }
+    }
     manual.push(...manualCommands(result.harness))
     return result.status === 'missing'
-      ? L.agentIntegrationMissing(label)
-      : L.agentIntegrationFailed(
-          label,
-          result.error ??
-            (result.reason === 'verification'
-              ? L.agentIntegrationsVerificationFailed
-              : L.agentIntegrationsUnknownError)
-        )
+      ? { status: 'skip', text: L.agentIntegrationMissing(label) }
+      : {
+          status: 'fail',
+          text: L.agentIntegrationFailed(
+            label,
+            result.error ??
+              (result.reason === 'verification'
+                ? L.agentIntegrationsVerificationFailed
+                : L.agentIntegrationsUnknownError)
+          )
+        }
   })
   const next = report.harnesses
     .filter((result) => result.status === 'configured' || result.status === 'already-configured')
     .map((result) =>
       result.harness === 'claude' ? L.agentIntegrationsClaudeNext : L.agentIntegrationsCodexNext
     )
-  return { message: messages.join('\n'), detail: next.join('\n'), manualCommands: manual }
+  return { rows, next, manualCommands: manual }
 }
 
+/** Only ever one integrations window; the tray item focuses it when open. */
+let integrationsWindow: BrowserWindow | null = null
+
+// Consent, live command ledger, and results in one window — the native
+// message boxes it replaces gave the multi-command CLI run no feedback at all.
 async function configureIntegrationsFromTray(): Promise<void> {
-  const report = await configureAgentIntegrations({
-    confirm: async () => {
-      const choice = await dialog.showMessageBox({
-        type: 'question',
-        title: L.agentIntegrationsConfirmTitle,
-        message: L.agentIntegrationsConfirmMessage,
-        detail: L.agentIntegrationsConfirmDetail,
-        buttons: [L.agentIntegrationsCancel, L.agentIntegrationsConfigure],
-        defaultId: 0,
-        cancelId: 0
-      })
-      return choice.response === 1
-    },
-    run: runAgentIntegrationCommand
-  })
-  if (!report.confirmed) return
-  const result = integrationResult(report)
-  const choice = await dialog.showMessageBox({
-    type: result.manualCommands.length ? 'warning' : 'info',
-    title: L.agentIntegrationsResultTitle,
-    message: result.message,
-    detail: result.detail,
-    buttons: result.manualCommands.length
-      ? [L.agentIntegrationsCopyCommands, L.agentIntegrationsDone]
-      : [L.agentIntegrationsDone],
-    defaultId: result.manualCommands.length ? 1 : 0,
-    cancelId: result.manualCommands.length ? 1 : 0
-  })
-  if (result.manualCommands.length && choice.response === 0) {
-    clipboard.writeText(result.manualCommands.join('\n'))
+  if (integrationsWindow) {
+    integrationsWindow.focus()
+    return
   }
+  const win = new BrowserWindow({
+    // Consent is a short read; the window grows when the command ledger opens.
+    width: 620,
+    height: 310,
+    useContentSize: true,
+    show: false,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    autoHideMenuBar: true,
+    title: L.agentIntegrationsResultTitle,
+    icon,
+    backgroundColor: '#f4f2f9',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+  integrationsWindow = win
+
+  const state: IntegrationsState = {
+    phase: 'confirm',
+    strings: {
+      confirmTitle: L.agentIntegrationsConfirmTitle,
+      message: L.agentIntegrationsConfirmMessage,
+      detail: L.agentIntegrationsConfirmDetail,
+      cancel: L.agentIntegrationsCancel,
+      configure: L.agentIntegrationsConfigure,
+      runningTitle: L.agentIntegrationsRunningTitle,
+      runningNote: L.agentIntegrationsRunningNote,
+      resultTitle: L.agentIntegrationsResultTitle,
+      nextTitle: L.agentIntegrationsNextSteps,
+      copy: L.agentIntegrationsCopyCommands,
+      done: L.agentIntegrationsDone
+    },
+    commands: []
+  }
+  const push = (): void => {
+    if (!win.isDestroyed()) win.webContents.send('integrations:state', state)
+  }
+  // The first push races the page load; re-push on load so no state is lost.
+  win.webContents.on('did-finish-load', push)
+
+  let manual: string[] = []
+  let confirmResolve: ((confirmed: boolean) => void) | null = null
+  const onAction = (event: Electron.IpcMainEvent, action: IntegrationsAction): void => {
+    if (event.sender !== win.webContents) return
+    if (action === 'configure' && confirmResolve) {
+      state.phase = 'running'
+      win.setContentSize(620, 560)
+      push()
+      confirmResolve(true)
+      confirmResolve = null
+    } else if (action === 'copy') {
+      clipboard.writeText(manual.join('\n'))
+      state.copied = true
+      push()
+    } else if (action === 'cancel' || action === 'done') {
+      win.close()
+    }
+  }
+  ipcMain.on('integrations:action', onAction)
+  win.on('closed', () => {
+    ipcMain.removeListener('integrations:action', onAction)
+    confirmResolve?.(false)
+    integrationsWindow = null
+  })
+  win.once('ready-to-show', () => win.show())
+  wireCommon(win, 'integrations', undefined, 'integrations.html')
+
+  let nextCommandId = 0
+  const report = await configureAgentIntegrations({
+    confirm: () =>
+      new Promise<boolean>((resolve) => {
+        confirmResolve = resolve
+      }),
+    run: async (command, args) => {
+      const cli = basename(command)
+        .replace(/\.(exe|cmd|bat)$/i, '')
+        .toLowerCase()
+      // The ledger shows the harness CLIs only — probe helpers (the login
+      // shell that resolves codex on macOS) stay out of it.
+      const row: IntegrationsCommandRow | null =
+        cli === 'claude' || cli === 'codex'
+          ? { id: nextCommandId++, text: `${cli} ${args.join(' ')}`, status: 'running' }
+          : null
+      if (row) {
+        state.commands.push(row)
+        push()
+      }
+      const result = await runAgentIntegrationCommand(command, args)
+      if (row) {
+        if (result.missing) {
+          // Candidate executable does not exist — nothing actually ran.
+          state.commands.splice(state.commands.indexOf(row), 1)
+        } else {
+          row.status = result.code === 0 ? 'ok' : 'fail'
+        }
+        push()
+      }
+      return result
+    }
+  })
+  if (!report.confirmed || win.isDestroyed()) return
+  const result = integrationResult(report)
+  manual = result.manualCommands
+  state.phase = 'result'
+  state.results = { rows: result.rows, next: result.next, hasManual: manual.length > 0 }
+  push()
 }
 
 /** Where she goes: the remembered spot snapped into a visible work area (A4),
@@ -1128,7 +1222,12 @@ function overlayBounds(
   }
 }
 
-function wireCommon(win: BrowserWindow, tag: string, query?: Record<string, string>): void {
+function wireCommon(
+  win: BrowserWindow,
+  tag: string,
+  query?: Record<string, string>,
+  page = 'index.html'
+): void {
   if (is.dev) {
     // Pipe renderer console to the terminal so `pnpm dev` failures are visible
     // without opening devtools.
@@ -1144,10 +1243,11 @@ function wireCommon(win: BrowserWindow, tag: string, query?: Record<string, stri
 
   if (IS_DEV_RUN) {
     const url = new URL(process.env['ELECTRON_RENDERER_URL']!)
+    url.pathname = `/${page}`
     for (const [k, v] of Object.entries(query ?? {})) url.searchParams.set(k, v)
     void win.loadURL(url.toString())
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'), { query })
+    void win.loadFile(join(__dirname, `../renderer/${page}`), { query })
   }
 }
 

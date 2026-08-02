@@ -99,6 +99,44 @@ interface CueListEntry {
   motion?: string
 }
 
+/** Agent-integrations window (brain→page full-state push over
+ * `integrations:state`); the page renders whatever phase it is handed and
+ * answers with `integrations:action`. All strings arrive pre-localized. */
+interface IntegrationsCommandRow {
+  id: number
+  /** Display form — executable basename plus args, not the full path. */
+  text: string
+  status: 'running' | 'ok' | 'fail'
+}
+
+interface IntegrationsResultRow {
+  /** `skip` = that harness's plugin manager is not installed — normal, not a failure. */
+  status: 'ok' | 'skip' | 'fail'
+  text: string
+}
+
+interface IntegrationsState {
+  phase: 'confirm' | 'running' | 'result'
+  strings: {
+    confirmTitle: string
+    message: string
+    detail: string
+    cancel: string
+    configure: string
+    runningTitle: string
+    runningNote: string
+    resultTitle: string
+    nextTitle: string
+    copy: string
+    done: string
+  }
+  commands: IntegrationsCommandRow[]
+  results?: { rows: IntegrationsResultRow[]; next: string[]; hasManual: boolean }
+  copied?: boolean
+}
+
+type IntegrationsAction = 'configure' | 'cancel' | 'copy' | 'done'
+
 interface LaresBridge {
   getCharacter(): Promise<CharacterPayload>
   getOverlayScale(): Promise<number>
@@ -144,6 +182,9 @@ interface LaresBridge {
   dragStart(at: { x: number; y: number }): void
   dragMove(at: { x: number; y: number }): void
   dragEnd(): void
+  /** Integrations window only. */
+  onIntegrationsState(cb: (state: IntegrationsState) => void): void
+  integrationsAction(action: IntegrationsAction): void
 }
 
 interface Window {

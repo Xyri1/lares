@@ -1,0 +1,235 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lares</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'unsafe-inline'"
+    />
+    <style>
+      /* Palette sampled from resources/icon.png — the Lar itself: hood
+         indigo, violet lining, gem cyan. The shell is a cool lavender-white
+         so the logo's warm face is the only warm note on the page; the dark
+         command-ledger inset is the inside of the hood. */
+      :root {
+        --mist: #f4f2f9;
+        --indigo: #221e50;
+        --dusk: #6f6a91;
+        --line: #d9d4e6;
+        --hood: #1e1a42;
+        --hood-text: #d9d5ec;
+        --violet: #7c5cd9;
+        --violet-soft: #9d86e8;
+        --gem: #28cde6;
+        --gem-deep: #0e7f9b;
+        --flare: #ef8f7c;
+        --flare-deep: #b8452f;
+        --mono: 'Cascadia Mono', Consolas, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        padding: 22px 26px 18px;
+        background: var(--mist);
+        color: var(--indigo);
+        font: 13px/1.6 system-ui, sans-serif;
+        user-select: none;
+      }
+      .masthead {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 12px;
+      }
+      .logo {
+        width: 48px;
+        height: 48px;
+        flex: 0 0 48px;
+      }
+      .eyebrow {
+        margin: 0 0 3px;
+        font: 11px var(--mono);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--violet);
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.3;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      #message {
+        margin: 0 0 8px;
+      }
+      #detail {
+        margin: 0;
+        color: var(--dusk);
+      }
+      #ledger {
+        flex: 1;
+        min-height: 0;
+        margin: 14px 0 0;
+        padding: 10px 12px;
+        overflow-y: auto;
+        background: var(--hood);
+        border-radius: 6px;
+        color: var(--hood-text);
+        font: 12px/1.9 var(--mono);
+      }
+      #ledger ol {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      #ledger li {
+        display: flex;
+        gap: 9px;
+        align-items: baseline;
+      }
+      .cmd {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .glyph {
+        flex: 0 0 12px;
+        text-align: center;
+      }
+      li.ok .glyph {
+        color: var(--gem);
+      }
+      li.fail .glyph {
+        color: var(--flare);
+      }
+      li.fail {
+        color: var(--flare);
+      }
+      /* Violet flame-breath while a command runs; the gem marks it done. */
+      .dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--violet-soft);
+        animation: breathe 1.6s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .dot {
+          animation: none;
+        }
+      }
+      #results {
+        margin: 14px 0 0;
+      }
+      #results p {
+        margin: 0 0 2px;
+        font-weight: 600;
+      }
+      #results .glyph {
+        display: inline-block;
+        width: 16px;
+      }
+      #results .ok .glyph {
+        color: var(--gem-deep);
+      }
+      #results .fail .glyph {
+        color: var(--flare-deep);
+      }
+      #results .skip {
+        color: var(--dusk);
+        font-weight: 400;
+      }
+      #next {
+        margin: 12px 0 0;
+      }
+      #next h2 {
+        margin: 0 0 2px;
+        font: 11px var(--mono);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--dusk);
+      }
+      #next p {
+        margin: 0 0 2px;
+        color: var(--dusk);
+      }
+      footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: auto;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+      }
+      button {
+        padding: 7px 18px;
+        border-radius: 6px;
+        font: 600 13px system-ui, sans-serif;
+        cursor: pointer;
+      }
+      button:focus-visible {
+        outline: 2px solid var(--violet);
+        outline-offset: 2px;
+      }
+      #primary {
+        border: 1px solid var(--hood);
+        background: var(--indigo);
+        color: #fff;
+      }
+      #primary:hover {
+        background: #332c6e;
+      }
+      #secondary {
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--indigo);
+      }
+      #secondary:hover {
+        background: rgba(34, 30, 80, 0.06);
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="masthead">
+      <img class="logo" id="logo" alt="" aria-hidden="true" />
+      <div>
+        <p class="eyebrow">Lares</p>
+        <h1 id="title"></h1>
+      </div>
+    </header>
+    <p id="message"></p>
+    <p id="detail"></p>
+    <section id="ledger" hidden><ol id="commands"></ol></section>
+    <section id="results" hidden></section>
+    <section id="next" hidden>
+      <h2 id="next-title"></h2>
+      <div id="next-lines"></div>
+    </section>
+    <footer>
+      <button id="secondary" type="button"></button>
+      <button id="primary" type="button"></button>
+    </footer>
+    <script type="module" src="./src/integrations/index.ts"></script>
+  </body>
+</html>

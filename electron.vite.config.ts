@@ -12,6 +12,14 @@ export default defineConfig({
     // Vite's default 5173 falls inside a Windows WinNAT excluded port range
     // on some machines (netsh interface ipv4 show excludedportrange), and
     // binding ::1 is what actually fails — pin IPv4 loopback + a safe port.
-    server: { host: '127.0.0.1', port: 5300 }
+    server: { host: '127.0.0.1', port: 5300 },
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          integrations: resolve('src/renderer/integrations.html')
+        }
+      }
+    }
   }
 })

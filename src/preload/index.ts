@@ -80,6 +80,12 @@ const lares = {
   },
   dragEnd: (): void => {
     ipcRenderer.send('window:dragEnd')
+  },
+  onIntegrationsState: (cb: (state: IntegrationsState) => void): void => {
+    ipcRenderer.on('integrations:state', (_event, state: IntegrationsState) => cb(state))
+  },
+  integrationsAction: (action: IntegrationsAction): void => {
+    ipcRenderer.send('integrations:action', action)
   }
 }
 
