@@ -1,16 +1,16 @@
 {
   "params": [
-    { "id": "ParamBrowLY", "source": "browRaise", "gain": 0.8, "offset": 0 },
-    { "id": "ParamBrowRY", "source": "browRaise", "gain": 0.8, "offset": 0 },
-    { "id": "ParamBrowLForm", "source": "browKnit", "gain": -0.7, "offset": 0 },
-    { "id": "ParamBrowRForm", "source": "browKnit", "gain": -0.7, "offset": 0 },
+    { "id": "ParamBrowLY", "source": "browRaise", "gain": 1, "offset": 0 },
+    { "id": "ParamBrowRY", "source": "browRaise", "gain": 1, "offset": 0 },
+    { "id": "ParamBrowLForm", "source": "browKnit", "gain": -1, "offset": 0 },
+    { "id": "ParamBrowRForm", "source": "browKnit", "gain": -1, "offset": 0 },
     { "id": "ParamMouthForm", "source": "mouthCurve", "gain": 1, "offset": 0 },
     { "id": "ParamMouthOpenY", "source": "mouthOpen", "gain": 0.5, "offset": 0.5 },
-    { "id": "ParamEyeLOpen", "source": "eyeOpen", "gain": 0.3, "offset": 1 },
-    { "id": "ParamEyeROpen", "source": "eyeOpen", "gain": 0.3, "offset": 1 },
-    { "id": "ParamEyeBallY", "source": "gazeHeight", "gain": 0.5, "offset": 0 },
-    { "id": "ParamAngleY", "source": "headPitch", "gain": 12, "offset": 0 },
-    { "id": "ParamBodyAngleY", "source": "lean", "gain": 8, "offset": 0 }
+    { "id": "ParamEyeLOpen", "source": "eyeOpen", "gain": 0.2, "offset": 0.8 },
+    { "id": "ParamEyeROpen", "source": "eyeOpen", "gain": 0.2, "offset": 0.8 },
+    { "id": "ParamEyeBallY", "source": "gazeHeight", "gain": 0.8, "offset": 0 },
+    { "id": "ParamAngleY", "source": "headPitch", "gain": 20, "offset": 0 },
+    { "id": "ParamBodyAngleY", "source": "lean", "gain": 10, "offset": 0 }
   ],
   "idle": {
     "breath": { "id": "ParamBreath", "basePeriodMs": 4000, "amplitude": 1 },

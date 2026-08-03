@@ -13,25 +13,25 @@
           {
             "id": "PARAM_BROW_L_Y",
             "source": "browRaise",
-            "gain": 0.8,
+            "gain": 1,
             "offset": 0
           },
           {
             "id": "PARAM_BROW_R_Y",
             "source": "browRaise",
-            "gain": 0.8,
+            "gain": 1,
             "offset": 0
           },
           {
             "id": "PARAM_BROW_L_FORM",
             "source": "browKnit",
-            "gain": -0.7,
+            "gain": -1,
             "offset": 0
           },
           {
             "id": "PARAM_BROW_R_FORM",
             "source": "browKnit",
-            "gain": -0.7,
+            "gain": -1,
             "offset": 0
           },
           {
@@ -49,31 +49,31 @@
           {
             "id": "PARAM_EYE_L_OPEN",
             "source": "eyeOpen",
-            "gain": 0.3,
-            "offset": 1
+            "gain": 0.2,
+            "offset": 0.8
           },
           {
             "id": "PARAM_EYE_R_OPEN",
             "source": "eyeOpen",
-            "gain": 0.3,
-            "offset": 1
+            "gain": 0.2,
+            "offset": 0.8
           },
           {
             "id": "PARAM_EYE_BALL_Y",
             "source": "gazeHeight",
-            "gain": 0.5,
+            "gain": 0.8,
             "offset": 0
           },
           {
             "id": "PARAM_ANGLE_Y",
             "source": "headPitch",
-            "gain": 12,
+            "gain": 20,
             "offset": 0
           },
           {
             "id": "PARAM_BODY_ANGLE_Y",
             "source": "lean",
-            "gain": 8,
+            "gain": 10,
             "offset": 0
           }
         ],

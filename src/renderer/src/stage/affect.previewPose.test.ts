@@ -77,8 +77,10 @@ describe('AffectDriver pose preview', () => {
   it('reports semantic input and the real rig clamp without logging animation frames', () => {
     let affectUpdate: ((feed: AffectFeed) => void) | undefined
     const rt = runtime()
+    // A rig whose eye range is narrower than the wiring's assumed [0, 1], so
+    // the snapshot's clamp report has something real to catch.
     vi.mocked(rt.parameters).mockReturnValue([
-      { id: 'ParamEyeLOpen', name: 'left eye', min: 0, max: 1, default: 1 }
+      { id: 'ParamEyeLOpen', name: 'left eye', min: 0, max: 0.8, default: 0.8 }
     ])
     Object.assign(globalThis, {
       requestAnimationFrame: vi.fn(),
@@ -118,7 +120,7 @@ describe('AffectDriver pose preview', () => {
       expressiveness: 10
     })
     expect(snapshots[0].bindings.find((binding) => binding.id === 'ParamEyeLOpen')).toMatchObject({
-      value: 1,
+      value: 0.8,
       clipped: true,
       missing: false
     })
