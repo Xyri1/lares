@@ -1,12 +1,12 @@
 # Slice 013 — Feel · DECISIONS
 
 **Artifact:** Slice DECISIONS · **Slice:** 013-feel ·
-**Status:** Draft; eleven choices proposed for maintainer review ·
-**Date:** 2026-08-02
+**Status:** Historical design draft; implemented contract lives in root
+artifacts and slice SPEC · **Date:** 2026-08-03
 
-These rows record the design implied by the research and maintainer discussion.
-They do not amend root decisions or authorize implementation until this draft
-is accepted.
+These rows record the proposals that produced the implemented contract. Their
+original proposal labels are preserved as design history; root DECISIONS and
+SPEC now bind. D36 makes the behavioral matrix continuous assessment.
 
 **013-D1 — One three-axis first-person feeling action.** *Draft choice:*
 replace the model-facing cue/freeform emotion interface with
@@ -259,10 +259,9 @@ mirrored by today's preset fallback; the judgment part cannot be automated
 past proposal anyway, so deferring its ergonomics costs capability to no one.
 *Status:* proposed 2026-08-02 by maintainer direction ("defer").
 
-## Proposed supersession map
+## Applied supersession map
 
-If these rows are accepted, later root edits must make the following changes
-explicit:
+I6 applied the following changes to the root artifacts:
 
 | Existing artifact | Slice 013 effect |
 |---|---|

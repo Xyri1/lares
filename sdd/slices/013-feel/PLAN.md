@@ -1,8 +1,8 @@
 # Slice 013 — Feel · PLAN
 
 **Artifact:** Slice PLAN · **Slice:** 013-feel ·
-**Status:** I1–I5 complete; I6 and G1 open ·
-**Date:** 2026-08-02
+**Status:** I1–I6 complete; G1 closed as terminal gate ·
+**Date:** 2026-08-03
 
 Implements the approved slice per SPEC v0.2. Work lands on a slice
 branch; every commit typechecks and passes vitest, and runtime behavior
@@ -87,7 +87,7 @@ roughly one reviewable commit series.
   output plus live MCP→feel→feed→renderer tracing. Delete the second
   stage and comparison-only preset.
 
-## I6 — Root artifact edits — open
+## I6 — Root artifact edits — complete
 
 - Apply SPEC §15's delta table to root SPEC §§2–9.
 - PRINCIPLES: replace P8 per the approved supersession map; PRINCIPLES
@@ -95,14 +95,15 @@ roughly one reviewable commit series.
 - DECISIONS: retire/annotate D07, D09, D25 (cue semantics), D26/D34
   reframe, D28, D35 per the map; ROADMAP marks the slice.
 
-## G1 — Acceptance — open
+## G1 — Continuous assessment — closed as terminal gate
 
-- Run 013-S1…S11 (SPEC §14) post-migration on both adapters with real
-  models, shipped anchors, 400px viewing; forced-choice recordings
-  normative, parameter deltas diagnostic.
-- Anchor/wiring calibration pass with the `expressiveness` knob for
-  amplitude experiments; results feed anchor values, never the wire.
-- Gate closes on the §14 bars; anchor wording of 013-D2 seals here.
+- Closed by maintainer direction on 2026-08-03: model behavior and
+  human-visible rig quality require continuous reassessment, so one run
+  cannot permanently seal them.
+- SPEC §14 remains the repeatable matrix after material model, guidance,
+  anchor, or wiring changes; findings feed M2b tuning, never the wire.
+- This closure records no pass for the unrun real-model/viewer matrix
+  (D36).
 
 ## Notes and risks
 

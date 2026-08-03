@@ -1,14 +1,14 @@
 # Slice 013 — Feel · SPEC
 
-**Artifact:** Slice SPEC · **Slice:** 013-feel · **Status:** Draft v0.2 —
-complete · **Date:** 2026-08-02
+**Artifact:** Slice SPEC · **Slice:** 013-feel · **Status:** Accepted for
+current implementation; continuous assessment · **Date:** 2026-08-03
 
 **Coverage.** §§1–7 specify the engine: the per-session register and the
 deterministic, memoryless mapping from the latched `feel` tuple to a
 renderer-neutral performance target (013-D3/D5/D7). §§8–15 complete the
 slice contract: the model-facing tool, session attribution and display
 selection, the prompt-submit checkpoint, operational presentation,
-durable storage, character package changes, acceptance scenarios, and
+durable storage, character package changes, assessment scenarios, and
 the root-SPEC delta list. Lar-to-harness binding and hibernation/wake
 presentation belong to slice 014 (013-D8); same-harness concurrency is
 separately deferred; migration and deletion order belong to PLAN.
@@ -42,7 +42,7 @@ valid `feel()` call.
 
 The performance target is a vector of scalar channels, each in
 `[-1, 1]`. Channels are renderer-neutral: they name observable body
-behavior, never rig parameters. Draft channel set:
+behavior, never rig parameters. Current channel set:
 
 | Channel | −1 | +1 |
 |---|---|---|
@@ -59,8 +59,9 @@ behavior, never rig parameters. Draft channel set:
 | `breathDepth` | shallow | deep |
 | `blinkRate` | sparse | frequent |
 
-The set is draft-normative: renames and small additions are calibration
-work, but the five families — face, gaze/head, posture, movement
+The set is normative for the current implementation: renames and small
+additions remain calibration work, but the five families — face,
+gaze/head, posture, movement
 energy, timing — are required, because axis legibility at normal Lar
 size cannot be carried by the face alone (research:
 human-feeling-space).
@@ -377,11 +378,12 @@ expressionStack, beats }` with `{ feel: {valence, activation, control}
 selects the neutral anchor (§11). `authoring:preview`/`revert`,
 `body:inventory`, and the transactional load interface are unchanged.
 
-## 14. Acceptance scenarios
+## 14. Continuous assessment scenarios
 
-Evaluation runs post-migration (013-D6 direction: no test-before-delete
-gate) with real models on both adapters, the shipped default anchors,
-and viewing at the root §7 default Lar size (400 logical px).
+Run this matrix after material changes to models, guidance, anchors, or
+wiring, with real models on both adapters, the shipped default anchors,
+and viewing at the root §7 default Lar size (400 logical px). D36 closes
+it as a terminal gate without claiming an unrun matrix passed.
 
 Model behavior — pass is majority-of-runs unless stated:
 
@@ -436,7 +438,7 @@ axis directions read the same while identities differ (P5).
 within budget and a `feel` attempt receives connection-refused; the
 standing copy says continue silently.
 
-## 15. Root-SPEC deltas at acceptance
+## 15. Root-SPEC deltas
 
 | Root section | Delta |
 |---|---|
@@ -450,4 +452,5 @@ standing copy says continue silently.
 | §9 | S1–S12 replaced by §14 (S2/S5 reshaped as 013-S7/S6; S9/S10 carried as 013-S11/S8) |
 
 Migration order, deletion list, and golden-scenario re-authoring belong
-to PLAN. Root edits land only at acceptance, per the slice convention.
+to PLAN. Root edits landed in I6 after explicit maintainer approval;
+D36 retains §14 as continuous assessment rather than a terminal gate.

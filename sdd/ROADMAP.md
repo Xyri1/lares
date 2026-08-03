@@ -1,6 +1,6 @@
 # ROADMAP — Lares
 
-**Artifact:** ROADMAP · **Project:** Lares · **Status:** Living · **Date:** 2026-08-02
+**Artifact:** ROADMAP · **Project:** Lares · **Status:** Living · **Date:** 2026-08-03
 
 Milestones are gated, not dated: each closes on its exit gate, and a slice doc set (SPEC, DECISIONS, PLAN under `sdd/slices/NNN-name/`) attaches per milestone. Sequence reflects dependency order, not importance.
 
@@ -25,14 +25,14 @@ The affect engine and cue stack above remain historical close-out evidence; slic
 
 ## M2b — Performance
 
-The original D28 history-through-cues tuning ladder is superseded by slice 013 and receives no further work. Human-judged performance tuning resumes against the deterministic `feel`→performance mapping after slice 013 defines it; recordings at default Lar size (400 logical px model height, root §7) remain normative.
-**Exit gate:** the slice 013 behavioral and visible-performance criteria pass at the threshold its SPEC defines.
+The original D28 history-through-cues tuning ladder is superseded by slice 013 and receives no further work. Root §9 / 013-S1–S11 now form a continuous assessment matrix for the deterministic `feel`→performance path, repeated when models, guidance, anchors, or wiring materially change. Findings create bounded tuning work here; they do not keep slice 013 or launch permanently open.
+**Status:** non-blocking continuous track; G1 closed as a terminal gate by D36.
 
 ## M1b — Skeleton
 
 Electron overlay chrome with the D13 care items: frameless transparent always-on-top window, forwarded-event click-through with model hit-testing, create-hidden-show-after-first-paint, drag with position memory, single-instance lock, screen-edge spawn sanity.
 **Exit gate:** a Lar stands on the desktop on macOS and Windows — alpha-clean (no fringing on either OS), click-through outside the body, draggable, surviving restart in place.
-M2b is human-paced (weekly A/B rounds with dead time between); M1b may interleave with it — sequence is dependency order, not calendar.
+M2b is human-paced; future slice-013 assessment may interleave with implementation work — sequence is dependency order, not calendar.
 **Closed 2026-07-27** — A1–A8 green on Windows, smoke green on macOS; close-out notes in `sdd/slices/003-skeleton/PLAN.md`. The gate defect worth remembering: the model's one authored hit area covered her torso and nothing else, so A6 failed on it and 003-D3's pre-decided per-pixel alpha fallback shipped — the silhouette is the hit area.
 
 ## M3a — Nerves
@@ -41,13 +41,13 @@ Loopback HTTP server in main: event route + streamable-HTTP MCP endpoint; discov
 **Exit gate:** synthetic clients over real loopback HTTP (event route + MCP) drive the Lar end-to-end — caps enforced (S10-class checks), daemon down/up degrading gracefully (S9). Agent-verifiable, no real harness required.
 **Closed 2026-07-27** — 171 tests green on Windows and macOS, visual smoke confirmed on both; close-out notes in `sdd/slices/004-nerves/PLAN.md`. The gate defect worth remembering was in the contract, not the code: A8's 50ms forwarder budget was written spawn-inclusive, which process startup alone makes impossible — 004-D8 re-bound it to in-script time.
 **Post-close emoting research (2026-07-31):** slice `sdd/slices/011-interjection/` records the model-owned semantic-action direction: the agent voluntarily reports its own appraisal through the existing callable emote interface, independent of language and without Lares observing chain of thought or inferring from text. The discarded token branch has no SPEC or PLAN. Multilingual, cross-model, cross-harness behavioral evidence must justify any later instruction or protocol change (D34).
-**Host-guidance follow-up (2026-08-01):** slice `sdd/slices/012-host-guidance/` records the first fresh adoption failure after tool exposure was verified and opens a second, host-level instruction vector (012-D1). MCP remains the canonical emote contract; concise plugin-delivered context will reinforce it without moving appraisal into hooks. Delivery is session-scoped per host (012-D4): an app-owned `~/.claude/rules/lares.md` on Claude Code and `SessionStart.additionalContext` on Codex, both gated on app liveness and a hidden settings toggle; per-turn injection was tried (012-D2) and retired. Its emote-based A/B moment-coverage gate (G1) is superseded by slice 013's model-behavior gate.
-**Feel replacement (2026-08-02):** slice `sdd/slices/013-feel/` replaces the model-facing `emote(cue | params)` contract with the three-axis absolute `feel(valence, activation, control)` report. The fixed runtime cue vocabulary, freeform animation input, engine-owned emotional history, and hook-synthesized emotion are retired rather than retained as compatibility paths. Supplied Live2D expressions and motions may remain as character-owned calibration material; they are no longer agent-facing semantic choices.
+**Host-guidance follow-up (2026-08-01):** slice `sdd/slices/012-host-guidance/` records the first fresh adoption failure after tool exposure was verified and opens a second, host-level instruction vector (012-D1). MCP remains the canonical emote contract; concise plugin-delivered context will reinforce it without moving appraisal into hooks. Delivery is session-scoped per host (012-D4): an app-owned `~/.claude/rules/lares.md` on Claude Code and `SessionStart.additionalContext` on Codex, both gated on app liveness and a hidden settings toggle; per-turn injection was tried (012-D2) and retired. Its emote-based A/B moment-coverage gate (G1) was first superseded by slice 013's model-behavior matrix, then reclassified as continuous assessment by D36.
+**Feel replacement (slice 013):** `sdd/slices/013-feel/` replaces the model-facing `emote(cue | params)` contract with the three-axis absolute `feel(valence, activation, control)` report. The fixed runtime cue vocabulary, freeform animation input, engine-owned emotional history, and hook-synthesized emotion are retired rather than retained as compatibility paths. Supplied Live2D expressions and motions remain physical assets, not agent-facing semantic choices. I1–I6 are implemented and the root contract is updated. D36 closes G1 as a terminal gate without claiming the unrun matrix passed; real-model behavior, shipped-anchor calibration, and 400px forced-choice viewing continue under M2b when material changes warrant them.
 **Lar-instance binding follow-up (slice 014):** binding is deliberately outside slice 013. Slice 014 binds each Lar instance to one harness; another harness requires another Lar instance. Lares still launches every configured Lar, each in a visually identifiable hibernation presentation, and wakes the bound Lar on its first valid invocation. Hibernation is operational presentation rather than a neutral feeling: it does not clear a previously latched `feel` tuple, which becomes visible again on wake unless the waking invocation replaces it.
 
 ## M3b — Senses
 
-Claude Code adapter (command hooks incl. PostToolUseFailure and the `permission_prompt` Notification matcher, plus the MCP entry, auto-registered in one managed block — D29) and Codex adapter as a Lares plugin (hooks + MCP entry, GitHub-hosted marketplace, installed through Codex's own trust flow; JSONL fallback deleted — P11, D15 as amended). Harness skills are reinforcement only; both plugins now ship the same `emoting` skill. Verifications: Codex plugin-format and failure-signal recon against the installed version; one real-session emote-density measurement to calibrate D26's instruction wording.
+Claude Code adapter (command hooks incl. PostToolUseFailure and the `permission_prompt` Notification matcher, plus the MCP entry, auto-registered in one managed block — D29) and Codex adapter as a Lares plugin (hooks + MCP entry, GitHub-hosted marketplace, installed through Codex's own trust flow; JSONL fallback deleted — P11, D15 as amended). At close, both plugins carried the same reinforcement skill and the gate measured emote density; slice 013 later removed the skill and replaced that behavioral obligation with `feel()` acceptance.
 **Exit gate:** a real Claude Code session and a real Codex session simultaneously drive the Lar end-to-end — baseline states via hooks, emotes via MCP — with the daemon down/up cycle behaving as designed (connection refused ⇒ agents degrade gracefully).
 Live-smoke discovery (2026-07-28): Codex trust-reviews plugin hooks but never executes them (`plugin_hooks` removed upstream — D15 as amended), so the Codex half of the gate delivers MCP emotes only; the baseline-states half rides on the D15 design-around (user-level `~/.codex/hooks.json` writer). Slice 005 is frozen as implemented; slice 006 (`sdd/slices/006-codex-hooks/`) carries the writer and the remaining live checks, and closes this gate.
 **Closed 2026-07-28** — user-level hooks writer live on both channels (standalone CLI proven in the 006 prelim research, desktop app at the live gate) and both OSes; both harnesses drove the Lar simultaneously with down/up degrading as designed. The then-deferred D26 emote-density tuning is superseded by slice 013's model-behavior acceptance. Close-out notes in `sdd/slices/006-codex-hooks/PLAN.md`. The gate defect worth remembering: the plugin-hooks surface trust-reviews but never executes — caught by doing the prelim research live against the installed binary instead of trusting docs folklore.
@@ -57,15 +57,15 @@ Live-smoke discovery (2026-07-28): Codex trust-reviews plugin hooks but never ex
 Character package schema published (D08 shape: identity / expressions / renderer blocks) with the fully worked example. Expression auto-import from bundled `.exp3.json`/`.motion3.json`. Expression-authoring skill over the MCP surface (parameter inventory → compose → preview on the live character → user-accept → save). Import validation in-app plus the dev script.
 **Exit gate:** a stranger following only the published docs imports a third-party Live2D model and produces a working character package, including at least one agent-authored gap expression.
 Slice `sdd/slices/007-format/` opened 2026-07-28, scope settled by grilling: import as a dev script with directory-scan harvest (the model index is advisory — VTube-Studio-convention models index nothing; cue keys are artist names verbatim, null affect coords legal and emote-able), one brain-side exp3 apply path, four authoring tools with conversational user-accept, validation as a shared library function, docs with a synthetic worked example (Hiyori is the atypical reference; the commercial gate model stays local, never committed — D19). Calibration initiation is pull-only (D32); the tray dot + armed-mode surfacing lands at M5a. The gate stranger is a fresh docs-only agent session with the maintainer as the one human observer.
-**Closed 2026-07-29** — The maintainer accepted the outcome despite a contaminated docs-only protocol: a fresh stranger in a separate checkout imported commercial IceGirl, mapped 13 bundled expressions, discarded 7 non-emotive toggles, left 3 motions intentionally null, authored 2 accepted low-arousal gaps, validated with no errors, and rendered the Lar live. Source reads were needed to work around character selection, MCP startup ordering, and non-tool-backed discard/rename, so this is not a pristine usability claim. Re-run the cold documented flow after M5a's managed character, packaged-startup, and calibration surfaces settle; close-out evidence and the regression checklist are in `sdd/slices/007-format/PLAN.md`.
+**Closed 2026-07-29** — The maintainer accepted the outcome despite a contaminated docs-only protocol: a fresh stranger in a separate checkout imported commercial IceGirl, mapped 13 bundled expressions, discarded 7 non-emotive toggles, left 3 motions intentionally null, authored 2 accepted low-arousal gaps, validated with no errors, and rendered the Lar live. Source reads were needed to work around character selection, MCP startup ordering, and non-tool-backed discard/rename, so this is not a pristine usability claim. Slice 013 retires the cue-calibration rerun obligation; current package and visible-performance gates live in root §§5/9. Close-out evidence remains in `sdd/slices/007-format/PLAN.md`.
 
 **Post-close compatibility follow-up (2026-07-30):** slice `sdd/slices/010-format/` narrows the supported runtime to VTS-style Cubism SDK 3.0–4.2, explicitly rejects Cubism 2.1/5, adds an honest compatibility probe/report, and makes Haru the intended default after additive license/sound clearance. It extends the closed M4 path; it does not reopen or renumber slice 007.
 
 ## M5a — Ship
 
 Tray-only product shell, persistent R9 settings, DND, launch-at-login,
-managed character copies/import/switching (D33), and calibration
-surfacing per D32. The disclosed update check runs on launch and every
+managed character copies/import/switching (D33), and consented agent
+integration setup. The disclosed update check runs on launch and every
 24h while open, with a manual action; it never installs. Distribution
 is deliberately local at this gate: manually built unsigned macOS 13+
 universal DMG and Windows 10/11 x64 NSIS artifacts, with local-fixture
@@ -100,13 +100,13 @@ Windows installers to the public GitHub Release page, the sole public
 distribution channel. Release notes publish SHA-256 checksums, disclose
 the unsigned artifacts, and document the exact Gatekeeper/SmartScreen
 bypasses; production one-line installer URLs complete D30. Slice 013's
-replacement emotion criteria pass on recording—the one item that can
-bounce work back into M2b tuning. Bilingual
+continuous assessment can still bounce concrete regressions into M2b
+tuning, but it is not a standing launch gate. Bilingual
 README and docs (en, zh-CN, no preference); app-UI strings already
 bilingual per amended D22, leaving installer strings to localize with
 packaging here. Demo recordings cut from the scenario player. Launch.
-**Exit gate:** slice 013 criteria on recording; public GitHub Release.
+**Exit gate:** public GitHub Release with the distribution requirements above.
 
 ## Parking lot (post-v1, in no order)
 
-Multiple concurrent sessions within one harness, including per-session pets and affect isolation (D11's deferred half). Observer-LLM dual mode (D05's phase two). Agent-generated models, with the generation skill authoring pre-baked expression sets (D25). VRM/3D body attaching at the D31 performance feed, with its renderer block behind the D08 seam; richer body-mode feedback in the performance protocol (`status()` beyond active-body name — D31's deferred half); phase-2 service exploration. Additional harness adapters as community contributions via the protocol. Success-metrics regime, if ever wanted (D21 deferred it). Frame-rate governor and occlusion-paused rendering (v1 ships a flat 30fps cap — though Chromium already throttles a hidden window's rAF to ~0.2fps, observed at the M2a gate run, so part of this arrives for free). Further M2b tuning if slice 013's visible-performance gate exposes a gap.
+Multiple concurrent sessions within one harness, including per-session pets and feel isolation (D11's deferred half). Observer-LLM dual mode (D05's phase two). Agent-generated models and physical assets (D25). Interactive anchor/wiring calibration and authoring (013-D11). VRM/3D body attaching at the D31 performance feed, with its renderer block behind the D08 seam; richer body-mode feedback in `status()`; phase-2 service exploration. Additional harness adapters as community contributions via the protocol. Success metrics, if ever wanted (D21 deferred them). Frame-rate governor and occlusion-paused rendering. Further M2b tuning if slice 013's visible-performance gate exposes a gap.
