@@ -17,6 +17,7 @@ describe('createServer', () => {
   const feelArgs: unknown[] = []
   const latches = new Map<string, { valence: number; activation: number; control: number }>()
   const clients: Client[] = []
+  const traces: Parameters<NonNullable<ServerDeps['trace']>>[0][] = []
   let feelError: Error | null = null
   let app: ReturnType<typeof createServer>
   let port: number
@@ -25,6 +26,7 @@ describe('createServer', () => {
     ingested.length = 0
     feelCallers.length = 0
     feelArgs.length = 0
+    traces.length = 0
     latches.clear()
     feelError = null
     const deps: ServerDeps = {
@@ -43,7 +45,8 @@ describe('createServer', () => {
       }),
       checkpoint: (key) => latches.get(key),
       listParameters: () => [{ id: 'ParamMouthForm' }],
-      previewExpression: (args) => ({ preview: args })
+      previewExpression: (args) => ({ preview: args }),
+      trace: (event) => void traces.push(event)
     }
     app = createServer(deps)
     port = await app.start(0)
@@ -186,7 +189,9 @@ describe('createServer', () => {
 
     const sessionId = firstTransport.sessionId
     expect(sessionId).toBeTypeOf('string')
+    expect(traces).toContainEqual({ source: 'mcp', action: 'opened', session: `mcp:${sessionId}` })
     await firstTransport.terminateSession()
+    expect(traces).toContainEqual({ source: 'mcp', action: 'closed', session: `mcp:${sessionId}` })
     const closed = await fetch(url('/v1/mcp'), {
       method: 'POST',
       headers: {

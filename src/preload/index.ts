@@ -32,12 +32,8 @@ const lares = {
   onCharacterCancel: (cb: (id: number) => void): void => {
     ipcRenderer.on('character:cancel', (_event, id: number) => cb(id))
   },
-  playScenario: (
-    name: string,
-    seed: number,
-    speed: number,
-    presets?: StagePresets
-  ): Promise<ScenarioPlayResult> => ipcRenderer.invoke('scenario:play', name, seed, speed, presets),
+  playScenario: (name: string, seed: number, speed: number): Promise<ScenarioPlayResult> =>
+    ipcRenderer.invoke('scenario:play', name, seed, speed),
   stopScenario: (): Promise<ControlResult> => ipcRenderer.invoke('scenario:stop'),
   pauseScenario: (): Promise<ControlResult> => ipcRenderer.invoke('scenario:pause'),
   resumeScenario: (): Promise<ControlResult> => ipcRenderer.invoke('scenario:resume'),
@@ -62,10 +58,13 @@ const lares = {
   onScenarioStopped: (cb: () => void): void => {
     ipcRenderer.on('scenario:stopped', () => cb())
   },
-  sendSynthTrace: (linesByStage: Record<string, string[]>): void => {
-    ipcRenderer.send('scenario:synthTrace', linesByStage)
+  sendSynthTrace: (lines: string[]): void => {
+    ipcRenderer.send('scenario:synthTrace', lines)
   },
-  setAbMode: (on: boolean): Promise<ControlResult> => ipcRenderer.invoke('window:abMode', on),
+  onLiveTrace: (cb: (event: LiveTraceEvent) => void): void => {
+    ipcRenderer.on('liveTrace:update', (_event, value: LiveTraceEvent) => cb(value))
+    ipcRenderer.send('liveTrace:ready')
+  },
   fitToModel: (size: { width: number; height: number }): Promise<ControlResult> =>
     ipcRenderer.invoke('window:fitToModel', size),
   reportPointer: (overBody: boolean): void => {

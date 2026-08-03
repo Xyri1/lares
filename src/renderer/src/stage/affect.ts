@@ -9,7 +9,6 @@ import {
 } from '../feel/feel'
 import type { IRuntime } from '../runtime/iface'
 import { createSynth, mulberry32, type Synth, type SynthFeed, type SynthPreset } from '../synth/synth'
-import { PRESETS } from './presets'
 import { driveTick, frameToLine, replayHistory } from './synthReplay'
 import { createTraceBuffer, pushEngine, resetBuffer, type TraceBuffer } from './traceBuffer'
 
@@ -19,35 +18,42 @@ import { createTraceBuffer, pushEngine, resetBuffer, type TraceBuffer } from './
 // character-specific mapping, e.g. Haru's, at boot).
 const defaultPreset = defaultPresetJson as SynthPreset
 
-export type StageId = 'A' | 'B'
-
 export interface CharacterChangeTransaction {
   rollback(): void
   finalize(): void
 }
 
-/** How long a panel pose preview holds before it fades back out. */
-const PREVIEW_MS = 3000
+export interface PipelineSnapshot {
+  source: 'live' | 'scenario' | 'manual'
+  feel: { valence: number; activation: number; control: number } | null
+  normalized: { valence: number; activation: number; control: number } | null
+  operational: string
+  expressiveness: number
+  pose: Pose
+  bindings: { id: string; value: number; raw: number; clipped: boolean; missing: boolean }[]
+}
 
 export interface AffectDriver {
-  /** Start a golden replay at the given seed/speed (default 1×). No-op while
-   * one runs. `presets` picks a mapping preset per stage (002-D2); passing a
-   * B entry runs A/B mode — stage B must have been added first. */
-  play(name: string, seed: number, speed?: number, presets?: StagePresets): void
+  /** Start a golden replay at the given seed/speed (default 1×). */
+  play(name: string, seed: number, speed?: number): void
+  stop(): Promise<void>
   pause(): void
   resume(): void
   setSpeed(speed: number): void
   /** Seek to scenario time tMs; main clamps/aligns and replays deterministically. */
   seek(tMs: number): void
   /** Read-only trace history for the overlay to draw from (002 step-6, decision 3). */
-  buffer(stage?: StageId): TraceBuffer
-  /** Register stage B once its runtime (second Hiyori) has loaded (002-D2). */
-  addStage(id: StageId, runtime: IRuntime): void
-  /** Dev panel pose preview (013 SPEC §§4, 11): holds the target for a wire
-   * tuple, or `null`'s anchor, through the same live pose path the feed
-   * uses. Ignored while a replay runs — replay output must stay a pure
-   * function of the feed and tick time (002-D3), and a click is neither. */
-  previewPose(feel: { valence: number; activation: number; control: number } | null, durationMs?: number): void
+  buffer(): TraceBuffer
+  /** Observe semantic pipeline changes; never called per animation frame. */
+  onPipeline(cb: (snapshot: PipelineSnapshot) => void): void
+  /** Observe renderer receipt independently from the currently effective target. */
+  onFeed(cb: (feed: AffectFeed, source: 'live' | 'scenario') => void): void
+  /** Dev-only semantic bypass. Persists until cleared and never alters the
+   * latched live report or app configuration. */
+  previewPose(
+    feel: { valence: number; activation: number; control: number } | null,
+    options?: { operational?: string; expressiveness?: number }
+  ): void
   /** Debug: back to a fresh-boot face. Pauses any run, drops any preview,
    * and releases every parameter the affect layer has taken so the model's
    * own idle motion owns them again. Leaves the trace buffer alone — the
@@ -57,9 +63,6 @@ export interface AffectDriver {
   characterChanged(preset?: SynthPreset, poses?: FeelPoses): CharacterChangeTransaction
 }
 
-// Per-stage state: own runtime, own synth instances, own rng stream (one
-// mulberry32 per stage seeded with the SAME seed — stages never consume each
-// other's random sequence), own trace buffer.
 interface StageState {
   runtime: IRuntime
   /** Parameter defaults of this stage's model — the presentation floor. */
@@ -97,9 +100,7 @@ export function replaceHeldPreview(
 
 // Impure shell around the pure synth: owns the feed subscription, the
 // live-vs-replay switch (slice SPEC §4), and presentation via
-// IRuntime.setParams — now fanned out per stage (002-D2). Feed messages are
-// routed by their stageId; normal mode is stage A only and behaves exactly
-// as before.
+// IRuntime.setParams.
 //
 //            clock source     rng           frame grid
 //   live     performance.now  Math.random   one frame per rAF
@@ -127,10 +128,10 @@ export function createAffectDriver(
 
   /** Feel tuple → the target pose (SPEC §4), shared by the live feed and the
    * panel preview. */
-  const poseForTuple = (v: number, a: number, c: number): Pose =>
-    computeTarget([axis(v), axis(a), axis(c)], poses.anchors, expressiveness)
+  const poseForTuple = (v: number, a: number, c: number, k = expressiveness): Pose =>
+    computeTarget([axis(v), axis(a), axis(c)], poses.anchors, k)
 
-  /** Feed message → the pose the body performs (SPEC §§4, 11). */
+  /** Feed message → target and overlaid pose (SPEC §§4, 11). */
   const poseFor = (f: AffectFeed): Pose => {
     const p = f.feel
     const target = p ? poseForTuple(p.valence, p.activation, p.control) : poses.anchors.neutral
@@ -148,98 +149,131 @@ export function createAffectDriver(
     trace: createTraceBuffer()
   })
 
-  const stages: Partial<Record<StageId, StageState>> = { A: makeStage(runtime) }
-
-  const replaying = (): [StageId, StageState][] =>
-    (Object.entries(stages) as [StageId, StageState][]).filter(([, st]) => st.replay)
+  const state = makeStage(runtime)
+  let pipelineListener: ((snapshot: PipelineSnapshot) => void) | null = null
+  let feedListener: ((feed: AffectFeed, source: 'live' | 'scenario') => void) | null = null
+  let lastSnapshot: PipelineSnapshot | null = null
+  let lastPipelineKey = ''
+  const publish = (
+    source: PipelineSnapshot['source'],
+    feel: AffectFeed['feel'],
+    operational: string,
+    k: number,
+    pose: Pose
+  ): void => {
+    const key = JSON.stringify([source, feel, operational, k, pose])
+    if (key === lastPipelineKey) return
+    lastPipelineKey = key
+    const inventory = new Map(runtime.parameters().map((param) => [param.id, param]))
+    lastSnapshot = {
+      source,
+      feel,
+      normalized: feel
+        ? {
+            valence: axis(feel.valence),
+            activation: axis(feel.activation),
+            control: axis(feel.control)
+          }
+        : null,
+      operational,
+      expressiveness: k,
+      pose,
+      bindings: idlePreset.params.map((binding) => {
+        const raw = binding.offset + binding.gain * (pose[binding.source] ?? 0)
+        const param = inventory.get(binding.id)
+        const value = param ? Math.min(param.max, Math.max(param.min, raw)) : raw
+        return { id: binding.id, value, raw, clipped: value !== raw, missing: !param }
+      })
+    }
+    pipelineListener?.(lastSnapshot)
+  }
 
   let authoringPreview: Record<string, number> | null = null
 
   window.lares.onAuthoringPreview((value) => {
     authoringPreview = replaceHeldPreview(
-      stages.A!.runtime,
-      stages.A!.driven,
+      state.runtime,
+      state.driven,
       authoringPreview,
       value.params
     )
   })
   window.lares.onAuthoringRevert(() => {
     authoringPreview = replaceHeldPreview(
-      stages.A!.runtime,
-      stages.A!.driven,
+      state.runtime,
+      state.driven,
       authoringPreview,
       null
     )
   })
 
-  // Dev panel pose preview, stage A only, live mode only (see previewPose
-  // on the returned driver below). The feel target is held raw and the
-  // overlay composited at presentation, so a preview never masks a live
-  // awaiting_input — the dev panel is where P10 gets judged.
-  let posePreview: { target: Pose; expiresAt: number } | null = null
-  /** Last operational state stage A heard; the preview composites through it. */
+  // Dev-only semantic bypass; explicit controls own its operational overlay.
+  let posePreview: { pose: Pose } | null = null
   let operational = 'idle'
+  let currentFeed: AffectFeed | null = null
+  let currentFeedSource: 'live' | 'scenario' = 'live'
 
   let tentativeFeeds: AffectFeed[] | null = null
   const processFeed = (f: AffectFeed): void => {
-    const st = stages[f.stageId as StageId]
-    if (!st) return
-    if (f.stageId === 'A') operational = f.operational
-    st.feed = { pose: poseFor(f) }
-    if (!st.replay) return
-    pushEngine(st.trace, f)
-    for (const frame of driveTick(st.replay.synth, st.feed, f.tick)) {
-      st.replay.lines.push(frameToLine(frame))
-      st.trace.synth.push(frame)
-      st.latest = frame.params
+    const source = state.replay ? 'scenario' : 'live'
+    currentFeed = f
+    currentFeedSource = source
+    operational = f.operational
+    const pose = poseFor(f)
+    state.feed = { pose }
+    feedListener?.(f, source)
+    if (!posePreview) publish(source, f.feel, f.operational, expressiveness, pose)
+    if (!state.replay) return
+    pushEngine(state.trace, f)
+    for (const frame of driveTick(state.replay.synth, state.feed, f.tick)) {
+      state.replay.lines.push(frameToLine(frame))
+      state.trace.synth.push(frame)
+      state.latest = frame.params
     }
   }
 
   window.lares.onAffectUpdate((f) => {
-    if (tentativeFeeds !== null && f.stageId === 'A') {
+    if (tentativeFeeds !== null) {
       tentativeFeeds.push(f)
       return
     }
     processFeed(f)
   })
 
-  // Seek lands here as one batch covering scenario time 0..T for every active
-  // stage (main-side decision 1): per stage, rebuild the overlay buffer from
-  // its own messages and re-seed + replay the synth through the same tick
+  // Seek lands here as one batch covering scenario time 0..T: rebuild the
+  // overlay buffer and re-seed + replay the synth through the same tick
   // sequence a normal run would have used, so post-seek frames stay
   // byte-identical to an unseeked run.
   window.lares.onScenarioSeeked((history) => {
-    for (const [id, st] of replaying()) {
-      const mine = history.filter((f) => f.stageId === id)
-      const rp = st.replay!
-      resetBuffer(st.trace)
-      for (const f of mine) pushEngine(st.trace, f)
-      const replayed = replayHistory(
-        () => createSynth(rp.preset, mulberry32(rp.seed)),
-        mine.map((f): SynthFeed => ({ pose: poseFor(f) }))
-      )
-      rp.synth = replayed.synth
-      rp.lines = replayed.frames.map(frameToLine)
-      st.trace.synth.push(...replayed.frames)
-      if (replayed.frames.length) st.latest = replayed.frames[replayed.frames.length - 1].params
-      if (mine.length) st.feed = { pose: poseFor(mine[mine.length - 1]) }
+    if (!state.replay) return
+    const rp = state.replay
+    resetBuffer(state.trace)
+    for (const f of history) pushEngine(state.trace, f)
+    const replayed = replayHistory(
+      () => createSynth(rp.preset, mulberry32(rp.seed)),
+      history.map((f): SynthFeed => ({ pose: poseFor(f) }))
+    )
+    rp.synth = replayed.synth
+    rp.lines = replayed.frames.map(frameToLine)
+    state.trace.synth.push(...replayed.frames)
+    if (replayed.frames.length) state.latest = replayed.frames[replayed.frames.length - 1].params
+    const last = history.at(-1)
+    if (last) {
+      const pose = poseFor(last)
+      state.feed = { pose }
+      publish('scenario', last.feel, last.operational, expressiveness, pose)
     }
   })
 
   const clearPlayback = (writeTrace: boolean): void => {
-    const active = replaying()
-    if (active.length === 0) return
-    const linesByStage: Record<string, string[]> = {}
-    for (const [id, st] of active) {
-      if (writeTrace) {
-        console.log(`[lares] replay done (stage ${id}): ${st.replay!.lines.length} synth frames traced`)
-        linesByStage[id] = st.replay!.lines
-      }
-      st.replay = null
-      st.latest = null
-      st.live = createSynth(idlePreset, Math.random) // fresh idle state after replay
+    if (!state.replay) return
+    if (writeTrace) {
+      console.log(`[lares] replay done: ${state.replay.lines.length} synth frames traced`)
+      window.lares.sendSynthTrace(state.replay.lines)
     }
-    if (writeTrace) window.lares.sendSynthTrace(linesByStage)
+    state.replay = null
+    state.latest = null
+    state.live = createSynth(idlePreset, Math.random) // fresh idle state after replay
   }
 
   window.lares.onScenarioEnd(() => {
@@ -269,12 +303,8 @@ export function createAffectDriver(
     st.runtime.setParams(out)
   }
 
-  const withAuthoring = (
-    id: StageId,
-    st: StageState,
-    frame: Record<string, number>
-  ): void => {
-    if (id !== 'A' || authoringPreview === null) {
+  const withAuthoring = (st: StageState, frame: Record<string, number>): void => {
+    if (authoringPreview === null) {
       write(st, frame)
       return
     }
@@ -286,19 +316,12 @@ export function createAffectDriver(
 
   const present = (): void => {
     const now = performance.now()
-    for (const [id, st] of Object.entries(stages) as [StageId, StageState][]) {
-      if (!st) continue
-      if (st.replay) {
-        // Replay frames were composed on tick arrival, on the scenario clock.
-        if (st.latest) withAuthoring(id, st, st.latest)
-      } else {
-        const feed: SynthFeed =
-          id === 'A' && posePreview && now < posePreview.expiresAt
-            ? { pose: withOverlay(posePreview.target, operational, poses.operational) }
-            : st.feed
-        const frame = st.live.computeFrame(feed, now)
-        withAuthoring(id, st, frame)
-      }
+    if (state.replay) {
+      // Replay frames were composed on tick arrival, on the scenario clock.
+      if (state.latest) withAuthoring(state, state.latest)
+    } else {
+      const frame = state.live.computeFrame(posePreview ?? state.feed, now)
+      withAuthoring(state, frame)
     }
     requestAnimationFrame(present)
   }
@@ -312,69 +335,56 @@ export function createAffectDriver(
     clearPlayback(false)
     posePreview = null
     authoringPreview = replaceHeldPreview(
-      stages.A!.runtime,
-      stages.A!.driven,
+      state.runtime,
+      state.driven,
       authoringPreview,
       null
     )
-    for (const st of Object.values(stages)) {
-      if (!st) continue
-      if (refreshDefaults) {
-        st.defaults = Object.fromEntries(st.runtime.parameters().map((p) => [p.id, p.default]))
-      }
-      st.latest = null
-      st.feed = restFeed()
-      st.driven.clear()
-      st.runtime.resetParams()
+    if (refreshDefaults) {
+      state.defaults = Object.fromEntries(state.runtime.parameters().map((p) => [p.id, p.default]))
     }
+    state.latest = null
+    state.feed = restFeed()
+    state.driven.clear()
+    state.runtime.resetParams()
+    currentFeed = null
+    currentFeedSource = 'live'
+    operational = 'idle'
+    publish('live', null, 'idle', expressiveness, poses.anchors.neutral)
   }
 
   requestAnimationFrame(present)
 
   return {
-    play(name: string, seed: number, speed = 1, presets: StagePresets = { A: 'default' }): void {
-      if (replaying().length > 0) return
-      const wanted: [StageId, string][] = [['A', presets.A]]
-      if (presets.B !== undefined) wanted.push(['B', presets.B])
-      for (const [id, presetName] of wanted) {
-        if (!stages[id]) {
-          console.error(`[lares] stage ${id} is not loaded`)
-          return
-        }
-        if (!PRESETS[presetName]) {
-          console.error(`[lares] unknown preset "${presetName}"`)
-          return
-        }
+    play(name: string, seed: number, speed = 1): void {
+      if (state.replay) return
+      state.replay = {
+        synth: createSynth(idlePreset, mulberry32(seed)),
+        preset: idlePreset,
+        seed,
+        lines: []
       }
-      for (const [id, presetName] of wanted) {
-        const st = stages[id]!
-        st.replay = {
-          synth: createSynth(PRESETS[presetName], mulberry32(seed)),
-          preset: PRESETS[presetName],
-          seed,
-          lines: []
-        }
-        resetBuffer(st.trace)
-      }
+      resetBuffer(state.trace)
       posePreview = null
       authoringPreview = replaceHeldPreview(
-        stages.A!.runtime,
-        stages.A!.driven,
+        state.runtime,
+        state.driven,
         authoringPreview,
         null
       )
-      void window.lares.playScenario(name, seed, speed, presets).then((res) => {
+      void window.lares.playScenario(name, seed, speed).then((res) => {
         if (!res.ok) {
           console.error(`[lares] scenario:play refused: ${res.error}`)
-          for (const [id] of wanted) {
-            const st = stages[id]!
-            st.replay = null
-            st.latest = null
-          }
+          state.replay = null
+          state.latest = null
           return
         }
-        for (const [id] of wanted) stages[id]!.trace.endMs = res.endMs
+        state.trace.endMs = res.endMs
       })
+    },
+    async stop(): Promise<void> {
+      await window.lares.stopScenario()
+      clearPlayback(false)
     },
     pause(): void {
       void window.lares.pauseScenario()
@@ -388,11 +398,15 @@ export function createAffectDriver(
     seek(tMs: number): void {
       void window.lares.seekScenario(tMs)
     },
-    buffer(stage: StageId = 'A'): TraceBuffer {
-      return (stages[stage] ?? stages.A!).trace
+    buffer(): TraceBuffer {
+      return state.trace
     },
-    addStage(id: StageId, rt: IRuntime): void {
-      if (!stages[id]) stages[id] = makeStage(rt)
+    onPipeline(cb): void {
+      pipelineListener = cb
+      if (lastSnapshot) cb(lastSnapshot)
+    },
+    onFeed(cb): void {
+      feedListener = cb
     },
     reset(): void {
       reset()
@@ -401,7 +415,7 @@ export function createAffectDriver(
       nextPreset: SynthPreset = defaultPreset,
       nextPoses: FeelPoses = DEFAULT_FEEL
     ): CharacterChangeTransaction {
-      const st = stages.A!
+      const st = state
       const bufferedFeeds: AffectFeed[] = []
       const before = {
         preset: idlePreset,
@@ -453,15 +467,24 @@ export function createAffectDriver(
         throw error
       }
     },
-    previewPose(feel, durationMs = PREVIEW_MS): void {
+    previewPose(feel, options): void {
+      if (state.replay) return
       if (feel === null) {
         posePreview = null
+        if (currentFeed) {
+          const pose = poseFor(currentFeed)
+          publish(currentFeedSource, currentFeed.feel, currentFeed.operational, expressiveness, pose)
+        } else {
+          publish('live', null, 'idle', expressiveness, poses.anchors.neutral)
+        }
         return
       }
-      posePreview = {
-        target: poseForTuple(feel.valence, feel.activation, feel.control),
-        expiresAt: performance.now() + durationMs
-      }
+      const k = Math.min(10, Math.max(0, options?.expressiveness ?? expressiveness))
+      const op = options?.operational ?? operational
+      const target = poseForTuple(feel.valence, feel.activation, feel.control, k)
+      const pose = withOverlay(target, op, poses.operational)
+      posePreview = { pose }
+      publish('manual', feel, op, k, pose)
     }
   }
 }

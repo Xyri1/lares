@@ -66,15 +66,13 @@ async function boot(): Promise<void> {
       : presetJson as SynthPreset,
     resolveFeel(character)
   )
-  let currentCharacter = character
   if (OVERLAY) {
     const characterLoads = createCharacterLoadHandler(
       runtime,
       driver,
       (result) => window.lares.reportCharacterPrepared(result as CharacterPrepareResult),
       (result) => window.lares.reportCharacterCommitted(result as CharacterCommitResult),
-      (request) => {
-        currentCharacter = request.character
+      () => {
         void window.lares.fitToModel(runtime.larSize()).catch((error) => {
           console.error('[lares] fit after character switch failed', error)
         })
@@ -109,30 +107,7 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV && !OVERLAY) {
     window.__runtime = runtime // console access for A2/A4 gate checks
     window.__driver = driver
-
-    // Second Hiyori loads lazily on the first A/B toggle (002-D2) — normal
-    // mode never pays for it — into the SAME pixi app/context as stage A, then
-    // just toggles visibility. Idempotent; resets on failure so it can retry.
-    let stageB: Promise<Live2DRuntime> | null = null
-    const setStageB = (on: boolean): Promise<void> => {
-      if (!on) return Promise.resolve(stageB?.then((rb) => rb.setActive(false)) ?? undefined)
-      stageB ??= (async () => {
-        const rb = new Live2DRuntime(runtime)
-        await rb.load(
-          currentCharacter.live2d.model,
-          currentCharacter.live2d.fallbackPhysics
-        )
-        window.__runtimeB = rb
-        driver.addStage('B', rb)
-        return rb
-      })().catch((err: unknown) => {
-        stageB = null
-        throw err
-      })
-      return stageB.then((rb) => rb.setActive(true))
-    }
-
-    mountPanel(runtime, driver, setStageB)
+    mountPanel(runtime, driver)
   }
 }
 

@@ -97,7 +97,7 @@ The renderer process owns the picture. It receives a renderer-neutral feed.
 The performance feed is the one contract between the halves. It carries:
 
 ```
-{ stageId, tick, feel, operational }
+{ tick, feel, operational }
 ```
 
 `feel` is the latched tuple — `{ valence, activation, control }` as wire
@@ -128,16 +128,19 @@ The panel gives you:
 
 | Control | What it does |
 | --- | --- |
-| Golden buttons | Play one of the four scenarios |
-| Scenario tab | Select, play, pause, resume, and set the speed to 1×, 8×, or 64× |
-| A/B toggle | Render two stages beside each other with different presets |
-| Pose buttons | Preview the anchor tuples on the live character |
+| Semantic pipeline | Show wire and normalized feel, operational state, channel pose, and wired/clamped rig values |
+| Manual pipeline input | Toggle preview on to apply V/A/C, operational state, expressiveness, and anchor changes immediately without changing the live latch |
+| Live connection trace | Follow MCP session open/close, accepted hooks and reports, feed emission, and renderer receipt |
+| Scenario replay | Select, play, pause, resume, seek, and set the speed to 1×, 8×, or 64× |
 | Motion picker | Play one motion of the loaded model |
 | Parameter sliders | Drive a parameter by hand |
 | Sweep | Move each parameter through its full range |
 | FPS counter | Report the render rate |
 
-The panel is intentionally plain. It is a test harness, not a product surface.
+Manual input and scenario replay are labelled bypasses: neither proves the
+MCP, hook, attribution, persistence, or spacing path. Schema-invalid MCP calls
+are rejected by the SDK before the Lares handler, so the live trace cannot
+claim to observe them. The panel is a test harness, not a product surface.
 
 ---
 
@@ -161,11 +164,13 @@ Use this path when you debug.
    pure state table: the caller supplies the clock.
 6. **The resolver picks a baseline.** `sessions/resolveBaseline.ts` returns the
    highest-priority state of all live sessions.
-7. **The engine ticks.** `affect/engine.ts` runs at 10 Hz. It applies the decay,
-   the mood average, the nudges, and the saturation scale.
+7. **The feed gate resolves display state.** `feel/service.ts` combines the
+   latest latched feel with the resolved operational baseline and emits only
+   when either value changes.
 8. **The feed goes out.** The brain sends `affect:update` over IPC.
-9. **The body renders.** `synth/` computes the per-frame values. `runtime/`
-   writes them to the model.
+9. **The body renders.** `feel/` normalizes and blends the tuple in channel
+   space, composites the operational overlay, then `synth/` and `runtime/`
+   drive the mapped model parameters.
 
 The budget for the whole path is 250 milliseconds, from the hook to a visible
 reaction. This budget is hard, because legibility depends on it.
@@ -195,8 +200,10 @@ pnpm smoke:nerves
 The script reads `~/.lares/runtime.json`, posts a synthetic session, and calls
 the MCP tools. Start `pnpm dev` first.
 
-For a visual check, play a golden scenario from the dev panel. The scenario
-player injects through the same ingress path as real traffic.
+For a deterministic blend/synthesis check, play a golden scenario from the
+dev panel. Scenario replay deliberately bypasses MCP, hooks, attribution,
+persistence, and spacing; use the smoke command and the panel's live connection
+trace when those ingress seams are under test.
 
 ---
 

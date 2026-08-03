@@ -45,6 +45,7 @@ export interface ServerDeps {
   checkpoint?(sessionKey: string): FeelTuple | undefined
   listParameters?(): unknown | Promise<unknown>
   previewExpression?(args: unknown, nowMs: number): unknown | Promise<unknown>
+  trace?(event: { source: 'mcp'; action: 'opened' | 'closed'; session: string }): void
 }
 
 interface McpSession {
@@ -118,9 +119,11 @@ export function createServer(deps: ServerDeps): {
       enableJsonResponse: true,
       onsessioninitialized: (id) => {
         sessions.set(id, session)
+        deps.trace?.({ source: 'mcp', action: 'opened', session: `mcp:${id}` })
       },
       onsessionclosed: (id) => {
         sessions.delete(id)
+        deps.trace?.({ source: 'mcp', action: 'closed', session: `mcp:${id}` })
       }
     })
     session = { server, transport }

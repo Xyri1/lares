@@ -420,8 +420,10 @@ tuple with no drift toward neutral — the deliberate inverse of retired
 root S4.
 
 **013-S8 — Untrusted ingress.** GIVEN floats, out-of-range integers,
-missing or extra axes, or oversized payloads THEN the whole call fails,
-the latch is intact, and the 2s spacing rejects a rapid follow-up.
+missing or extra axes, or oversized payloads THEN the whole call fails
+and the latch is intact; GIVEN an accepted report WHEN another valid
+report follows inside 2s THEN spacing rejects the follow-up. Rejected
+calls do not start or extend the spacing window.
 
 **013-S9 — Restart restore.** GIVEN a latched report WHEN the app quits
 and relaunches THEN the same performance returns with no new call

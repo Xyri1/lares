@@ -72,7 +72,8 @@ describe('createFeel', () => {
   })
 
   it('rejects an invalid tuple and a rate-capped call, naming the wait (§8)', () => {
-    const { feel, persisted } = make()
+    const trace: Parameters<NonNullable<FeelDeps['trace']>>[0][] = []
+    const { feel, persisted } = make({ trace: (event) => void trace.push(event) })
 
     expect(() => feel.report({ valence: 0.5, activation: 0, control: 0 }, 'mcp-1', 0)).toThrow(
       /integers from -2 to 2/
@@ -84,6 +85,11 @@ describe('createFeel', () => {
     // The latch is untouched by either refusal.
     expect(feel.attributed('mcp-1', 2500).feel).toEqual({ ...TUPLE, at: 1000 })
     expect(persisted).toHaveLength(1)
+    expect(trace).toMatchObject([
+      { source: 'feel', action: 'rejected', session: 'mcp:mcp-1' },
+      { source: 'feel', action: 'accepted', session: 'mcp:mcp-1', feel: TUPLE },
+      { source: 'feel', action: 'rejected', session: 'mcp:mcp-1', detail: 'spacing 500ms' }
+    ])
   })
 
   it('latches an unattributable call under a volatile key that never persists or checkpoints (§§9, 10)', () => {
@@ -117,7 +123,7 @@ describe('createFeel', () => {
 
     expect(warnings).toEqual([])
     expect(feel.checkpoint('claude-code:recent')).toEqual({ ...TUPLE, at: 20 })
-    expect(feel.feed(2000)).toEqual({ stageId: 'A', tick: 20, feel: TUPLE, operational: 'working' })
+    expect(feel.feed(2000)).toEqual({ tick: 20, feel: TUPLE, operational: 'working' })
   })
 
   it('writes the accepted report through to disk (§12)', async () => {
@@ -155,7 +161,6 @@ describe('createFeel', () => {
 
     feel.report(TUPLE, 'mcp-1', 1000)
     expect(feel.feed(1000)).toEqual({
-      stageId: 'A',
       tick: 10,
       feel: TUPLE,
       operational: 'working'
@@ -170,7 +175,6 @@ describe('createFeel', () => {
     // unchanged tuple and the live overlay have to re-arrive (P10).
     feel.resend(1300)
     expect(feel.feed(1300)).toEqual({
-      stageId: 'A',
       tick: 13,
       feel: TUPLE,
       operational: 'awaiting_input'

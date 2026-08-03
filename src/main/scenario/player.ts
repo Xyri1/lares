@@ -2,15 +2,11 @@ import type { BaselineState } from '../sessions/mapEvent'
 import type { Scenario } from './types'
 import { createStepper, traceLine, STEP_MS, type StepState } from './run'
 
-/** A/B stages (002-D2). Normal mode runs 'A' only. */
-export type StageId = 'A' | 'B'
-
 // Performance feed message (013 SPEC §13): renderer-neutral — the latched
 // tuple and one operational state cross this seam, Live2D knowledge never
 // does (P6). Structural twin of `AffectFeed` in src/preload/types.d.ts; the
 // seam is the contract, not a shared import.
 export interface AffectFeedMessage {
-  stageId: StageId
   /** Scenario tick index (t = tick·100ms). Renderer keys off this instead of
    * counting arrivals — closes a fragile-counter bug and lets seeks jump the
    * tick cleanly (002 step-6 decision 1). */
@@ -44,8 +40,8 @@ export interface PacedPlayback {
 }
 
 /** The stepper's per-tick state, shaped for the wire (013 SPEC §13). */
-export function feedMessage(state: StepState, tick: number, stageId: StageId = 'A'): AffectFeedMessage {
-  return { stageId, tick, feel: state.feel, operational: state.operational }
+export function feedMessage(state: StepState, tick: number): AffectFeedMessage {
+  return { tick, feel: state.feel, operational: state.operational }
 }
 
 /** Clamp a UI speed multiplier to the range the pacer can safely run at. */
@@ -62,23 +58,15 @@ export function playScenarioPaced(
   scenario: Scenario,
   opts: {
     speed?: number
-    /** Active stages, default ['A']. Each stage gets its OWN stepper, stepped
-     * inside the same loop iteration — identical ticks, no drift (002-D2).
-     * Engine states match across stages by determinism; the visible A/B
-     * difference is renderer-side preset synth only. */
-    stages?: StageId[]
     onFeed: (feed: AffectFeedMessage) => void
     onSeek: (history: AffectFeedMessage[]) => void
-    /** Engine trace lines keyed by stage id. */
-    onDone: (engineLines: Record<string, string[]>) => void
+    onDone: (engineLines: string[]) => void
   }
 ): PacedPlayback {
   let speed = clampSpeed(opts.speed ?? 1)
-  const stageIds = opts.stages ?? ['A']
-  const makeStages = (): { id: StageId; stepper: ReturnType<typeof createStepper>; lines: string[] }[] =>
-    stageIds.map((id) => ({ id, stepper: createStepper(scenario), lines: [] }))
-  let stages = makeStages()
-  const endMs = stages[0].stepper.endMs
+  let stepper = createStepper(scenario)
+  let lines: string[] = []
+  const endMs = stepper.endMs
   let nextT = 0
   let paused = false
   let startedWall = Date.now() // dueT = (Date.now() - startedWall) * speed
@@ -95,16 +83,14 @@ export function playScenarioPaced(
     if (paused) return
     const dueT = (Date.now() - startedWall) * speed
     while (nextT <= dueT && nextT <= endMs) {
-      for (const st of stages) {
-        const state = st.stepper.step(nextT)
-        st.lines.push(traceLine(nextT, state))
-        opts.onFeed(feedMessage(state, nextT / STEP_MS, st.id))
-      }
+      const state = stepper.step(nextT)
+      lines.push(traceLine(nextT, state))
+      opts.onFeed(feedMessage(state, nextT / STEP_MS))
       nextT += STEP_MS
     }
     if (nextT > endMs) {
       clearInterval(timer)
-      opts.onDone(Object.fromEntries(stages.map((st) => [st.id, st.lines])))
+      opts.onDone(lines)
     }
   }, 25)
 
@@ -125,14 +111,13 @@ export function playScenarioPaced(
     },
     seek: (tMs: number) => {
       const target = Math.min(endMs, Math.max(0, Math.floor(tMs / STEP_MS) * STEP_MS))
-      stages = makeStages() // fresh steppers — never snapshot/restore
+      stepper = createStepper(scenario) // fresh stepper — never snapshot/restore
+      lines = []
       const history: AffectFeedMessage[] = []
       for (let t = 0; t <= target; t += STEP_MS) {
-        for (const st of stages) {
-          const state = st.stepper.step(t)
-          st.lines.push(traceLine(t, state))
-          history.push(feedMessage(state, t / STEP_MS, st.id))
-        }
+        const state = stepper.step(t)
+        lines.push(traceLine(t, state))
+        history.push(feedMessage(state, t / STEP_MS))
       }
       nextT = target + STEP_MS
       opts.onSeek(history)

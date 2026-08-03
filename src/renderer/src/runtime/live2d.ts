@@ -251,13 +251,6 @@ export class Live2DRuntime implements IRuntime {
   private overrides = new Map<string, { value: number; weight: number }>()
   private expression?: RuntimeExpression
 
-  // Pass a canvas to own a new pixi Application; pass an existing runtime to
-  // SHARE its Application, context and ticker (002-D2 A/B). Two WebGL contexts
-  // cannot share pixi's URL-keyed texture cache — one context steals the other's
-  // textures and a stage goes blank — so both Hiyoris live in one context and
-  // split the screen into slots.
-  private peers: Live2DRuntime[]
-  private active = true
   private displayScale = 1
   private loadGeneration = 0
   private prepared?: {
@@ -272,40 +265,26 @@ export class Live2DRuntime implements IRuntime {
     previous?: RuntimeModelState
   }
 
-  constructor(target: HTMLCanvasElement | Live2DRuntime) {
-    if (target instanceof Live2DRuntime) {
-      this.app = target.app
-      this.peers = target.peers
-      this.peers.push(this)
-    } else {
-      this.app = new Application({
-        view: target,
-        backgroundAlpha: 0,
-        antialias: true,
-        autoDensity: true,
-        // alphaAt() reads the drawing buffer between frames, which is garbage
-        // once the compositor has taken it. ponytail: set for both windows —
-        // one flag beats threading a mode through the constructor, and at
-        // 30fps on a window this size the cost does not show up.
-        preserveDrawingBuffer: true,
-        resolution: window.devicePixelRatio || 1,
-        resizeTo: target.parentElement ?? window
-      })
-      this.app.ticker.maxFPS = 30 // root SPEC §10: flat cap; verified by the panel readout
-      this.peers = [this]
-    }
+  constructor(target: HTMLCanvasElement) {
+    this.app = new Application({
+      view: target,
+      backgroundAlpha: 0,
+      antialias: true,
+      autoDensity: true,
+      // alphaAt() reads the drawing buffer between frames, which is garbage
+      // once the compositor has taken it. ponytail: set for both windows —
+      // one flag beats threading a mode through the constructor, and at
+      // 30fps on a window this size the cost does not show up.
+      preserveDrawingBuffer: true,
+      resolution: window.devicePixelRatio || 1,
+      resizeTo: target.parentElement ?? window
+    })
+    this.app.ticker.maxFPS = 30 // root SPEC §10: flat cap; verified by the panel readout
     this.app.ticker.add(this.tick, this, UPDATE_PRIORITY.LOW)
     window.addEventListener('resize', () => {
       this.app.resize()
       this.fit()
     })
-  }
-
-  /** Show/hide this stage and re-split the screen between active stages. */
-  setActive(on: boolean): void {
-    this.active = on
-    if (this.model) this.model.visible = on
-    for (const p of this.peers) p.fit()
   }
 
   setDisplayScale(scale: number): void {
@@ -447,7 +426,7 @@ export class Live2DRuntime implements IRuntime {
     this.overrides = new Map()
     this.expression = undefined
     try {
-      for (const peer of this.peers) peer.fit()
+      this.fit()
       this.app.stage.addChild(model)
       this.committed = { id, candidate: model, previous }
       if (previous) previous.model.visible = false
@@ -466,7 +445,7 @@ export class Live2DRuntime implements IRuntime {
     this.restore(previous)
     this.destroy(candidate)
     try {
-      for (const peer of this.peers) peer.fit()
+      this.fit()
     } catch {
       // The prior model is already restored; layout retry occurs on resize.
     }
@@ -510,7 +489,7 @@ export class Live2DRuntime implements IRuntime {
     this.paramIndex = previous.paramIndex
     this.overrides = previous.overrides
     this.expression = previous.expression
-    previous.model.visible = this.active
+    previous.model.visible = true
   }
 
   private destroy(model: Live2DModel): void {
@@ -665,21 +644,16 @@ export class Live2DRuntime implements IRuntime {
     }
   }
 
-  // Each active stage gets an equal horizontal slot of the shared canvas;
-  // with one stage that's the whole window, i.e. pre-A/B behavior.
   private fit(): void {
-    if (!this.model || !this.active) return
+    if (!this.model) return
     const { width, height } = this.app.screen
-    const shown = this.peers.filter((p) => p.active)
-    const slotWidth = width / shown.length
-    const slotX = slotWidth * shown.indexOf(this)
     this.model.scale.set(1)
     const scale = Math.min(
-      slotWidth / this.model.width,
+      width / this.model.width,
       Math.min(height, DEFAULT_LAR_HEIGHT * this.displayScale) / this.model.height
     )
     this.model.scale.set(scale)
-    this.model.x = slotX + (slotWidth - this.model.width) / 2
+    this.model.x = (width - this.model.width) / 2
     this.model.y = (height - this.model.height) / 2
   }
 }

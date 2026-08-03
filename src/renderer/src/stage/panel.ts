@@ -1,13 +1,11 @@
-import presetJson from '../../../../presets/default.json'
 import { ANCHOR_KEYS } from '../feel/feel'
 import type { Live2DRuntime } from '../runtime/live2d'
-import type { SynthPreset } from '../synth/synth'
-import type { AffectDriver } from './affect'
+import type { AffectDriver, PipelineSnapshot } from './affect'
 import { drawOverlay, FEEL_AXES, xToT, type OverlayToggles } from './overlayCanvas'
-import { PRESETS } from './presets'
 
-const PANEL_WIDTH = 260 // must match #dev-panel width in index.html
-
+const PANEL_WIDTH = 380
+const REPLAY_SEED = 42
+const TRACE_LIMIT = 120
 const GOLDENS = [
   'smooth-build',
   'brutal-debugging-session',
@@ -15,8 +13,6 @@ const GOLDENS = [
   'recovery-arc'
 ]
 
-// Dev-side only (SPEC §3): the corner mnemonics never cross the model-facing
-// boundary and are not a runtime taxonomy — a label here is just a label.
 const ANCHOR_LABELS: Record<string, string> = {
   neutral: 'neutral',
   '+++': 'triumphant',
@@ -29,193 +25,181 @@ const ANCHOR_LABELS: Record<string, string> = {
   '---': 'dejected'
 }
 
-/** Anchor key → the wire tuple that lands exactly on it (SPEC §3 corners are ±1 normalized = ±2 wire). */
 function tupleForAnchor(key: string): { valence: number; activation: number; control: number } {
   if (key === 'neutral') return { valence: 0, activation: 0, control: 0 }
   const sign = (ch: string): number => (ch === '+' ? 2 : -2)
   return { valence: sign(key[0]), activation: sign(key[1]), control: sign(key[2]) }
 }
 
-// 001-D5: the gate harness. Ugly on purpose; survives behind the dev flag
-// as the standing debug surface.
-export function mountPanel(
-  runtime: Live2DRuntime,
-  driver: AffectDriver,
-  setStageB?: (on: boolean) => Promise<void>
-): void {
+/** Dev-only control and evidence surface. Production overlay behavior is untouched. */
+export function mountPanel(runtime: Live2DRuntime, driver: AffectDriver): void {
   const panel = document.createElement('div')
   panel.id = 'dev-panel'
-  // Reserve the panel strip so stages (both, in A/B) render beside it, not under.
   document.getElementById('stage-wrap')!.style.right = `${PANEL_WIDTH}px`
 
-  const fps = document.createElement('div')
-  fps.textContent = 'fps: --'
-  panel.appendChild(fps)
+  const status = document.createElement('div')
+  status.textContent = 'renderer fps: --'
+  panel.appendChild(status)
   setInterval(() => {
-    fps.textContent = `fps: ${runtime.fps.toFixed(1)}`
+    status.textContent = `renderer fps: ${runtime.fps.toFixed(1)}`
   }, 500)
 
-  // Scenario tab built first so its startPlay (A/B-aware, 002-D2) also backs
-  // the one-click smoke buttons; DOM order below stays as before.
-  const tab = mountScenarioTab(driver, setStageB)
-
-  // Golden replay at 1×, fixed seed (A4 smoke) — kept as one-click smoke
-  // buttons alongside the fuller scenario tab below.
-  const scenarioRow = document.createElement('div')
-  for (const name of GOLDENS) {
-    scenarioRow.appendChild(button(`play ${name}`, () => tab.startPlay(name)))
-  }
-  panel.appendChild(scenarioRow)
-
-  panel.appendChild(tab.el)
-
-  // Motion playback (A7)
-  const motionRow = document.createElement('div')
-  const select = document.createElement('select')
-  for (const [group, count] of Object.entries(runtime.motionGroups())) {
-    for (let i = 0; i < count; i++) {
-      const opt = document.createElement('option')
-      opt.value = `${group}:${i}`
-      opt.textContent = `${group}[${i}]`
-      select.appendChild(opt)
+  const pipeline = document.createElement('pre')
+  pipeline.textContent = 'waiting for affect feed…'
+  const liveLog = document.createElement('pre')
+  liveLog.className = 'dev-log'
+  liveLog.textContent = 'waiting for live ingress…'
+  const trace: { key: string; line: string; count: number }[] = []
+  const appendTrace = (event: LiveTraceEvent): void => {
+    const time = new Date(event.at).toLocaleTimeString(undefined, { hour12: false })
+    const feel = event.feel === undefined ? '' : ` feel=${formatFeel(event.feel)}`
+    const operational = event.operational ? ` op=${event.operational}` : ''
+    const session = event.session ? ` ${event.session}` : ''
+    const detail = event.detail ? ` ${event.detail}` : ''
+    const key = `${event.source}.${event.action}${session}${feel}${operational}${detail}`
+    const last = trace.at(-1)
+    if (last?.key === key) {
+      last.count++
+      last.line = `${time} ${key} ×${last.count}`
+    } else {
+      trace.push({ key, line: `${time} ${key}`, count: 1 })
     }
+    if (trace.length > TRACE_LIMIT) trace.splice(0, trace.length - TRACE_LIMIT)
+    liveLog.textContent = trace.map((entry) => entry.line).join('\n')
+    liveLog.scrollTop = liveLog.scrollHeight
   }
-  motionRow.append(
-    select,
-    button('play motion', () => {
-      const [group, index] = select.value.split(':')
-      runtime.playMotion(group, Number(index), 3)
+  window.lares.onLiveTrace(appendTrace)
+
+  driver.onPipeline((snapshot) => {
+    pipeline.textContent = formatPipeline(snapshot)
+  })
+  driver.onFeed((feed, source) => {
+    appendTrace({
+      at: Date.now(),
+      source: 'renderer',
+      action: 'received',
+      feel: feed.feel,
+      operational: feed.operational,
+      detail: source
     })
+  })
+
+  const manual = mountManualControls(driver)
+  panel.append(
+    section('semantic pipeline', pipeline),
+    manual.el,
+    mountLiveTrace(liveLog),
+    mountScenario(driver, manual.disable),
+    mountRigDiagnostics(runtime, driver)
   )
-  panel.appendChild(motionRow)
-
-  // Anchor preview (013 I5) — neutral plus the eight corners. Holds the
-  // target pose through the same live pose path the feed uses, then fades
-  // back out on expiry — the preview is the truth about what a feel report
-  // there will look like.
-  const posesRow = document.createElement('div')
-  for (const key of ANCHOR_KEYS) {
-    const tuple = tupleForAnchor(key)
-    posesRow.appendChild(button(`pose: ${ANCHOR_LABELS[key]}`, () => driver.previewPose(tuple)))
-  }
-  // Clean slate without restarting the app — the affect layer's writes are
-  // sticky, so tuning sessions otherwise accumulate pinned parameters.
-  posesRow.appendChild(
-    button('reset', () => {
-      stopSweep()
-      driver.reset()
-    })
-  )
-  panel.appendChild(posesRow)
-
-  // Expression via raw param map, 500ms fade (A7). Face params if present,
-  // first param otherwise — Hiyori ships no .exp3.json to reference.
-  panel.appendChild(
-    button('apply expression', () => {
-      const params = runtime.parameters()
-      const chosen: Record<string, number> = {}
-      for (const p of params) {
-        const id = p.id.toLowerCase()
-        if (id.includes('mouth') || id.includes('brow') || id.includes('cheek')) {
-          chosen[p.id] = p.max
-        }
-      }
-      if (Object.keys(chosen).length === 0 && params[0]) chosen[params[0].id] = params[0].max
-      runtime.applyExpression(chosen, 1, 500)
-    })
-  )
-
-  // Sweep-all (A3 — the gate): each param min→max→default, sequential.
-  const progress = document.createElement('div')
-  panel.appendChild(button('sweep all', () => sweepAll(runtime, progress)))
-  panel.appendChild(progress)
-
-  // Per-param sliders (A2/A3)
-  for (const p of runtime.parameters()) {
-    const label = document.createElement('label')
-    const span = document.createElement('span')
-    span.textContent = p.id
-    span.title = p.id
-    const input = document.createElement('input')
-    input.type = 'range'
-    input.min = String(p.min)
-    input.max = String(p.max)
-    input.step = '0.01'
-    input.value = String(p.default)
-    input.addEventListener('input', () => runtime.setParams({ [p.id]: Number(input.value) }))
-    label.append(span, input)
-    panel.appendChild(label)
-  }
-
   document.body.appendChild(panel)
 }
 
-// Scenario tab (slice 002 step 6, decision 5 — a section, not a new
-// window): picker, transport, and the trace overlay canvas. Click on the
-// canvas scrubs (decision 4); values it draws come straight off
-// driver.buffer(), the same objects that land in the trace file.
-const REPLAY_SEED = 42
-const OVERLAY_WIDTH = 460
-const OVERLAY_HEIGHT = 140
-
-function mountScenarioTab(
-  driver: AffectDriver,
-  setStageB?: (on: boolean) => Promise<void>
-): { el: HTMLElement; startPlay: (name: string) => void } {
-  const section = document.createElement('fieldset')
-  const legend = document.createElement('legend')
-  legend.textContent = 'scenario'
-  section.appendChild(legend)
-
-  const picker = document.createElement('select')
-  for (const name of GOLDENS) {
-    const opt = document.createElement('option')
-    opt.value = name
-    opt.textContent = name
-    picker.appendChild(opt)
+function mountManualControls(driver: AffectDriver): { el: HTMLElement; disable(): void } {
+  const box = document.createElement('div')
+  const valence = range('valence', -2, 2, 1, 0)
+  const activation = range('activation', -2, 2, 1, 0)
+  const control = range('control', -2, 2, 1, 0)
+  const expressiveness = range('expressiveness k', 0, 10, 0.1, 1)
+  const operational = document.createElement('select')
+  const preview = document.createElement('input')
+  preview.type = 'checkbox'
+  for (const state of ['idle', 'thinking', 'working', 'awaiting_input', 'error', 'done']) {
+    operational.appendChild(option(state))
   }
-  section.appendChild(picker)
 
-  // A/B row (002-D2): toggle loads the second Hiyori, widens the window and
-  // reveals slot B; per-stage preset pickers choose each stage's mapping.
-  // Transport stays global — both stages get the same ticks.
-  let abOn = false
-  const presetA = presetPicker('default')
-  const presetB = presetPicker('expressive')
-  const abRow = document.createElement('div')
-  const abToggle = checkbox('A/B', false, (on) => {
-    void (setStageB?.(on) ?? Promise.resolve())
-      .then(() => {
-        abOn = on
-        presetB.disabled = !on
-        return window.lares.setAbMode(on)
-      })
-      .catch((err: unknown) => {
-        console.error(`[lares] A/B stage B failed to load: ${String(err)}`)
-        abToggle.querySelector('input')!.checked = false
-        abOn = false
-      })
+  const apply = (): void => {
+    driver.previewPose(
+      {
+        valence: Number(valence.input.value),
+        activation: Number(activation.input.value),
+        control: Number(control.input.value)
+      },
+      { operational: operational.value, expressiveness: Number(expressiveness.input.value) }
+    )
+  }
+  const applyIfEnabled = (): void => {
+    if (preview.checked) apply()
+  }
+  for (const slider of [valence, activation, control, expressiveness]) {
+    slider.input.addEventListener('input', applyIfEnabled)
+  }
+  operational.addEventListener('change', applyIfEnabled)
+  preview.addEventListener('change', () => {
+    if (preview.checked) {
+      void driver
+        .stop()
+        .then(() => {
+          if (preview.checked) apply()
+        })
+        .catch((error) => {
+          preview.checked = false
+          console.error('[lares] could not enable manual preview', error)
+        })
+    } else {
+      driver.previewPose(null)
+    }
   })
-  presetB.disabled = true
-  abRow.append(abToggle, labelled('A:', presetA), labelled('B:', presetB))
-  section.appendChild(abRow)
 
-  const startPlay = (name: string): void =>
-    driver.play(name, REPLAY_SEED, 1, {
-      A: presetA.value,
-      ...(abOn ? { B: presetB.value } : {})
-    })
+  const anchors = document.createElement('div')
+  for (const key of ANCHOR_KEYS) {
+    anchors.appendChild(
+      button(ANCHOR_LABELS[key], () => {
+        const tuple = tupleForAnchor(key)
+        valence.set(tuple.valence)
+        activation.set(tuple.activation)
+        control.set(tuple.control)
+        applyIfEnabled()
+      })
+    )
+  }
 
-  const transportRow = document.createElement('div')
-  transportRow.append(
-    button('play', () => startPlay(picker.value)),
+  box.append(
+    note('renderer bypass — does not call MCP, persist, attribute, or consume spacing'),
+    labelled('preview', preview),
+    valence.el,
+    activation.el,
+    control.el,
+    labelled('operational', operational),
+    expressiveness.el,
+    anchors
+  )
+  return {
+    el: section('manual pipeline input', box),
+    disable: () => {
+      preview.checked = false
+      driver.previewPose(null)
+    }
+  }
+}
+
+function mountLiveTrace(log: HTMLElement): HTMLElement {
+  const box = document.createElement('div')
+  box.append(
+    note('real MCP sessions, accepted hooks/reports, feed emission, renderer receipt'),
+    note('schema-invalid MCP calls are rejected by the SDK before Lares can trace them'),
+    log
+  )
+  return section('live connection trace', box)
+}
+
+function mountScenario(driver: AffectDriver, disablePreview: () => void): HTMLElement {
+  const box = document.createElement('div')
+  const picker = document.createElement('select')
+  for (const name of GOLDENS) picker.appendChild(option(name))
+  box.append(
+    note('deterministic bypass — skips MCP, hooks, attribution, persistence, and spacing'),
+    picker,
+    button('play', () => {
+      disablePreview()
+      driver.play(picker.value, REPLAY_SEED, 1)
+    }),
     button('pause', () => driver.pause()),
     button('resume', () => driver.resume()),
     button('1x', () => driver.setSpeed(1)),
     button('8x', () => driver.setSpeed(8)),
     button('64x', () => driver.setSpeed(64))
   )
-  section.appendChild(transportRow)
 
   const toggles: OverlayToggles = {
     valence: true,
@@ -225,29 +209,20 @@ function mountScenarioTab(
   }
   const togglesRow = document.createElement('div')
   togglesRow.append(
-    ...FEEL_AXES.map((axis) => checkbox(axis, toggles[axis], (v) => (toggles[axis] = v)))
+    ...FEEL_AXES.map((axis) => checkbox(axis, toggles[axis], (value) => (toggles[axis] = value)))
   )
-  for (const p of (presetJson as SynthPreset).params) {
-    togglesRow.appendChild(
-      checkbox(p.id, false, (v) => {
-        if (v) toggles.synthParams.add(p.id)
-        else toggles.synthParams.delete(p.id)
-      })
-    )
-  }
-  section.appendChild(togglesRow)
+  box.appendChild(togglesRow)
 
   const canvas = document.createElement('canvas')
-  canvas.width = OVERLAY_WIDTH
-  canvas.height = OVERLAY_HEIGHT
+  canvas.width = 330
+  canvas.height = 140
   canvas.style.background = '#111'
   canvas.style.cursor = 'crosshair'
-  canvas.addEventListener('click', (e) => {
+  canvas.addEventListener('click', (event) => {
     const rect = canvas.getBoundingClientRect()
-    const t = xToT(e.clientX - rect.left, canvas.width, driver.buffer().endMs)
-    driver.seek(t)
+    driver.seek(xToT(event.clientX - rect.left, canvas.width, driver.buffer().endMs))
   })
-  section.appendChild(canvas)
+  box.appendChild(canvas)
 
   const ctx = canvas.getContext('2d')
   if (ctx) {
@@ -257,21 +232,108 @@ function mountScenarioTab(
     }
     requestAnimationFrame(draw)
   }
-
-  // ponytail: overlay draws stage A only — per-stage curves are M2b's judging
-  // problem, and the written traces already carry both stages.
-  return { el: section, startPlay }
+  return section('scenario replay', box)
 }
 
-function presetPicker(initial: string): HTMLSelectElement {
-  const el = document.createElement('select')
-  for (const name of Object.keys(PRESETS)) {
-    const opt = document.createElement('option')
-    opt.value = name
-    opt.textContent = name
-    el.appendChild(opt)
+function mountRigDiagnostics(runtime: Live2DRuntime, driver: AffectDriver): HTMLElement {
+  const details = document.createElement('details')
+  const summary = document.createElement('summary')
+  summary.textContent = 'raw rig diagnostics'
+  details.appendChild(summary)
+
+  const motion = document.createElement('select')
+  for (const [group, count] of Object.entries(runtime.motionGroups())) {
+    for (let i = 0; i < count; i++) motion.appendChild(option(`${group}:${i}`, `${group}[${i}]`))
   }
-  el.value = initial
+  details.append(
+    motion,
+    button('play motion', () => {
+      const [group, index] = motion.value.split(':')
+      runtime.playMotion(group, Number(index), 3)
+    })
+  )
+
+  const progress = document.createElement('div')
+  details.append(
+    button('sweep all', () => sweepAll(runtime, progress)),
+    button('reset rig', () => {
+      stopSweep()
+      driver.reset()
+    }),
+    progress
+  )
+
+  for (const param of runtime.parameters()) {
+    const input = document.createElement('input')
+    input.type = 'range'
+    input.min = String(param.min)
+    input.max = String(param.max)
+    input.step = '0.01'
+    input.value = String(param.default)
+    input.addEventListener('input', () => runtime.setParams({ [param.id]: Number(input.value) }))
+    details.appendChild(labelled(param.id, input))
+  }
+  return details
+}
+
+function formatFeel(feel: LiveTraceEvent['feel']): string {
+  return feel ? `${feel.valence},${feel.activation},${feel.control}` : 'neutral'
+}
+
+function formatPipeline(snapshot: PipelineSnapshot): string {
+  const normalized = snapshot.normalized
+    ? `${snapshot.normalized.valence.toFixed(2)}, ${snapshot.normalized.activation.toFixed(2)}, ${snapshot.normalized.control.toFixed(2)}`
+    : 'neutral anchor'
+  const channels = Object.entries(snapshot.pose)
+    .map(([name, value]) => `${name}=${value.toFixed(3)}`)
+    .join('  ')
+  const bindings = snapshot.bindings
+    .map(({ id, value, raw, clipped, missing }) =>
+      `${id}=${value.toFixed(3)}${clipped ? ` (raw ${raw.toFixed(3)}, clipped)` : ''}${missing ? ' (missing)' : ''}`
+    )
+    .join('\n')
+  return [
+    `source: ${snapshot.source}`,
+    `feel wire: ${formatFeel(snapshot.feel)}`,
+    `normalized: ${normalized}`,
+    `operational: ${snapshot.operational}`,
+    `expressiveness k: ${snapshot.expressiveness.toFixed(1)}`,
+    `channels: ${channels}`,
+    'wired parameters:',
+    bindings || '(none)'
+  ].join('\n')
+}
+
+function range(
+  name: string,
+  min: number,
+  max: number,
+  step: number,
+  initial: number
+): { el: HTMLElement; input: HTMLInputElement; set(value: number): void } {
+  const input = document.createElement('input')
+  input.type = 'range'
+  input.min = String(min)
+  input.max = String(max)
+  input.step = String(step)
+  input.value = String(initial)
+  const value = document.createElement('output')
+  const set = (next: number): void => {
+    input.value = String(next)
+    value.textContent = input.value
+  }
+  input.addEventListener('input', () => set(Number(input.value)))
+  set(initial)
+  const el = labelled(name, input)
+  el.appendChild(value)
+  return { el, input, set }
+}
+
+function section(title: string, child: HTMLElement): HTMLFieldSetElement {
+  const el = document.createElement('fieldset')
+  const legend = document.createElement('legend')
+  legend.textContent = title
+  el.append(legend, child)
   return el
 }
 
@@ -279,20 +341,31 @@ function labelled(text: string, control: HTMLElement): HTMLLabelElement {
   const el = document.createElement('label')
   const span = document.createElement('span')
   span.textContent = text
+  span.title = text
   el.append(span, control)
   return el
 }
 
-function checkbox(label: string, initial: boolean, onChange: (v: boolean) => void): HTMLLabelElement {
-  const el = document.createElement('label')
+function note(text: string): HTMLElement {
+  const el = document.createElement('div')
+  el.className = 'dev-note'
+  el.textContent = text
+  return el
+}
+
+function option(value: string, text = value): HTMLOptionElement {
+  const el = document.createElement('option')
+  el.value = value
+  el.textContent = text
+  return el
+}
+
+function checkbox(label: string, initial: boolean, onChange: (value: boolean) => void): HTMLLabelElement {
   const input = document.createElement('input')
   input.type = 'checkbox'
   input.checked = initial
   input.addEventListener('change', () => onChange(input.checked))
-  const span = document.createElement('span')
-  span.textContent = label
-  el.append(input, span)
-  return el
+  return labelled(label, input)
 }
 
 function button(text: string, onClick: () => void): HTMLButtonElement {
@@ -302,8 +375,6 @@ function button(text: string, onClick: () => void): HTMLButtonElement {
   return el
 }
 
-// The sweep owns a rAF loop; the handle is what lets reset (and a second
-// sweep click) stop it instead of leaving it driving params forever.
 let sweepRaf = 0
 
 function stopSweep(): void {
@@ -314,27 +385,28 @@ function stopSweep(): void {
 function sweepAll(runtime: Live2DRuntime, progress: HTMLElement): void {
   stopSweep()
   const params = runtime.parameters()
-  const PER_PARAM_MS = 400
+  const perParamMs = 400
   let i = 0
   let phaseStart = performance.now()
   const step = (): void => {
-    const p = params[i]
-    if (!p) {
+    const param = params[i]
+    if (!param) {
       sweepRaf = 0
       progress.textContent = `sweep done (${params.length} params)`
       return
     }
-    const t = (performance.now() - phaseStart) / PER_PARAM_MS
+    const t = (performance.now() - phaseStart) / perParamMs
     if (t >= 1) {
-      runtime.setParams({ [p.id]: p.default })
+      runtime.setParams({ [param.id]: param.default })
       i++
       phaseStart = performance.now()
     } else {
-      // triangle: min → max across the phase, then default on exit
-      const v =
-        t < 0.5 ? p.min + (p.max - p.min) * (t * 2) : p.max - (p.max - p.min) * ((t - 0.5) * 2)
-      runtime.setParams({ [p.id]: v })
-      progress.textContent = `sweep ${i + 1}/${params.length}: ${p.id}`
+      const value =
+        t < 0.5
+          ? param.min + (param.max - param.min) * t * 2
+          : param.max - (param.max - param.min) * (t - 0.5) * 2
+      runtime.setParams({ [param.id]: value })
+      progress.textContent = `sweep ${i + 1}/${params.length}: ${param.id}`
     }
     sweepRaf = requestAnimationFrame(step)
   }

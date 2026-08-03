@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import defaultPresetJson from '../../../../presets/default.json'
 import type { IRuntime } from '../runtime/iface'
 import type { SynthPreset } from '../synth/synth'
 import { createAffectDriver } from './affect'
-import { PRESETS } from './presets'
+
+const defaultPreset = defaultPresetJson as SynthPreset
 
 function runtime(): IRuntime {
   return {
@@ -49,9 +51,8 @@ describe('AffectDriver character switching', () => {
         }
       }
     })
-    const driver = createAffectDriver(runtime(), PRESETS.default)
+    const driver = createAffectDriver(runtime(), defaultPreset)
     const feed: AffectFeed = {
-      stageId: 'A',
       tick: 1,
       feel: { valence: 0, activation: 0, control: 0 },
       operational: 'working'
@@ -97,9 +98,8 @@ describe('AffectDriver character switching', () => {
         }
       }
     })
-    const driver = createAffectDriver(rt, PRESETS.default)
+    const driver = createAffectDriver(rt, defaultPreset)
     const feed: AffectFeed = {
-      stageId: 'A',
       tick: 1,
       feel: { valence: 0, activation: 0, control: 0 },
       operational: 'working'
@@ -168,7 +168,7 @@ describe('AffectDriver character switching', () => {
     const transaction = driver.characterChanged() // no arg: incoming character has no `performance` block
     present!()
     const afterSwitch = vi.mocked(rt.setParams).mock.calls.at(-1)![0]
-    expect(afterSwitch).toHaveProperty(PRESETS.default.idle.breath.id)
+    expect(afterSwitch).toHaveProperty(defaultPreset.idle.breath.id)
     expect(afterSwitch).not.toHaveProperty('PARAM_BREATH')
 
     transaction.rollback()

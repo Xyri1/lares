@@ -1,7 +1,7 @@
 # Slice 013 — Feel · PLAN
 
 **Artifact:** Slice PLAN · **Slice:** 013-feel ·
-**Status:** Draft — I1 open ·
+**Status:** I1–I5 complete; I6 and G1 open ·
 **Date:** 2026-08-02
 
 Implements the approved slice per SPEC v0.2. Work lands on a slice
@@ -10,7 +10,7 @@ cuts over at I4 — no parallel emote/feel compatibility path ever ships
 (013-D6, no-backward-compatibility direction 2026-08-02). Each phase is
 roughly one reviewable commit series.
 
-## I1 — Pure performance math — open
+## I1 — Pure performance math — complete
 
 - New pure module (placement mirrors `synth/`: pure, no Electron, no
   wall clock): channel vector type, nine-anchor blend (SPEC §4),
@@ -25,7 +25,7 @@ roughly one reviewable commit series.
   full-strength at the shell, clamp-only-above-1, the §4 worked example
   verbatim.
 
-## I2 — Body: blend, wiring, overlays — open
+## I2 — Body: blend, wiring, overlays — complete
 
 - Stage consumes the new feed `{ feel | null, operational }`; the blend
   replaces the synth's `E`/`M` path; `null` performs the neutral anchor.
@@ -45,7 +45,7 @@ roughly one reviewable commit series.
   `performance.params`; optional Haru anchor overrides seeded by eye
   from its exp3 files.
 
-## I3 — Brain: register, storage, attribution — open
+## I3 — Brain: register, storage, attribution — complete
 
 - Feel register keyed `(harness, session_id)`; atomic replace;
   `feel.json` write-through storage with the 64-key hygiene cap; boot
@@ -58,7 +58,7 @@ roughly one reviewable commit series.
   queue, nudges), cue selection, D35 beat resolution in `sessions/`.
   Root §3 states, priorities, and liveness stay untouched.
 
-## I4 — Surfaces: MCP, hooks, plugins — open
+## I4 — Surfaces: MCP, hooks, plugins — complete
 
 - Server: add `feel` (schema, 2s rate cap, ack); remove `emote`,
   `list_performances`, `map_cue`, `save_expression`,
@@ -75,16 +75,17 @@ roughly one reviewable commit series.
   `map_cue`); update plugin descriptions and READMEs; bump
   `PLUGIN_VERSION` and fixtures.
 
-## I5 — Deletion sweep and dev tooling — open
+## I5 — Deletion sweep and dev tooling — complete
 
 - Delete now-dead code: `cues.ts`, cue compositor paths in `compose.ts`,
   `synthReplay`/preset machinery tied to `E`/`M`, stale tests.
 - Scenario player: event vocabulary swaps `emote` for `feel`; re-author
   the four goldens as feel-call scripts (`SCENARIO_CUES` retires);
   replay determinism (seeded rng, tick grid) is preserved.
-- Dev panel: cue preview buttons become tuple/anchor preview; A/B stage
-  machinery survives only if it costs nothing, else deleted with the
-  presets it displayed.
+- Dev panel: replace cue/A-B comparison controls with semantic V/A/C,
+  operational-state, and expressiveness preview; display channel/wiring
+  output plus live MCP→feel→feed→renderer tracing. Delete the second
+  stage and comparison-only preset.
 
 ## I6 — Root artifact edits — open
 

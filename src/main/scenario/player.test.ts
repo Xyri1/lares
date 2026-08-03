@@ -68,32 +68,6 @@ describe('playScenarioPaced — seek', () => {
   })
 })
 
-describe('playScenarioPaced — dual stage (002-D2)', () => {
-  beforeEach(() => vi.useFakeTimers())
-  afterEach(() => vi.useRealTimers())
-
-  it('emits one feed per stage per tick; per-stage engine states match (determinism)', () => {
-    const feeds: AffectFeedMessage[] = []
-    let done: Record<string, string[]> = {}
-    const controller = playScenarioPaced(scenario(), {
-      stages: ['A', 'B'],
-      onFeed: (f) => feeds.push(f),
-      onSeek: () => {},
-      onDone: (lines) => (done = lines)
-    })
-
-    vi.advanceTimersByTime(60_000) // past endMs (last event + 2s tail)
-
-    const a = feeds.filter((f) => f.stageId === 'A')
-    const b = feeds.filter((f) => f.stageId === 'B')
-    expect(a.length).toBeGreaterThan(0)
-    expect(b.map((f) => f.tick)).toEqual(a.map((f) => f.tick)) // same ticks, no drift
-    expect(JSON.stringify(b)).toBe(JSON.stringify(a).replaceAll('"stageId":"A"', '"stageId":"B"'))
-    expect(done.B).toEqual(done.A) // per-stage engine trace lines, identical by construction
-    controller.cancel()
-  })
-})
-
 describe('playScenarioPaced — pause/resume', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())

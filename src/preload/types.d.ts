@@ -57,7 +57,6 @@ type CharacterDecision = 'commit' | 'rollback' | null
  * Declared structurally here — this seam is the contract, not a shared import.
  */
 interface AffectFeed {
-  stageId: string
   /** Scenario tick index (t = tick·100ms) — the renderer keys replay/synth
    * timing off this, not off arrival order (002 step-6 decision 1). */
   tick: number
@@ -70,14 +69,18 @@ interface AffectFeed {
 
 type ScenarioPlayResult = { ok: true; endMs: number } | { ok: false; error: string }
 
-/** Per-stage mapping preset selection (002-D2). B present = A/B mode:
- * two engines main-side, two synths body-side, traces written per stage. */
-interface StagePresets {
-  A: string
-  B?: string
-}
-
 type ControlResult = { ok: true } | { ok: false; error: string }
+
+/** Dev-run only: bounded, redacted events from the real ingress path. */
+interface LiveTraceEvent {
+  at: number
+  source: 'mcp' | 'hook' | 'feel' | 'feed' | 'renderer'
+  action: string
+  session?: string
+  detail?: string
+  feel?: { valence: number; activation: number; control: number } | null
+  operational?: string
+}
 
 /** Exact authoring preview is a separate P6 channel (013 SPEC §8): brain-
  * parsed opaque knob values, explicit user-invoked authoring only. */
@@ -134,12 +137,7 @@ interface LaresBridge {
   onCharacterFinalize(cb: (id: number) => void): void
   getCharacterDecision(id: number): Promise<CharacterDecision>
   onCharacterCancel(cb: (id: number) => void): void
-  playScenario(
-    name: string,
-    seed: number,
-    speed: number,
-    presets?: StagePresets
-  ): Promise<ScenarioPlayResult>
+  playScenario(name: string, seed: number, speed: number): Promise<ScenarioPlayResult>
   stopScenario(): Promise<ControlResult>
   pauseScenario(): Promise<ControlResult>
   resumeScenario(): Promise<ControlResult>
@@ -151,10 +149,8 @@ interface LaresBridge {
   onScenarioSeeked(cb: (history: AffectFeed[]) => void): void
   onScenarioEnd(cb: () => void): void
   onScenarioStopped(cb: () => void): void
-  /** Synth trace lines keyed by stage id ('A' | 'B'). */
-  sendSynthTrace(linesByStage: Record<string, string[]>): void
-  /** Widen the window for side-by-side A/B, restore on exit (002-D2). */
-  setAbMode(on: boolean): Promise<ControlResult>
+  sendSynthTrace(lines: string[]): void
+  onLiveTrace(cb: (event: LiveTraceEvent) => void): void
   /** Overlay only: shrink the window tight around the model and place it
    *  (003-D5). Main adds the padding and owns where she lands. */
   fitToModel(size: { width: number; height: number }): Promise<ControlResult>

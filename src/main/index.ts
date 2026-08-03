@@ -69,11 +69,11 @@ import { loadScenario } from './scenario/load'
 import {
   playScenarioPaced,
   type AffectFeedMessage,
-  type PacedPlayback,
-  type StageId
+  type PacedPlayback
 } from './scenario/player'
 import { writeTrace } from './scenario/trace'
 import { createServer } from './server/server'
+import { eventName } from './sessions/mapEvent'
 import { createTrayShell, hydrateInitialCharacter } from './shell'
 import {
   checkLatestRelease,
@@ -125,8 +125,21 @@ let tray: Tray | null = null
 let updateChecks: ReturnType<typeof createUpdateChecks> | null = null
 let quitting = false
 
-// Dev A/B is a scenario harness, not a second product body. Scenario playback
-// still fans out for comparison; the normal live feed below targets only the overlay.
+const LIVE_TRACE_LIMIT = 120
+const liveTrace: LiveTraceEvent[] = []
+let devTraceReady = false
+
+function traceLive(event: Omit<LiveTraceEvent, 'at'>, at = Date.now()): void {
+  if (!IS_DEV_RUN) return
+  const value: LiveTraceEvent = { at, ...event }
+  liveTrace.push(value)
+  if (liveTrace.length > LIVE_TRACE_LIMIT) liveTrace.splice(0, liveTrace.length - LIVE_TRACE_LIMIT)
+  if (!devTraceReady || !devWindow || devWindow.webContents.isDestroyed()) return
+  devWindow.webContents.send('liveTrace:update', value)
+}
+
+// Scenario playback still fans out so the product overlay mirrors the dev run;
+// the normal live feed below targets only the overlay.
 function broadcastScenarioFeed(feed: AffectFeedMessage): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
@@ -134,7 +147,11 @@ function broadcastScenarioFeed(feed: AffectFeedMessage): void {
 }
 
 function sendLiveFeed(feed: AffectFeedMessage): void {
-  for (const win of productBodyTargets(overlayWindow, BrowserWindow.getAllWindows())) {
+  const targets = productBodyTargets(overlayWindow, BrowserWindow.getAllWindows())
+  // The overlay remains the product body; the dev window receives the same
+  // live feed only so its pipeline display can prove renderer receipt.
+  if (IS_DEV_RUN && devWindow && !targets.includes(devWindow)) targets.push(devWindow)
+  for (const win of targets) {
     if (!win.webContents.isDestroyed()) win.webContents.send('affect:update', feed)
   }
 }
@@ -153,7 +170,18 @@ function emitLiveFeed(nowMs: number): void {
     return
   }
   const message = liveFeel.feed(nowMs)
-  if (message) sendLiveFeed(message)
+  if (message) {
+    traceLive(
+      {
+        source: 'feed',
+        action: 'emitted',
+        feel: message.feel,
+        operational: message.operational
+      },
+      nowMs
+    )
+    sendLiveFeed(message)
+  }
 }
 
 /** A body just took the feed channel — at boot, or after a character switch
@@ -348,7 +376,8 @@ async function startNerves(): Promise<void> {
   })
   liveFeel = createFeel({
     path: feelFile(),
-    state: (nowMs) => liveNerves!.sessionState(nowMs)
+    state: (nowMs) => liveNerves!.sessionState(nowMs),
+    trace: traceLive
   })
   if (currentSelection) {
     characterAssets = new CharacterAssetState(dirname(currentSelection.manifestPath))
@@ -398,6 +427,11 @@ async function startNerves(): Promise<void> {
           currentSelection = candidate
           liveNerves!.commitCharacter(state.nerves)
           stopScenarioPlayback()
+          // The dev body is an observer, not part of the switch transaction;
+          // reload it after commit so its wiring display follows the product body.
+          if (IS_DEV_RUN && devWindow && !devWindow.webContents.isDestroyed()) {
+            devWindow.reload()
+          }
           // The new body performs its own neutral until the feed reaches it:
           // re-emit the unchanged tuple and the live operational state so the
           // switch eases from one character's target to the other's (§§1, 6)
@@ -411,7 +445,18 @@ async function startNerves(): Promise<void> {
   nervesServer = createServer({
     ingest: (envelope, nowMs) => {
       liveNerves!.ingest(envelope, nowMs)
-      densityLog?.recordBaseline(liveNerves!.sessionState(nowMs).baseline, nowMs)
+      const operational = liveNerves!.sessionState(nowMs).baseline
+      densityLog?.recordBaseline(operational, nowMs)
+      traceLive(
+        {
+          source: 'hook',
+          action: 'accepted',
+          session: `${envelope.harness}:${envelope.session_id}`,
+          detail: eventName(envelope) ?? 'unknown event',
+          operational
+        },
+        nowMs
+      )
       emitLiveFeed(nowMs)
     },
     feel: (args, mcpSessionId, nowMs) => {
@@ -425,7 +470,8 @@ async function startNerves(): Promise<void> {
     },
     checkpoint: (sessionKey) => liveFeel?.checkpoint(sessionKey),
     listParameters: () => liveNerves!.listParameters(),
-    previewExpression: (args, nowMs) => liveNerves!.previewExpression(args, nowMs)
+    previewExpression: (args, nowMs) => liveNerves!.previewExpression(args, nowMs),
+    trace: traceLive
   })
 
   try {
@@ -550,14 +596,13 @@ function registerCharacterIpc(): void {
 }
 
 // One playback at a time; engine trace lines are held until the renderer
-// returns its synth frames, then the merged file is written: all engine
-// lines first, then all synth lines (deterministic order, 002-D3).
+// returns its synth frames, then the merged file is written in deterministic
+// engine-then-synth order (002-D3).
 let activePlayback: {
   name: string
   seed: number
-  stages: StageId[]
   controller: PacedPlayback
-  engineLines?: Record<string, string[]>
+  engineLines?: string[]
 } | null = null
 
 function stopScenarioPlayback(): void {
@@ -586,21 +631,6 @@ const GOLDEN_NAMES = new Set([
   'recovery-arc'
 ])
 
-// P7: preset names are renderer input — sane shape, then allowlisted against
-// the files actually shipped under presets/ (decision: data, not code).
-function isPresetName(n: unknown): n is string {
-  return (
-    typeof n === 'string' &&
-    /^[a-zA-Z0-9_-]{1,64}$/.test(n) &&
-    existsSync(join(app.getAppPath(), 'presets', `${n}.json`))
-  )
-}
-
-/** Single-stage keeps the pre-A/B filename; A/B appends .stageA / .stageB. */
-function traceName(base: string, stages: StageId[], stage: StageId): string {
-  return stages.length > 1 ? `${base}.stage${stage}` : base
-}
-
 // Live only while a run is between scenario:play and scenario:end — the
 // controls (pause/resume/setSpeed/seek) all no-op with an error once the
 // engine half has finished and is waiting on the renderer's synth trace
@@ -610,15 +640,17 @@ function activeController(): PacedPlayback | null {
 }
 
 function registerScenarioIpc(): void {
+  ipcMain.on('liveTrace:ready', (event) => {
+    if (!IS_DEV_RUN || !devWindow || event.sender !== devWindow.webContents) return
+    devTraceReady = true
+    for (const value of liveTrace) event.sender.send('liveTrace:update', value)
+  })
+
   ipcMain.handle(
     'scenario:play',
-    (
-      event,
-      name: unknown,
-      seed: unknown,
-      speed: unknown,
-      presets: unknown
-    ): { ok: true; endMs: number } | { ok: false; error: string } => {
+    (event, name: unknown, seed: unknown, speed: unknown):
+      | { ok: true; endMs: number }
+      | { ok: false; error: string } => {
       // P7: renderer input is untrusted — allowlist the name, clamp the numbers.
       if (activePlayback) return { ok: false, error: 'playback already in progress' }
       if (typeof name !== 'string' || !GOLDEN_NAMES.has(name)) {
@@ -628,24 +660,6 @@ function registerScenarioIpc(): void {
       const safeSpeed =
         typeof speed === 'number' && Number.isFinite(speed) ? Math.min(64, Math.max(0.1, speed)) : 1
 
-      // Per-stage preset selection (002-D2): `{ A: name, B?: name }`. B present
-      // = A/B mode = two engines + per-stage traces. Preset DATA is applied
-      // renderer-side; main validates names and fans out stages.
-      let stages: StageId[] = ['A']
-      if (presets !== undefined) {
-        if (typeof presets !== 'object' || presets === null || Array.isArray(presets)) {
-          return { ok: false, error: 'invalid presets' }
-        }
-        const p = presets as Record<string, unknown>
-        if (!isPresetName(p.A ?? 'default')) {
-          return { ok: false, error: `unknown preset "${String(p.A)}"` }
-        }
-        if (p.B !== undefined) {
-          if (!isPresetName(p.B)) return { ok: false, error: `unknown preset "${String(p.B)}"` }
-          stages = ['A', 'B']
-        }
-      }
-
       let scenario
       try {
         scenario = loadScenario(join(app.getAppPath(), 'scenarios', `${name}.json`))
@@ -654,12 +668,9 @@ function registerScenarioIpc(): void {
       }
 
       const sender = event.sender
-      console.log(
-        `[lares] scenario:play ${name} seed=${safeSeed} speed=${safeSpeed}x stages=${stages.join(',')}`
-      )
+      console.log(`[lares] scenario:play ${name} seed=${safeSeed} speed=${safeSpeed}x`)
       const controller = playScenarioPaced(scenario, {
         speed: safeSpeed,
-        stages,
         // 003-D2: the feed fans out to every live window, so the overlay
         // mirrors playback on the desktop. Everything else below stays aimed
         // at the requester — scenario control and the synth trace are a
@@ -671,62 +682,38 @@ function registerScenarioIpc(): void {
         onDone: (engineLines) => {
           if (sender.isDestroyed()) {
             // No renderer left to answer — persist the engine half and unlock.
-            for (const stage of stages) {
-              writeTrace(traceName(`${name}.seed${safeSeed}`, stages, stage), engineLines[stage] ?? [])
-            }
+            writeTrace(`${name}.seed${safeSeed}`, engineLines)
             activePlayback = null
             return
           }
-          activePlayback = { name, seed: safeSeed, stages, controller, engineLines }
+          activePlayback = { name, seed: safeSeed, controller, engineLines }
           sender.send('scenario:end', { name })
         }
       })
-      activePlayback = { name, seed: safeSeed, stages, controller }
+      activePlayback = { name, seed: safeSeed, controller }
       return { ok: true, endMs: controller.endMs }
     }
   )
 
-  ipcMain.on('scenario:synthTrace', (_event, linesByStage: unknown) => {
+  ipcMain.on('scenario:synthTrace', (_event, rawLines: unknown) => {
     if (!activePlayback?.engineLines) return
-    const { name, seed, stages, engineLines } = activePlayback
-    // P7: only active stages are written, only string lines pass.
-    const raw = (
-      typeof linesByStage === 'object' && linesByStage !== null && !Array.isArray(linesByStage)
-        ? linesByStage
-        : {}
-    ) as Record<string, unknown>
-    for (const stage of stages) {
-      const stageLines = raw[stage]
-      const synthLines = Array.isArray(stageLines)
-        ? stageLines.filter((l): l is string => typeof l === 'string')
-        : []
-      const engine = engineLines[stage] ?? []
-      const path = writeTrace(traceName(`${name}.seed${seed}`, stages, stage), [
-        ...engine,
-        ...synthLines
-      ])
-      console.log(
-        `[lares] trace written: ${path} (${engine.length} engine + ${synthLines.length} synth lines)`
-      )
-    }
+    const { name, seed, engineLines } = activePlayback
+    const synthLines = Array.isArray(rawLines)
+      ? rawLines.filter((line): line is string => typeof line === 'string')
+      : []
+    const path = writeTrace(`${name}.seed${seed}`, [...engineLines, ...synthLines])
+    console.log(
+      `[lares] trace written: ${path} (${engineLines.length} engine + ${synthLines.length} synth lines)`
+    )
     activePlayback = null
-  })
-
-  // A/B toggle widens the one app window for two side-by-side stages and
-  // restores it on exit (002-D2 — one window, no compositing).
-  ipcMain.handle('window:abMode', (event, on: unknown) => {
-    if (typeof on !== 'boolean') return { ok: false, error: 'invalid abMode flag' } // P7
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) return { ok: false, error: 'no window' }
-    const [, height] = win.getSize()
-    win.setSize(on ? AB_WIDTH : BASE_WIDTH, height)
-    return { ok: true }
   })
 
   const NO_PLAYBACK = { ok: false as const, error: 'no playback in progress' }
 
   ipcMain.handle('scenario:stop', () => {
     stopScenarioPlayback()
+    liveFeel?.resetFeed()
+    emitLiveFeed(Date.now())
     return { ok: true }
   })
 
@@ -762,8 +749,7 @@ function registerScenarioIpc(): void {
   })
 }
 
-const BASE_WIDTH = 480
-const AB_WIDTH = 1220 // two side-by-side stages + the dev panel strip
+const BASE_WIDTH = 820
 
 // Transparent breathing room around the model, and the first-run corner
 // inset (003-D5). Both stay small: every transparent pixel is click-through
@@ -780,6 +766,7 @@ const IS_DEV_RUN = is.dev && !!process.env['ELECTRON_RENDERER_URL']
 
 /** The overlay is the packaged deliverable; only ever one of it. */
 let overlayWindow: BrowserWindow | null = null
+let devWindow: BrowserWindow | null = null
 
 const positionFile = (): string => join(app.getPath('userData'), 'window.json')
 const configFile = (): string => join(app.getPath('userData'), 'config.json')
@@ -1069,6 +1056,13 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+  })
+  devWindow = mainWindow
+  mainWindow.on('closed', () => {
+    if (devWindow === mainWindow) {
+      devWindow = null
+      devTraceReady = false
+    }
   })
 
   wireCommon(mainWindow, 'dev')

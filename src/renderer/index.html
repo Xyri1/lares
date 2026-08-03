@@ -21,9 +21,8 @@
       html.overlay body {
         background: transparent;
       }
-      /* One canvas, one WebGL context: A/B splits it into two slots (002-D2).
-         The wrapper is what pixi sizes to, so the dev panel can reserve its
-         strip without the stages rendering underneath it. */
+      /* The wrapper is what pixi sizes to, so the dev panel can reserve its
+         strip without the stage rendering underneath it. */
       #stage-wrap {
         position: absolute;
         inset: 0;
@@ -51,7 +50,8 @@
         top: 0;
         right: 0;
         bottom: 0;
-        width: 260px;
+        width: 380px;
+        box-sizing: border-box;
         overflow-y: auto;
         background: rgba(20, 20, 24, 0.85);
         color: #ddd;
@@ -77,6 +77,26 @@
       #dev-panel select {
         margin: 2px 4px 6px 0;
         font: inherit;
+      }
+      #dev-panel fieldset,
+      #dev-panel details {
+        margin: 8px 0;
+        border: 1px solid #555;
+      }
+      #dev-panel pre {
+        margin: 4px 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      #dev-panel .dev-log {
+        max-height: 180px;
+        overflow: auto;
+        background: #111;
+        padding: 4px;
+      }
+      #dev-panel .dev-note {
+        color: #aaa;
+        margin-bottom: 4px;
       }
     </style>
   </head>

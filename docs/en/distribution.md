@@ -136,7 +136,7 @@ Use a clean Apple Silicon Mac running macOS 13 or newer.
     --uninstall` (or `./scripts/install-local.sh uninstall`). Leave **Also
     delete Lares data** unchecked, and confirm. Verify the app, any legacy Codex hooks-file and Claude
     settings/MCP entries, and the launcher shims are gone, while imported
-    characters, authored expressions, settings, calibration, and position
+    characters, settings, and position
     remain under Lares application support. The Claude Code and Codex
     plugins are user-installed and stay behind; remove them with
     `/plugin uninstall lares@lares` (Claude Code) and `/plugins` (Codex) as
@@ -164,7 +164,7 @@ Use a clean x64 Windows 10 or Windows 11 machine.
    blocked on that machine; do not disable system-wide protection to create a
    false pass.
 3. Repeat macOS steps 4–9 for tray-only startup, real import, duplicate/live
-   switching, persistence/restart, DND/reset, calibration, both harness plugin
+   switching, persistence/restart, DND/reset, both harness plugin
    installs, Codex hook trust, and the one disclosed live update request.
 4. Quit Lares, then launch uninstall from Apps & Features or the bundled
    `Uninstall Lares.exe`. Leave **Also delete Lares data** unchecked. Verify app and owned integrations are removed and

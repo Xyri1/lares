@@ -7,6 +7,4 @@ interface Window {
   __runtime?: unknown
   /** Dev-only console handle for scripted replay smokes (A4). */
   __driver?: unknown
-  /** Dev-only console handle for the A/B second stage (002-D2). */
-  __runtimeB?: unknown
 }

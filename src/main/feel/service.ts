@@ -33,6 +33,13 @@ export interface FeelDeps {
   /** Defaults to an atomic write of `path`. */
   persist?(file: FeelFile): void
   warn?(message: string): void
+  trace?(event: {
+    source: 'feel'
+    action: 'accepted' | 'rejected'
+    session: string
+    detail?: string
+    feel?: { valence: number; activation: number; control: number }
+  }): void
 }
 
 export interface Feel {
@@ -91,13 +98,35 @@ export function createFeel(deps: FeelDeps): Feel {
     attributed,
     report(args, mcpSessionId, nowMs) {
       const { session } = attributed(mcpSessionId, nowMs)
-      const result = register.tryFeel(session, args, nowMs)
+      let result
+      try {
+        result = register.tryFeel(session, args, nowMs)
+      } catch (error) {
+        deps.trace?.({ source: 'feel', action: 'rejected', session, detail: errorMessage(error) })
+        throw error
+      }
       if (result.status === 'rejected') {
+        deps.trace?.({
+          source: 'feel',
+          action: 'rejected',
+          session,
+          detail: `spacing ${result.waitMs}ms`
+        })
         throw new Error(
           `one feel per session every ${FEEL_SPACING_MS / 1000}s; wait ${Math.ceil(result.waitMs / 1000)}s`
         )
       }
       const latch = register.get(session)!
+      deps.trace?.({
+        source: 'feel',
+        action: 'accepted',
+        session,
+        feel: {
+          valence: latch.valence,
+          activation: latch.activation,
+          control: latch.control
+        }
+      })
       // §8: one short sentence naming the stored tuple. The session key is
       // internal bookkeeping and never crosses to the model.
       return `Latched valence ${latch.valence}, activation ${latch.activation}, control ${latch.control}.`
@@ -115,7 +144,7 @@ export function createFeel(deps: FeelDeps): Feel {
       const operational = deps.state(nowMs).baseline
       if (nowMs < warmUntil) gate.reset()
       if (!gate.changed(feel, operational)) return null
-      return { stageId: 'A', tick: Math.floor(nowMs / 100), feel, operational }
+      return { tick: Math.floor(nowMs / 100), feel, operational }
     },
     resetFeed() {
       gate.reset()
