@@ -10,8 +10,9 @@ slice contract: the model-facing tool, session attribution and display
 selection, the prompt-submit checkpoint, operational presentation,
 durable storage, character package changes, assessment scenarios, and
 the root-SPEC delta list. Lar-to-harness binding and hibernation/wake
-presentation belong to slice 014 (013-D8); same-harness concurrency is
-separately deferred; migration and deletion order belong to PLAN.
+presentation belong to the future `0xx-lar-harness-binding` slice (013-D8);
+same-harness concurrency is separately deferred; migration and deletion order
+belong to PLAN.
 Numeric values marked *(default)* follow the root convention: tunable
 constants, not contract.
 
@@ -256,10 +257,10 @@ session table and attributes each `feel` call to the session whose turn
 is open (`UserPromptSubmit` seen, no `Stop` yet), falling back to the
 most recently active live session. Several candidates resolve to the
 most recent. Cross-harness misattribution while two harnesses run
-concurrently is an accepted, documented v1 degradation: slice 014 binds
-each Lar to one harness — one agent, not one session — which narrows
-attribution to the bound harness's sessions and retires the ambiguity
-without new logic here.
+concurrently is an accepted, documented v1 degradation. The future
+`0xx-lar-harness-binding` slice binds each Lar to one harness — one agent, not
+one session — narrowing attribution to the bound harness's sessions and
+retiring the ambiguity without new logic here.
 
 An unattributable call (empty session table) still performs and latches
 under the volatile key `mcp:<mcp-session-id>`: it drives the display
@@ -269,7 +270,7 @@ degradation, never patched by guessing.
 **Display selection (v1 rule).** The Lar performs the tuple of the most
 recent valid report across all keys, live or ended; restart restores it
 (013-D7). Refinement belongs with same-harness concurrency and slice
-014 binding. Operational loudness ordering stays root §3 (P10).
+`0xx-lar-harness-binding`. Operational loudness ordering stays root §3 (P10).
 
 ## 10. Prompt-submit checkpoint
 
@@ -312,9 +313,9 @@ shipped defaults, character-overridable (§13) — over the current feel
 target at overlay weight 0.6 *(default)*, ordered by root §3 priority.
 Clearing an overlay reveals the unchanged latched target (013-D7).
 `working`/`thinking`/`done`/`idle` have no overlay in v1; the old §3
-idle sleep sequence retires here, and hibernation presentation arrives
-with slice 014. Presentation of disconnected, silent, or session-end
-status remains deferred (DECISIONS).
+idle sleep sequence retires here, and hibernation presentation arrives with
+the future `0xx-lar-harness-binding` slice. Presentation of disconnected,
+silent, or session-end status remains deferred (DECISIONS).
 
 ## 12. Durable latch storage
 

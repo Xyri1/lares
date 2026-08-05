@@ -154,10 +154,10 @@ it. *Status:* proposed by explicit maintainer direction; exact durable storage
 belongs to slice 013 SPEC, while same-harness multi-session selection remains
 separately deferred.
 
-**013-D8 — Binding direction is fixed; its specification belongs to slice
-014.** *Draft choice:* slice 013 changes the feeling contract without adding
-harness or Lar identifiers to `feel()`. The product direction for slice 014 is
-to bind each Lar instance to one harness; a different harness requires a
+**013-D8 — Binding direction is fixed; its specification belongs to a future
+`0xx` slice.** *Draft choice:* slice 013 changes the feeling contract without
+adding harness or Lar identifiers to `feel()`. The deferred product direction
+is to bind each Lar instance to one harness; a different harness requires a
 different Lar instance. Lares launches every configured Lar
 in a visually identifiable hibernation presentation and wakes the bound Lar on
 its first valid invocation. Hibernation is operational presentation, not
@@ -171,8 +171,10 @@ feeling action minimal. Deferring ownership and wake routing prevents slice 013
 from mixing semantic protocol replacement with multi-Lar lifecycle work.
 *Status:* proposed by explicit maintainer direction; binding identity,
 invocation qualification, hibernation entry and re-entry, and storage of the
-hibernation overlay belong to slice 014 SPEC. Durable `feel` storage remains a
-slice 013 concern. Same-harness concurrency remains outside this decision.
+hibernation overlay belong to the future `0xx-lar-harness-binding` SPEC.
+Durable `feel` storage remains a slice 013 concern. Same-harness concurrency
+remains outside this decision. *Sequencing amended 2026-08-05:* authored
+choreography takes slice 014; binding remains unnumbered until scheduled.
 
 **013-D9 — Nine-anchor pose blend over renderer-neutral channels.** *Draft
 choice:* the performance target is a vector of scalar channels in `[-1, 1]`
@@ -282,7 +284,7 @@ I6 applied the following changes to the root artifacts:
 ## Deferred to later slice artifacts
 
 - Lar-to-harness binding plus hibernation and wake presentation are owned by
-  slice 014.
+  the future `0xx-lar-harness-binding` slice.
 - Same-harness multi-session aggregation remains separately deferred.
 - Presentation of disconnected, silent, or session-end operational status
   without altering the latch.

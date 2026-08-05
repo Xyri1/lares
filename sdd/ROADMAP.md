@@ -1,6 +1,6 @@
 # ROADMAP — Lares
 
-**Artifact:** ROADMAP · **Project:** Lares · **Status:** Living · **Date:** 2026-08-03
+**Artifact:** ROADMAP · **Project:** Lares · **Status:** Living · **Date:** 2026-08-05
 
 Milestones are gated, not dated: each closes on its exit gate, and a slice doc set (SPEC, DECISIONS, PLAN under `sdd/slices/NNN-name/`) attaches per milestone. Sequence reflects dependency order, not importance.
 
@@ -26,7 +26,15 @@ The affect engine and cue stack above remain historical close-out evidence; slic
 ## M2b — Performance
 
 The original D28 history-through-cues tuning ladder is superseded by slice 013 and receives no further work. Root §9 / 013-S1–S11 now form a continuous assessment matrix for the deterministic `feel`→performance path, repeated when models, guidance, anchors, or wiring materially change. Findings create bounded tuning work here; they do not keep slice 013 or launch permanently open.
-**Status:** non-blocking continuous track; G1 closed as a terminal gate by D36.
+**Authored choreography (slice 014):** E1–E5 established that natural Live2D
+body performance comes from complete character-authored phrases, not
+independent parameter oscillators. Slice 014 promotes the accepted Haru E5
+basis into the body: the `feel` wire and P6 feed stay unchanged; explicit
+character mapping selects one complete renderer-local phrase on a displayed
+feel change, then returns to the persistent latched target. E5 is the visual
+quality floor.
+**Status:** slice 014 planned; implementation open. G1 remains closed as a
+terminal slice-013 gate by D36.
 
 ## M1b — Skeleton
 
@@ -43,7 +51,14 @@ Loopback HTTP server in main: event route + streamable-HTTP MCP endpoint; discov
 **Post-close emoting research (2026-07-31):** slice `sdd/slices/011-interjection/` records the model-owned semantic-action direction: the agent voluntarily reports its own appraisal through the existing callable emote interface, independent of language and without Lares observing chain of thought or inferring from text. The discarded token branch has no SPEC or PLAN. Multilingual, cross-model, cross-harness behavioral evidence must justify any later instruction or protocol change (D34).
 **Host-guidance follow-up (2026-08-01):** slice `sdd/slices/012-host-guidance/` records the first fresh adoption failure after tool exposure was verified and opens a second, host-level instruction vector (012-D1). MCP remains the canonical emote contract; concise plugin-delivered context will reinforce it without moving appraisal into hooks. Delivery is session-scoped per host (012-D4): an app-owned `~/.claude/rules/lares.md` on Claude Code and `SessionStart.additionalContext` on Codex, both gated on app liveness and a hidden settings toggle; per-turn injection was tried (012-D2) and retired. Its emote-based A/B moment-coverage gate (G1) was first superseded by slice 013's model-behavior matrix, then reclassified as continuous assessment by D36.
 **Feel replacement (slice 013):** `sdd/slices/013-feel/` replaces the model-facing `emote(cue | params)` contract with the three-axis absolute `feel(valence, activation, control)` report. The fixed runtime cue vocabulary, freeform animation input, engine-owned emotional history, and hook-synthesized emotion are retired rather than retained as compatibility paths. Supplied Live2D expressions and motions remain physical assets, not agent-facing semantic choices. I1–I6 are implemented and the root contract is updated. D36 closes G1 as a terminal gate without claiming the unrun matrix passed; real-model behavior, shipped-anchor calibration, and 400px forced-choice viewing continue under M2b when material changes warrant them.
-**Lar-instance binding follow-up (slice 014):** binding is deliberately outside slice 013. Slice 014 binds each Lar instance to one harness; another harness requires another Lar instance. Lares still launches every configured Lar, each in a visually identifiable hibernation presentation, and wakes the bound Lar on its first valid invocation. Hibernation is operational presentation rather than a neutral feeling: it does not clear a previously latched `feel` tuple, which becomes visible again on wake unless the waking invocation replaces it.
+**Lar-instance binding follow-up (future `0xx-lar-harness-binding`):** binding
+is deliberately outside slices 013 and 014. The deferred slice binds each Lar
+instance to one harness; another harness requires another Lar instance. Lares
+still launches every configured Lar, each in a visually identifiable
+hibernation presentation, and wakes the bound Lar on its first valid
+invocation. Hibernation is operational presentation rather than a neutral
+feeling: it does not clear a previously latched `feel` tuple, which becomes
+visible again on wake unless the waking invocation replaces it.
 
 ## M3b — Senses
 

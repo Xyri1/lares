@@ -1,0 +1,4 @@
+# Local generated evidence and viewing records; reports carry the conclusions.
+evidence/
+# Experiment executables stay local; slice history is Markdown-only.
+harness/

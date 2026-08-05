@@ -115,8 +115,9 @@ The user need not understand or see the numeric coordinates during normal use.
   responsibility, novelty, and social meaning remain outside the three values.
 - Add a fourth axis or freeform emotion label without a demonstrated failure of
   the three-axis interface.
-- Define Lar-to-harness binding or hibernation and wake presentation; slice 014
-  owns that work. Same-harness concurrent sessions remain separately deferred.
+- Define Lar-to-harness binding or hibernation and wake presentation; the
+  future `0xx-lar-harness-binding` slice owns that work. Same-harness
+  concurrent sessions remain separately deferred.
 
 ## 7. Product contract
 
@@ -306,6 +307,6 @@ this slice draft exists.
 6. Which existing calibration and character-authoring surfaces remain useful
    after runtime emotion names disappear.
 
-Lar-to-harness routing, hibernation, and wake behavior are assigned to slice
-014 rather than left open for slice 013. Same-harness concurrent-session
-selection remains separately deferred.
+Lar-to-harness routing, hibernation, and wake behavior are assigned to the
+future `0xx-lar-harness-binding` slice rather than left open for slice 013.
+Same-harness concurrent-session selection remains separately deferred.

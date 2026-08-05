@@ -116,7 +116,8 @@ roughly one reviewable commit series.
   the engine; I5 may grow. Golden re-authoring is deliberately last so
   live behavior never waits on tooling.
 - Same-harness concurrency, Lar binding, and hibernation stay out
-  (013-D8/slice 014); nothing in I1–I6 may pre-build for them.
+  (013-D8/future `0xx-lar-harness-binding`); nothing in I1–I6 may pre-build
+  for them.
 - The calibration workflow (wiring mapper, anchor authoring,
   channel/tuple preview, write tools, guidance) is deferred to its own
   slice (013-D11); hand-authored JSON against SPEC §13 is the interim

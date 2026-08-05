@@ -1,6 +1,6 @@
 # SPEC — Lares (project scope)
 
-**Artifact:** SPEC · **Project:** Lares · **Status:** Living · **Date:** 2026-08-03
+**Artifact:** SPEC · **Project:** Lares · **Status:** Living · **Date:** 2026-08-05
 
 The technical contract for v1. Numeric values marked *(default)* are tunable constants in one config module; changing them is not a contract change. Changing schemas, interfaces, state machines, or scenarios is. Unit-level detail lives in slice SPECs (`sdd/slices/NNN-name/`, attached to ROADMAP milestones); slice SPECs refine this document and never contradict it.
 
@@ -40,7 +40,7 @@ default on.
 
 Table row: `{ session_id, harness, cwd, state, since, last_event_at, subagents: n, pid? }`. Created on the first registered event; Stop retains the row in `done`, while SessionEnd removes it. **Liveness:** rows with a known pid are reaped when the pid dies; rows without, after 30min *(default)* of silence.
 
-**States and priority:** `awaiting_input (100) > error (80) > working (60) > thinking (50) > done (30) > idle (10)`. Displayed operational state = max priority across live sessions (P10). `done` decays to `idle` after 60s *(default)*; after 90s without events, working/thinking/done display as idle, but live awaiting_input/error rows remain loud (P10). There is no idle sleep sequence; hibernation presentation belongs to slice 014.
+**States and priority:** `awaiting_input (100) > error (80) > working (60) > thinking (50) > done (30) > idle (10)`. Displayed operational state = max priority across live sessions (P10). `done` decays to `idle` after 60s *(default)*; after 90s without events, working/thinking/done display as idle, but live awaiting_input/error rows remain loud (P10). There is no idle sleep sequence; hibernation presentation belongs to the future `0xx-lar-harness-binding` slice.
 
 **Event→state mapping (normative for v1 adapters):**
 
