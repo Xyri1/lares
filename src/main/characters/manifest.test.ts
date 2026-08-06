@@ -15,14 +15,30 @@ const VALID = {
   renderers: { live2d: { model: 'runtime/Hiyori.model3.json' } }
 }
 
-function writeRuntime(root: string, model = 'Hiyori'): void {
+function writeRuntime(
+  root: string,
+  model = 'Hiyori',
+  motions?: Record<string, number | unknown[]>
+): void {
   mkdirSync(join(root, 'runtime'), { recursive: true })
   writeFileSync(
     join(root, 'runtime', `${model}.model3.json`),
     JSON.stringify({
       FileReferences: {
         Moc: `${model}.moc3`,
-        Textures: [`${model}.png`]
+        Textures: [`${model}.png`],
+        ...(motions
+          ? {
+              Motions: Object.fromEntries(
+                Object.entries(motions).map(([group, entries]) => [
+                  group,
+                  typeof entries === 'number'
+                    ? Array.from({ length: entries }, () => ({ File: `${group}.motion3.json` }))
+                    : entries
+                ])
+              )
+            }
+          : {})
       }
     })
   )
@@ -30,11 +46,15 @@ function writeRuntime(root: string, model = 'Hiyori'): void {
   writeFileSync(join(root, 'runtime', `${model}.png`), 'png')
 }
 
-function writePackage(manifest: unknown, withModel = true): string {
+function writePackage(
+  manifest: unknown,
+  withModel = true,
+  motions?: Record<string, number | unknown[]>
+): string {
   const dir = mkdtempSync(join(tmpdir(), 'lares-manifest-'))
   const path = join(dir, 'lar.character.json')
   writeFileSync(path, typeof manifest === 'string' ? manifest : JSON.stringify(manifest))
-  if (withModel) writeRuntime(dir)
+  if (withModel) writeRuntime(dir, undefined, motions)
   return path
 }
 
@@ -193,6 +213,109 @@ describe('loadCharacter', () => {
     }))
     expect(result).toMatchObject({ ok: false })
     if (!result.ok) expect(result.error).toContain('performance.idle')
+  })
+
+  // Slice 014 SPEC §3: the optional authored choreography block. Shape is
+  // validated in parseManifest; group/index existence is checked against the
+  // selected model3's registered motion counts in validateCharacter.
+  describe('choreography', () => {
+    const choreographyManifest = (choreography: unknown): unknown => ({
+      ...VALID,
+      renderers: { live2d: { ...VALID.renderers.live2d, choreography } }
+    })
+    const errorFor = (
+      choreography: unknown,
+      motions?: Record<string, number | unknown[]>
+    ): string =>
+      validateCharacter(writePackage(choreographyManifest(choreography), true, motions)).errors.join('\n')
+
+    it('accepts a valid choreography block and reports it back', () => {
+      const manifestPath = writePackage(
+        choreographyManifest({
+          fallback: { group: 'Idle', index: 1 },
+          anchors: { '+++': { group: 'Tap', index: 2 }, '---': { group: 'Idle', index: 0 } }
+        }),
+        true,
+        { Idle: 3, Tap: 3 }
+      )
+      const result = loadCharacter(manifestPath)
+      expect(result).toMatchObject({ ok: true })
+      if (result.ok) {
+        expect(result.live2d.choreography).toEqual({
+          fallback: { group: 'Idle', index: 1 },
+          anchors: { '+++': { group: 'Tap', index: 2 }, '---': { group: 'Idle', index: 0 } }
+        })
+      }
+    })
+
+    it('leaves choreography undefined when absent', () => {
+      const result = loadCharacter(writePackage(VALID))
+      expect(result).toMatchObject({ ok: true })
+      if (result.ok) expect(result.live2d).not.toHaveProperty('choreography')
+    })
+
+    it('rejects a choreography block missing fallback', () => {
+      expect(errorFor({ anchors: {} })).toContain(
+        'renderers.live2d.choreography.fallback is required'
+      )
+    })
+
+    it('rejects an unknown top-level choreography key', () => {
+      expect(errorFor({ fallback: { group: 'Idle', index: 0 }, loop: true })).toContain(
+        'renderers.live2d.choreography.loop is not a known key'
+      )
+    })
+
+    it('rejects a choreography ref with extra keys', () => {
+      expect(errorFor({ fallback: { group: 'Idle', index: 0, duration: 400 } })).toContain(
+        'renderers.live2d.choreography.fallback must contain exactly group and index'
+      )
+    })
+
+    it('rejects a choreography ref with an empty group or a non-integer index', () => {
+      expect(errorFor({ fallback: { group: '', index: 0 } })).toContain(
+        'renderers.live2d.choreography.fallback.group must be a non-empty string'
+      )
+      expect(errorFor({ fallback: { group: 'Idle', index: -1 } })).toContain(
+        'renderers.live2d.choreography.fallback.index must be a safe integer >= 0'
+      )
+      expect(errorFor({ fallback: { group: 'Idle', index: 1.5 } })).toContain(
+        'renderers.live2d.choreography.fallback.index must be a safe integer >= 0'
+      )
+    })
+
+    it('rejects an unknown anchor corner key inside choreography', () => {
+      expect(
+        errorFor({
+          fallback: { group: 'Idle', index: 0 },
+          anchors: { neutral: { group: 'Idle', index: 0 } }
+        })
+      ).toContain('renderers.live2d.choreography.anchors.neutral is not a known key')
+    })
+
+    it('rejects a choreography reference to an unknown motion group', () => {
+      expect(errorFor({ fallback: { group: 'Missing', index: 0 } }, { Idle: 2 })).toContain(
+        'renderers.live2d.choreography.fallback references unknown motion group "Missing"'
+      )
+    })
+
+    it('rejects a choreography reference index at or beyond the group motion count', () => {
+      expect(errorFor({ fallback: { group: 'Idle', index: 2 } }, { Idle: 2 })).toContain(
+        'renderers.live2d.choreography.fallback references motion index 2 but group "Idle" has only 2 motion(s)'
+      )
+    })
+
+    it('rejects a choreography reference to a motion slot without a registered file', () => {
+      expect(errorFor({ fallback: { group: 'Idle', index: 0 } }, { Idle: [{}] })).toContain(
+        'renderers.live2d.choreography.fallback references unusable motion slot Idle[0]'
+      )
+    })
+
+    it('rejects a choreography block on a model with no motions at all', () => {
+      expect(errorFor({ fallback: { group: 'Idle', index: 0 } })).toContain(
+        'renderers.live2d.choreography.fallback references unknown motion group "Idle"'
+      )
+    })
   })
 
   // Slice 013 SPEC §13: optional channel-pose blocks. Partial by design — the

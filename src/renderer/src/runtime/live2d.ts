@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js'
 import { Application, Renderer, Ticker, UPDATE_PRIORITY } from 'pixi.js'
 import { install } from '@pixi/unsafe-eval'
 import { Live2DModel, MotionPriority } from 'pixi-live2d-display/cubism4'
-import type { IRuntime, ParamInfo, RuntimeCompatibility } from './iface'
+import type { IRuntime, ManagedMotionPlan, ParamInfo, RuntimeCompatibility } from './iface'
 import {
   isCubism4MotionManager,
   LARES_MOTION_GROUP,
@@ -28,13 +28,23 @@ interface CoreParamStruct {
   minimumValues: number[]
   maximumValues: number[]
   defaultValues: number[]
+  values: number[]
+  count: number
+}
+
+// Part opacities have no core default array; the authored state is whatever
+// the freshly loaded model carries, snapshotted at prepareLoad.
+interface CorePartStruct {
+  ids: string[]
+  opacities: number[]
   count: number
 }
 
 interface CoreModel {
   setParameterValueByIndex(index: number, value: number, weight?: number): void
+  setPartOpacityByIndex(index: number, opacity: number): void
   update(): void
-  _model: { parameters: CoreParamStruct }
+  _model: { parameters: CoreParamStruct; parts: CorePartStruct }
 }
 
 interface MocHandle {
@@ -230,6 +240,70 @@ interface RuntimeModelState {
   paramIndex: Map<string, number>
   overrides: Map<string, { value: number; weight: number }>
   expression?: RuntimeExpression
+  partDefaults: number[]
+  pendingManaged?: ManagedState
+}
+
+// Fixed body-choreography source constants (slice 014 SPEC §5) plus the
+// library's fade defaults (pixi-live2d-display config values, mirrored here
+// so the idle-preload race check needs no config import).
+const SETTLE_MS = 700
+const FINISH_GRACE_MS = 250
+const IDLE_FADE_S = 2
+const NORMAL_FADE_S = 0.5
+
+function smooth01(t: number): number {
+  if (t <= 0) return 0
+  if (t >= 1) return 1
+  return t * t * (3 - 2 * t)
+}
+
+interface SettleState {
+  elapsedMs: number
+  from: number[]
+  fromParts: number[]
+  /** true: cancellation family — unwired params and Parts ease to defaults.
+   *  false: natural completion — they persist as the settled arm organization. */
+  toDefaults: boolean
+  done: boolean
+}
+
+interface ManagedState {
+  faceIds: Set<string>
+  /** Parameter ids the motion's curves author — the only ids displacement may
+   *  scale (SPEC §5). null when the loaded asset exposes no curve list. */
+  authoredIds: Set<string> | null
+  displacement: number
+  tempo: number
+  phase: 'starting' | 'playing' | 'settling'
+  startPending: boolean
+  elapsedMs: number
+  deadlineMs: number
+  settle?: SettleState
+  resolve: ((finished: boolean) => void) | null
+  motion?: ManagedMotionLike
+  sourceLoop?: boolean
+  sourceFadeIn?: number
+  sourceFadeOut?: number
+}
+
+interface ManagedMotionLike {
+  getDuration?(): number
+  isLoop?(): boolean
+  setIsLoop?(loop: boolean): void
+  getFadeInTime?(): number
+  setFadeInTime?(seconds: number): void
+  getFadeOutTime?(): number
+  setFadeOutTime?(seconds: number): void
+  _motionData?: { curves?: Array<{ type: number; id: string }> }
+}
+
+interface Cubism4ManagerLike {
+  playing: boolean
+  groups: { idle: string }
+  startMotion(group: string, index: number, priority?: number): Promise<boolean>
+  stopAllMotions(): void
+  motionGroups?: Record<string, Array<ManagedMotionLike | null | undefined>>
 }
 
 export class Live2DRuntime implements IRuntime {
@@ -251,6 +325,13 @@ export class Live2DRuntime implements IRuntime {
   private overrides = new Map<string, { value: number; weight: number }>()
   private expression?: RuntimeExpression
 
+  // Managed choreography (slice 014): at most one phrase, plus whether a
+  // completed phrase left Parts away from their authored defaults.
+  private managed?: ManagedState
+  private partsDirty = false
+  private partDefaults: number[] = []
+  private warnedRefs = new Set<string>()
+
   private displayScale = 1
   private loadGeneration = 0
   private prepared?: {
@@ -258,6 +339,7 @@ export class Live2DRuntime implements IRuntime {
     model: Live2DModel
     inventory: ParamInfo[]
     compatibility: RuntimeCompatibility
+    partDefaults: number[]
   }
   private committed?: {
     id: number
@@ -312,8 +394,8 @@ export class Live2DRuntime implements IRuntime {
     )
   }
 
-  async load(modelPath: string, fallbackPhysics?: string): Promise<void> {
-    await this.prepareLoad(0, modelPath, fallbackPhysics)
+  async load(modelPath: string, fallbackPhysics?: string, choreographed?: boolean): Promise<void> {
+    await this.prepareLoad(0, modelPath, fallbackPhysics, choreographed)
     if (!this.commitLoad(0)) throw new Error('character load commit failed')
     this.finalizeLoad(0)
   }
@@ -321,7 +403,8 @@ export class Live2DRuntime implements IRuntime {
   async prepareLoad(
     id: number,
     modelPath: string,
-    fallbackPhysics?: string
+    fallbackPhysics?: string,
+    choreographed?: boolean
   ): Promise<ParamInfo[]> {
     const generation = ++this.loadGeneration
     if (this.prepared) {
@@ -359,6 +442,14 @@ export class Live2DRuntime implements IRuntime {
       internal.breath = undefined
       internal.eyeBlink = undefined
       internal.on('afterMotionUpdate', () => this.writeParams())
+      if (choreographed) {
+        // Lares owns which registered motion plays (014 §7). Blank the idle
+        // group before the model ever updates so random idle cannot
+        // self-select; done this early it also stops later loads from baking
+        // the 2 s idle fade default into cached motions.
+        const manager = model.internalModel.motionManager as unknown as Cubism4ManagerLike
+        manager.groups.idle = ''
+      }
       const params = internal.coreModel._model.parameters
       const inventory = Array.from({ length: params.count }, (_, i) => ({
         id: params.ids[i],
@@ -383,10 +474,13 @@ export class Live2DRuntime implements IRuntime {
         string,
         unknown[] | undefined
       >
+      const parts = internal.coreModel._model.parts
+      const partDefaults = Array.from({ length: parts.count }, (_, i) => parts.opacities[i])
       this.prepared = {
         id,
         model,
         inventory,
+        partDefaults,
         compatibility: {
           ...preparedSource.compatibility,
           motions: Object.fromEntries(
@@ -407,24 +501,34 @@ export class Live2DRuntime implements IRuntime {
 
   commitLoad(id: number): boolean {
     if (this.committed || this.prepared?.id !== id) return false
-    const { model, inventory, compatibility } = this.prepared
+    const { model, inventory, compatibility, partDefaults } = this.prepared
     this.prepared = undefined
-    const previous = this.model
+    const previous: RuntimeModelState | undefined = this.model
       ? {
           model: this.model,
           inventory: this.inventory,
           compatibility: this.modelCompatibility,
           paramIndex: this.paramIndex,
           overrides: this.overrides,
-          expression: this.expression
+          expression: this.expression,
+          partDefaults: this.partDefaults,
+          pendingManaged: undefined
         }
       : undefined
+    const interrupted = this.managed
+    const managedStopped = this.abortManaged()
+    if (previous && interrupted && (!managedStopped || interrupted.phase === 'starting')) {
+      previous.pendingManaged = interrupted
+    }
+    this.partsDirty = false
+    this.warnedRefs.clear()
     this.model = model
     this.inventory = inventory
     this.modelCompatibility = compatibility
     this.paramIndex = new Map(inventory.map((param, index) => [param.id, index]))
     this.overrides = new Map()
     this.expression = undefined
+    this.partDefaults = partDefaults
     try {
       this.fit()
       this.app.stage.addChild(model)
@@ -433,6 +537,7 @@ export class Live2DRuntime implements IRuntime {
       return true
     } catch {
       this.restore(previous)
+      this.resetRestoredBody(previous?.pendingManaged)
       this.destroy(model)
       return false
     }
@@ -442,7 +547,13 @@ export class Live2DRuntime implements IRuntime {
     if (this.committed?.id !== id) return false
     const { candidate, previous } = this.committed
     this.committed = undefined
+    this.abortManaged()
+    this.partsDirty = false
     this.restore(previous)
+    // Rollback restores AND resets the old body (SPEC §6): an earlier phrase's
+    // Part organization or unwired parameter pose must not survive it. The
+    // stage's sticky overrides re-land the wired targets on the next frame.
+    this.resetRestoredBody(previous?.pendingManaged)
     this.destroy(candidate)
     try {
       this.fit()
@@ -481,6 +592,7 @@ export class Live2DRuntime implements IRuntime {
       this.paramIndex = new Map()
       this.overrides = new Map()
       this.expression = undefined
+      this.partDefaults = []
       return
     }
     this.model = previous.model
@@ -489,6 +601,7 @@ export class Live2DRuntime implements IRuntime {
     this.paramIndex = previous.paramIndex
     this.overrides = previous.overrides
     this.expression = previous.expression
+    this.partDefaults = previous.partDefaults
     previous.model.visible = true
   }
 
@@ -548,10 +661,20 @@ export class Live2DRuntime implements IRuntime {
   // afford one extra loop, and there is no bookkeeping to get wrong.
   resetParams(): void {
     if (!this.model) return
+    const hadManaged = this.managed !== undefined
     const core = this.core()
     this.inventory.forEach((p, i) => core.setParameterValueByIndex(i, p.default, 1))
+    // Parts only when a managed phrase touched them — a character without
+    // choreography keeps its slice 013 reset behavior unchanged (SPEC §3).
+    if (this.partsDirty || hadManaged) {
+      this.partDefaults.forEach((opacity, i) => core.setPartOpacityByIndex(i, opacity))
+      this.partsDirty = false
+    }
     this.overrides.clear()
     this.expression = undefined
+    // Reset values first; if the SDK stop throws, containment captures and
+    // keeps those defaults instead of letting the live motion resume.
+    this.abortManaged(true)
   }
 
   applyExpression(ref: string | Record<string, number>, weight: number, fadeMs: number): void {
@@ -560,6 +683,271 @@ export class Live2DRuntime implements IRuntime {
       throw new Error(`expression refs are not supported yet (got "${ref}") — pass a raw param map`)
     }
     this.expression = { params: ref, weight, fadeMs, startedAt: performance.now() }
+  }
+
+  async playManagedMotion(plan: ManagedMotionPlan): Promise<boolean> {
+    const manager = this.model?.internalModel.motionManager as unknown as
+      | Cubism4ManagerLike
+      | undefined
+    if (!manager) return false
+    // Never uncover a previous motion while a new asset loads. If its stop
+    // fails, keep the default containment and let a later trigger retry.
+    if (!this.abortManaged(true)) return false
+    let resolveFn!: (finished: boolean) => void
+    const promise = new Promise<boolean>((resolve) => {
+      resolveFn = resolve
+    })
+    const state: ManagedState = {
+      faceIds: new Set(plan.faceParamIds),
+      authoredIds: null,
+      displacement: plan.displacement,
+      tempo: plan.tempo,
+      phase: 'starting',
+      startPending: true,
+      elapsedMs: 0,
+      deadlineMs: 0,
+      resolve: resolveFn
+    }
+    this.managed = state
+
+    let started = false
+    try {
+      started = await manager.startMotion(plan.group, plan.index, MotionPriority.FORCE)
+    } catch {
+      started = false
+    }
+    state.startPending = false
+    const motion = manager.motionGroups?.[plan.group]?.[plan.index]
+    try {
+      const sourceLoop = motion?.isLoop?.()
+      if (typeof sourceLoop === 'boolean' && motion?.setIsLoop) {
+        motion.setIsLoop(false)
+        state.motion = motion
+        state.sourceLoop = sourceLoop
+      }
+    } catch {
+      // The duration watchdog still enforces one cycle if loop mutation fails.
+    }
+    if (this.managed !== state || state.phase !== 'starting') {
+      // Superseded or cancelled while the file loaded (cancellation reuses
+      // this state object as its settle, hence the phase check); whoever took
+      // over already resolved our promise. Contain the stray start.
+      let stopped = true
+      if (started) {
+        try {
+          manager.stopAllMotions()
+        } catch {
+          stopped = false
+          // Contained (SPEC §6): stop failures never block the next phrase.
+        }
+      }
+      if (stopped) this.restoreManagedMotion(state)
+      return promise
+    }
+    const durationS = started && motion?.getDuration ? motion.getDuration() : NaN
+    if (!started || !Number.isFinite(durationS) || durationS <= 0) {
+      const ref = `${plan.group}[${plan.index}]`
+      if (!this.warnedRefs.has(ref)) {
+        this.warnedRefs.add(ref)
+        console.warn(`[lares] choreography phrase failed to start: ${ref}`)
+      }
+      let stopped = true
+      if (started) {
+        try {
+          manager.stopAllMotions()
+        } catch {
+          stopped = false
+          // Contained; the settle below still restores defaults.
+        }
+      }
+      state.resolve = null
+      // A motion may have written parameters/Parts before the SDK reports its
+      // unusable duration. Always settle the actual live values; the no-write
+      // failure case is a harmless zero-distance settle.
+      if (started && this.model) {
+        if (stopped) this.restoreManagedMotion(state)
+        this.beginSettle(state, true)
+      } else {
+        this.restoreManagedMotion(state)
+        this.managed = undefined
+      }
+      resolveFn(false)
+      return promise
+    }
+    // A motion cached while the idle group was still live baked the library's
+    // 2 s idle fade default (the preload race the E5 harness flagged); managed
+    // phrases use the normal fade. Authored Meta fades are never rewritten.
+    try {
+      if (motion?.getFadeInTime?.() === IDLE_FADE_S && motion.setFadeInTime) {
+        state.motion = motion
+        state.sourceFadeIn = IDLE_FADE_S
+        motion.setFadeInTime(NORMAL_FADE_S)
+      }
+      if (motion?.getFadeOutTime?.() === IDLE_FADE_S && motion.setFadeOutTime) {
+        state.motion = motion
+        state.sourceFadeOut = IDLE_FADE_S
+        motion.setFadeOutTime(NORMAL_FADE_S)
+      }
+    } catch {
+      // The phrase remains playable with the asset's authored fade.
+    }
+    // Displacement may scale only the parameters this motion authors (SPEC
+    // §5): a non-authored parameter holds its persisted value frame to frame,
+    // and rescaling that compounds it toward rig default.
+    const curves = motion?._motionData?.curves
+    state.authoredIds = Array.isArray(curves)
+      ? new Set(curves.filter((curve) => curve.type === 1).map((curve) => curve.id))
+      : null
+    if (state.authoredIds === null && plan.displacement !== 1) {
+      const ref = `${plan.group}[${plan.index}]`
+      if (!this.warnedRefs.has(ref)) {
+        this.warnedRefs.add(ref)
+        console.warn(`[lares] no curve list on ${ref}; phrase plays undisplaced`)
+      }
+    }
+    state.phase = 'playing'
+    // One authored cycle: the loaded asset's duration at our tempo, plus the
+    // fixed grace, bounds a finish that never arrives (SPEC §6).
+    state.deadlineMs = (durationS / plan.tempo) * 1000 + FINISH_GRACE_MS
+    this.partsDirty = true
+    return promise
+  }
+
+  cancelManagedMotion(): void {
+    const mm = this.managed
+    if (!this.model) {
+      this.abortManaged()
+      return
+    }
+    if (mm && mm.phase !== 'settling') {
+      const manager = this.model.internalModel.motionManager as unknown as Cubism4ManagerLike
+      let stopped = true
+      try {
+        manager.stopAllMotions()
+      } catch {
+        stopped = false
+        // Contained (SPEC §6): a stop failure must not prevent settlement.
+      }
+      if (stopped) this.restoreManagedMotion(mm)
+      mm.resolve?.(false)
+      mm.resolve = null
+      this.beginSettle(mm, true)
+      return
+    }
+    if (mm?.phase === 'settling') {
+      if (!mm.settle?.toDefaults) {
+        // Upgrade a completion settle: Parts and unwired parameters now ease
+        // to the character defaults, re-captured from the actual live values.
+        this.beginSettle(mm, true)
+      }
+      return
+    }
+    if (this.partsDirty) {
+      // No phrase active, but a completed one left its Part organization.
+      this.beginDefaultContainment()
+    }
+  }
+
+  private abortManaged(containFailure = false): boolean {
+    const mm = this.managed
+    if (!mm) return true
+    this.managed = undefined
+    let stopped = true
+    if (this.model) {
+      try {
+        ;(this.model.internalModel.motionManager as unknown as Cubism4ManagerLike).stopAllMotions()
+      } catch {
+        stopped = false
+        // Contained: transaction/reset paths must never throw from here.
+      }
+    }
+    mm.resolve?.(false)
+    mm.resolve = null
+    if (!stopped && containFailure && this.model) this.beginSettle(mm, true)
+    else if (stopped) this.restoreManagedMotion(mm)
+    return stopped
+  }
+
+  private restoreManagedMotion(state: ManagedState): void {
+    const motion = state.motion
+    const loop = state.sourceLoop
+    const fadeIn = state.sourceFadeIn
+    const fadeOut = state.sourceFadeOut
+    state.sourceLoop = undefined
+    state.sourceFadeIn = undefined
+    state.sourceFadeOut = undefined
+    try {
+      if (loop !== undefined) motion?.setIsLoop?.(loop)
+    } catch {
+      // Cached-motion cleanup must not break reset or transaction paths.
+    }
+    try {
+      if (fadeIn !== undefined) motion?.setFadeInTime?.(fadeIn)
+    } catch {
+      // Same containment rule for cached fade cleanup.
+    }
+    try {
+      if (fadeOut !== undefined) motion?.setFadeOutTime?.(fadeOut)
+    } catch {
+      // Same containment rule for cached fade cleanup.
+    }
+    state.motion = undefined
+  }
+
+  /** Capture actual live values and start the fixed settle (SPEC §7): wired
+   *  parameters ease to their still-current targets, unwired ones and Parts
+   *  ease to defaults on the cancellation family or persist on completion. */
+  private beginSettle(state: ManagedState, toDefaults: boolean): void {
+    const core = this.core()
+    const params = core._model.parameters
+    const parts = core._model.parts
+    state.phase = 'settling'
+    state.settle = {
+      elapsedMs: 0,
+      from: Array.from({ length: this.inventory.length }, (_, i) => params.values[i]),
+      fromParts: Array.from({ length: parts.count }, (_, i) => parts.opacities[i]),
+      toDefaults,
+      done: false
+    }
+    this.managed = state
+  }
+
+  private beginDefaultContainment(): void {
+    const state: ManagedState = {
+      faceIds: new Set(),
+      authoredIds: null,
+      displacement: 1,
+      tempo: 1,
+      phase: 'settling',
+      startPending: false,
+      elapsedMs: 0,
+      deadlineMs: 0,
+      resolve: null
+    }
+    this.beginSettle(state, true)
+  }
+
+  private resetRestoredBody(pendingManaged?: ManagedState): void {
+    if (!this.model) return
+    try {
+      const core = this.core()
+      this.inventory.forEach((p, i) => core.setParameterValueByIndex(i, p.default, 1))
+      this.partDefaults.forEach((opacity, i) => core.setPartOpacityByIndex(i, opacity))
+    } catch {
+      // Contained: rollback must never throw past transaction state.
+    }
+    if (!pendingManaged) return
+    try {
+      ;(this.model.internalModel.motionManager as unknown as Cubism4ManagerLike).stopAllMotions()
+      if (pendingManaged.startPending) this.beginSettle(pendingManaged, true)
+      else this.restoreManagedMotion(pendingManaged)
+    } catch {
+      try {
+        this.beginSettle(pendingManaged, true)
+      } catch {
+        // The restored body remains usable even if its private SDK state is malformed.
+      }
+    }
   }
 
   playMotion(group: string, index?: number, priority = MotionPriority.NORMAL): void {
@@ -621,15 +1009,101 @@ export class Live2DRuntime implements IRuntime {
       this.fpsWindowStart = now
     }
     if (!this.model) return
+    const dt = this.app.ticker.deltaMS
+    const mm = this.managed
     // Feeds the model's delta budget; the actual update (and our writeParams
-    // hook inside it) runs when pixi renders the model.
-    this.model.update(this.app.ticker.deltaMS)
+    // hook inside it) runs when pixi renders the model. Tempo scales this
+    // shared delta while a phrase plays — the E5-proven mechanism: authored
+    // phase relationships and the downstream physics response scale together
+    // (SPEC §5); breath/blink/sway live on the stage clock and are untouched.
+    this.model.update(mm?.phase === 'playing' ? dt * mm.tempo : dt)
+    if (!mm || this.managed !== mm) return
+    if (mm.phase === 'playing') {
+      mm.elapsedMs += dt
+      const manager = this.model.internalModel.motionManager as unknown as Cubism4ManagerLike
+      if (!manager.playing || mm.elapsedMs >= mm.deadlineMs) {
+        let stopFailed = false
+        if (manager.playing) {
+          // Watchdog: the finish never arrived; force one-cycle semantics.
+          try {
+            manager.stopAllMotions()
+          } catch {
+            stopFailed = true
+            // Contained: settlement still proceeds from live values.
+          }
+        }
+        if (!stopFailed) this.restoreManagedMotion(mm)
+        mm.resolve?.(true)
+        mm.resolve = null
+        this.beginSettle(mm, stopFailed)
+      }
+    } else if (mm.phase === 'settling' && mm.settle) {
+      if (mm.settle.done) {
+        if (mm.startPending) return
+        if (mm.settle.toDefaults) {
+          this.partsDirty = false
+          // A contained stop failure may leave the SDK motion alive. Keep the
+          // completed settle owning its final values until the manager stops.
+          const manager = this.model.internalModel.motionManager as unknown as Cubism4ManagerLike
+          if (manager.playing) return
+        }
+        this.restoreManagedMotion(mm)
+        this.managed = undefined
+      } else {
+        mm.settle.elapsedMs += dt
+      }
+    }
   }
 
   // Called from inside the model's update pass — see the hook in load().
+  // Ordering is the ownership contract (SPEC §7): displacement rescale of the
+  // motion's primary writes, then the settle blend, then feel-owned overrides
+  // (face wins over motion by coming later), then expression — all before
+  // physics/pose evaluate.
   private writeParams(): void {
     const core = this.core()
+    const mm = this.managed
+    const managerPlaying =
+      mm?.phase === 'playing' &&
+      (this.model?.internalModel.motionManager as unknown as Cubism4ManagerLike | undefined)
+        ?.playing === true
+    // Scale only parameters this motion authors, and only frames it actually
+    // wrote: a persisted (non-authored, or finish-frame) value rescaled every
+    // frame would compound toward rig default instead of holding.
+    if (mm?.phase === 'playing' && mm.displacement !== 1 && managerPlaying && mm.authoredIds) {
+      const values = core._model.parameters.values
+      for (const id of mm.authoredIds) {
+        const i = this.paramIndex.get(id)
+        if (i === undefined) continue
+        const p = this.inventory[i]
+        const scaled = p.default + (values[i] - p.default) * mm.displacement
+        core.setParameterValueByIndex(i, clamp(scaled, p.min, p.max), 1)
+      }
+    }
+    if (mm?.phase === 'settling' && mm.settle) {
+      const s = mm.settle
+      const w = smooth01(s.elapsedMs / SETTLE_MS)
+      for (let i = 0; i < this.inventory.length; i++) {
+        const p = this.inventory[i]
+        if (mm.faceIds.has(p.id)) continue
+        const override = this.overrides.get(p.id)
+        const target = override ? override.value : s.toDefaults ? p.default : null
+        if (target === null) continue // completed phrase: unwired values persist
+        core.setParameterValueByIndex(i, s.from[i] + (target - s.from[i]) * w, 1)
+      }
+      if (s.toDefaults) {
+        const parts = core._model.parts
+        for (let i = 0; i < parts.count; i++) {
+          const d = this.partDefaults[i] ?? 1
+          core.setPartOpacityByIndex(i, s.fromParts[i] + (d - s.fromParts[i]) * w)
+        }
+      }
+      if (w >= 1) s.done = true
+    }
     for (const [id, o] of this.overrides) {
+      // While a phrase starts/plays the motion owns non-face parameters; while
+      // it settles the blend above owns them. Face overrides always land.
+      if (mm && !mm.faceIds.has(id)) continue
       core.setParameterValueByIndex(this.paramIndex.get(id)!, o.value, o.weight)
     }
     if (this.expression) {

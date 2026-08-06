@@ -106,7 +106,11 @@ interface above a deterministic, character-specific mapping keeps the model
 portable and the renderer replaceable while allowing a rich performance from
 three cheap values. *Status:* proposed; exact performance target and mapping
 belong to SPEC, and the PRD requires their output to make axis direction and
-intermediate levels human-legible at normal Lar size.
+intermediate levels human-legible at normal Lar size. *Amended 2026-08-05
+(slice 014):* the renderer's physical execution beneath the unchanged
+semantic mapping is the authored-choreography contract (014-D1) — complete
+character-authored phrases selected and modulated from the tuple, never
+renderer-side motion generation.
 
 **013-D6 — Retire synthetic emotion rather than layer `feel()` over it.**
 *Draft choice:* `feel()` becomes the only source of first-person affect.
@@ -209,7 +213,10 @@ bounds every output; shipped defaults keep a new character's cost at wiring
 channels to its rig. Formulas, the channel table, and a worked example live in
 SPEC §§2–6. *Status:* proposed; channel names and anchor values are
 calibration work, and the mapping must pass the slice's legibility acceptance
-before sealing.
+before sealing. *Amended 2026-08-05 (slice 014):* the persistent nine-anchor
+target is unchanged; a choreography-enabled body additionally plays one
+authored phrase per displayed-feel change over it (014-D6/D7), and production
+anchor evaluation is fixed at `k = 1` (014-D5).
 
 **013-D10 — Expressiveness multiplier: hidden config-file float
 `[0, 10]`.** *Draft choice:* one scalar `expressiveness` `k`, float in
@@ -236,7 +243,10 @@ calibration-phase amplitude experiment wants one knob that can push both
 directions past the authored values without editing nine poses; keeping it
 out of the UI keeps that power off the product surface while leaving it
 reachable on an installed build. *Status:* proposed 2026-08-02 by maintainer
-direction (config-file scope and range).
+direction (config-file scope and range). *Superseded 2026-08-05 by 014-D5:*
+the installed app-config field is retired; production always evaluates at
+`k = 1`, and only the dev-panel preview may pass another `k` — never
+persisted, never latch-affecting.
 
 **013-D11 — Calibration workflow deferred; default wiring ships in-slice.**
 *Draft choice:* slice 013 ships no calibration or authoring workflow. The

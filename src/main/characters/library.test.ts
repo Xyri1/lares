@@ -125,6 +125,33 @@ describe('managed character library', () => {
     expect(existsSync(source)).toBe(true)
   })
 
+  // Slice 014 SPEC §3: a malformed or nonexistent choreography reference
+  // refuses the whole candidate import — the same two-tier policy as any
+  // other manifest error, never a silent drop of just that block.
+  it('refuses a candidate import with a choreography reference to an unknown motion group', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'lares-library-'))
+    const source = writePackage(workspace, 'source')
+    writeFileSync(
+      join(source, 'lar.character.json'),
+      JSON.stringify({
+        ...VALID,
+        renderers: {
+          live2d: {
+            ...VALID.renderers.live2d,
+            choreography: { fallback: { group: 'Missing', index: 0 } }
+          }
+        }
+      })
+    )
+
+    const imported = importCharacterPackage(join(workspace, 'managed'), source)
+    expect(imported).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('references unknown motion group "Missing"')
+    })
+    expect(existsSync(join(workspace, 'managed', 'source'))).toBe(false)
+  })
+
   it('refuses a symlinked source directory without adding it to the library', () => {
     const workspace = mkdtempSync(join(tmpdir(), 'lares-library-'))
     const source = writePackage(workspace, 'source')

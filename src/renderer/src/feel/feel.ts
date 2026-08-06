@@ -64,7 +64,7 @@ export type AnchorOverrides = Partial<Record<AnchorKey, Partial<Pose>>>
 const SIGN: Record<'+' | '-', 1 | -1> = { '+': 1, '-': -1 }
 
 /** Trilinear corner weight w_s(q) = Π_i (1 + q_i·s_i) / 2 (SPEC §4). */
-function cornerWeight(key: CornerKey, q: readonly [number, number, number]): number {
+export function cornerWeight(key: CornerKey, q: readonly [number, number, number]): number {
   let w = 1
   for (let i = 0; i < 3; i++) w *= (1 + q[i] * SIGN[key[i] as '+' | '-']) / 2
   return w
@@ -209,15 +209,12 @@ export interface FeelPoses {
   operational: OperationalPoses
 }
 
-/** Plus expressiveness `k`, which is app config and is read once at launch. */
-export interface FeelConfig extends FeelPoses {
-  expressiveness: number
-}
-
-export const DEFAULT_FEEL: FeelConfig = {
+// Production always evaluates anchors at k = 1 (014-D5): tuple magnitude is
+// the commitment signal, so no installed expressiveness config exists. The
+// dev panel may still preview another k without persisting anything.
+export const DEFAULT_FEEL: FeelPoses = {
   anchors: DEFAULT_ANCHORS,
-  operational: DEFAULT_OPERATIONAL,
-  expressiveness: 1
+  operational: DEFAULT_OPERATIONAL
 }
 
 /** Override block shape check for the IPC crossing (P7): known keys, known
@@ -256,18 +253,5 @@ export function resolvePoses(raw: { anchors?: unknown; operational?: unknown }):
         ? (raw.operational as OperationalOverrides)
         : undefined
     )
-  }
-}
-
-/** The boot payload, poses plus `k` — app config, read once at launch (§4). */
-export function resolveFeel(raw: {
-  anchors?: unknown
-  operational?: unknown
-  expressiveness?: unknown
-}): FeelConfig {
-  const k = raw.expressiveness
-  return {
-    ...resolvePoses(raw),
-    expressiveness: typeof k === 'number' && Number.isFinite(k) ? Math.min(10, Math.max(0, k)) : 1
   }
 }

@@ -1,5 +1,6 @@
 import presetJson from '../../../../presets/default.json'
-import { resolveFeel } from '../feel/feel'
+import { resolvePoses } from '../feel/feel'
+import type { ChoreographyMap } from '../feel/choreography'
 import { Live2DRuntime } from '../runtime/live2d'
 import { isSynthPreset, type SynthPreset } from '../synth/synth'
 import { createAffectDriver } from './affect'
@@ -43,7 +44,11 @@ async function boot(): Promise<void> {
     }
   }
   try {
-    await runtime.load(character.live2d.model, character.live2d.fallbackPhysics)
+    await runtime.load(
+      character.live2d.model,
+      character.live2d.fallbackPhysics,
+      character.live2d.choreography !== undefined
+    )
   } catch (err) {
     showError(
       `Failed to load "${character.name}": ${err instanceof Error ? err.message : String(err)}`
@@ -56,15 +61,15 @@ async function boot(): Promise<void> {
     runtime.compatibility()
   ) // body:inventory (root SPEC §8)
 
-  // Anchors, operational overlays and expressiveness ride the same bootstrap
-  // payload the character does; the brain reads `expressiveness` from the
-  // hidden AppConfig field, and 1 is the default when it is absent.
+  // Anchors, operational overlays, and the authored choreography map ride the
+  // same bootstrap payload the character does — all validated by main (P7).
   const driver = createAffectDriver(
     runtime,
     isSynthPreset(character.live2d.performance)
       ? character.live2d.performance
       : presetJson as SynthPreset,
-    resolveFeel(character)
+    resolvePoses(character),
+    character.live2d.choreography as ChoreographyMap | undefined
   )
   if (OVERLAY) {
     const characterLoads = createCharacterLoadHandler(

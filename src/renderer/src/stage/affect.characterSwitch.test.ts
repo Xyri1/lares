@@ -20,6 +20,8 @@ function runtime(): IRuntime {
     resetParams: vi.fn(),
     applyExpression: vi.fn(),
     playMotion: vi.fn(),
+    playManagedMotion: vi.fn(async () => true),
+    cancelManagedMotion: vi.fn(),
     hitTest: vi.fn(() => []),
     alphaAt: vi.fn(() => 0),
     larSize: vi.fn(() => ({ width: 100, height: 200 }))

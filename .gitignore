@@ -4,6 +4,7 @@ out
 .DS_Store
 .eslintcache
 *.log*
+tsconfig.web.tsbuildinfo
 
 AGENTS.local.md
 .agents/*

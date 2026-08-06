@@ -33,8 +33,10 @@ basis into the body: the `feel` wire and P6 feed stay unchanged; explicit
 character mapping selects one complete renderer-local phrase on a displayed
 feel change, then returns to the persistent latched target. E5 is the visual
 quality floor.
-**Status:** slice 014 planned; implementation open. G1 remains closed as a
-terminal slice-013 gate by D36.
+**Status:** slice 014 complete. Its production matrix matched the accepted E5
+quality floor, and the maintainer accepted the current animation quality
+without opening further tuning. G1 remains closed as a terminal slice-013 gate
+by D36; future findings create bounded work rather than keeping M2b open.
 
 ## M1b — Skeleton
 

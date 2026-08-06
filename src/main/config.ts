@@ -15,11 +15,7 @@ export interface AppConfig {
   automaticallyCheckForUpdates: boolean
   language: Language
   hostGuidance: boolean
-  /** Expressiveness `k` (013 SPEC §4) — hidden, hand-edited, read at launch. */
-  expressiveness: number
 }
-
-export const EXPRESSIVENESS_MAX = 10
 
 export const DEFAULT_CONFIG: AppConfig = {
   scale: 1,
@@ -27,8 +23,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   launchAtLogin: false,
   automaticallyCheckForUpdates: true,
   language: 'system',
-  hostGuidance: true,
-  expressiveness: 1
+  hostGuidance: true
 }
 
 export function parseConfig(raw: unknown): AppConfig {
@@ -49,12 +44,7 @@ export function parseConfig(raw: unknown): AppConfig {
       ? (value.language as Language)
       : DEFAULT_CONFIG.language,
     hostGuidance:
-      typeof value.hostGuidance === 'boolean' ? value.hostGuidance : DEFAULT_CONFIG.hostGuidance,
-    // Wrong type or NaN falls back; a real number out of range clamps (§4).
-    expressiveness:
-      typeof value.expressiveness === 'number' && Number.isFinite(value.expressiveness)
-        ? Math.min(EXPRESSIVENESS_MAX, Math.max(0, value.expressiveness))
-        : DEFAULT_CONFIG.expressiveness
+      typeof value.hostGuidance === 'boolean' ? value.hostGuidance : DEFAULT_CONFIG.hostGuidance
   }
 }
 

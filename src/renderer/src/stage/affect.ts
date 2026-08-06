@@ -3,10 +3,10 @@ import {
   computeTarget,
   withOverlay,
   DEFAULT_FEEL,
-  type FeelConfig,
   type FeelPoses,
   type Pose
 } from '../feel/feel'
+import { FACE_CHANNELS, planPhrase, type ChoreographyMap } from '../feel/choreography'
 import type { IRuntime } from '../runtime/iface'
 import { createSynth, mulberry32, type Synth, type SynthFeed, type SynthPreset } from '../synth/synth'
 import { driveTick, frameToLine, replayHistory } from './synthReplay'
@@ -60,7 +60,11 @@ export interface AffectDriver {
    * overlay is history, not state. */
   reset(): void
   /** Tentatively refresh model defaults; finalize stops package-specific playback. */
-  characterChanged(preset?: SynthPreset, poses?: FeelPoses): CharacterChangeTransaction
+  characterChanged(
+    preset?: SynthPreset,
+    poses?: FeelPoses,
+    choreography?: ChoreographyMap
+  ): CharacterChangeTransaction
 }
 
 interface StageState {
@@ -111,13 +115,14 @@ export function replaceHeldPreview(
 export function createAffectDriver(
   runtime: IRuntime,
   preset: SynthPreset,
-  feel: FeelConfig = DEFAULT_FEEL
+  feel: FeelPoses = DEFAULT_FEEL,
+  initialChoreography?: ChoreographyMap
 ): AffectDriver {
   let idlePreset = preset
   let poses: FeelPoses = feel
-  // Expressiveness is app config, read once at launch (SPEC §4) — a character
-  // switch replaces the poses around it, never the constant itself.
-  const expressiveness = feel.expressiveness
+  // Production anchor evaluation is fixed at k = 1 (014-D5): wire magnitude
+  // already carries commitment. previewPose may still pass another k.
+  const expressiveness = 1
 
   // An empty register performs the authored neutral anchor: resting
   // presentation, not feel(0, 0, 0) (SPEC §11).
@@ -125,6 +130,61 @@ export function createAffectDriver(
 
   /** Wire integer → normalized axis; junk reads as 0 rather than as NaN (P7). */
   const axis = (value: number): number => (Number.isFinite(value) ? value / 2 : 0)
+
+  // ---------------------------------------------------------------------------
+  // Authored choreography lifecycle (slice 014 SPEC §6). The stage owns only
+  // the trigger key, the one pending onset timer, and the character/overlay
+  // calls; every physical mechanic lives behind IRuntime.
+  // ---------------------------------------------------------------------------
+  const ONSET_MS = 1200
+  const LOUD_OVERLAYS: ReadonlySet<string> = new Set(['awaiting_input', 'error'])
+  let choreography = initialChoreography
+  let phraseGeneration = 0
+  let phraseKey: string | null = null
+  let pendingPhrase: ReturnType<typeof setTimeout> | null = null
+
+  const clearPendingPhrase = (): void => {
+    if (pendingPhrase !== null) {
+      clearTimeout(pendingPhrase)
+      pendingPhrase = null
+    }
+  }
+
+  const faceParamIds = (): string[] =>
+    idlePreset.params
+      .filter((p) => (FACE_CHANNELS as readonly string[]).includes(p.source))
+      .map((p) => p.id)
+
+  /** One phrase per displayed-feel change (§6): the trigger key is the wire
+   *  tuple plus the character generation. Identical keys are inert; `null`
+   *  feel and loud overlays cancel without scheduling, and resetting the key
+   *  lets overlay clear perform its single deferred schedule. */
+  const applyChoreography = (
+    feel: { valence: number; activation: number; control: number } | null,
+    operationalState: string
+  ): void => {
+    if (!choreography) return
+    if (feel === null || LOUD_OVERLAYS.has(operationalState)) {
+      clearPendingPhrase()
+      phraseKey = null
+      runtime.cancelManagedMotion()
+      return
+    }
+    const key = `${feel.valence},${feel.activation},${feel.control}#${phraseGeneration}`
+    if (key === phraseKey) return
+    phraseKey = key
+    clearPendingPhrase()
+    runtime.cancelManagedMotion()
+    const plan = planPhrase(
+      [axis(feel.valence), axis(feel.activation), axis(feel.control)],
+      choreography
+    )
+    if (!plan) return
+    pendingPhrase = setTimeout(() => {
+      pendingPhrase = null
+      void runtime.playManagedMotion({ ...plan, faceParamIds: faceParamIds() })
+    }, ONSET_MS)
+  }
 
   /** Feel tuple → the target pose (SPEC §4), shared by the live feed and the
    * panel preview. */
@@ -222,6 +282,10 @@ export function createAffectDriver(
     const pose = poseFor(f)
     state.feed = { pose }
     feedListener?.(f, source)
+    // Operational loudness preempts even an explicit dev preview (P10).
+    if (posePreview && LOUD_OVERLAYS.has(f.operational)) posePreview = null
+    // The preview owns the displayed feel; feed changes latch silently (§6).
+    if (!posePreview) applyChoreography(f.feel, f.operational)
     if (!posePreview) publish(source, f.feel, f.operational, expressiveness, pose)
     if (!state.replay) return
     pushEngine(state.trace, f)
@@ -261,7 +325,18 @@ export function createAffectDriver(
     if (last) {
       const pose = poseFor(last)
       state.feed = { pose }
+      currentFeed = last
+      currentFeedSource = 'scenario'
+      operational = last.operational
+      applyChoreography(last.feel, last.operational)
       publish('scenario', last.feel, last.operational, expressiveness, pose)
+    } else {
+      state.feed = restFeed()
+      currentFeed = null
+      currentFeedSource = 'scenario'
+      operational = 'idle'
+      applyChoreography(null, operational)
+      publish('scenario', null, operational, expressiveness, poses.anchors.neutral)
     }
   })
 
@@ -346,7 +421,9 @@ export function createAffectDriver(
     state.latest = null
     state.feed = restFeed()
     state.driven.clear()
-    state.runtime.resetParams()
+    clearPendingPhrase()
+    phraseKey = null
+    state.runtime.resetParams() // also aborts any managed phrase
     currentFeed = null
     currentFeedSource = 'live'
     operational = 'idle'
@@ -413,13 +490,15 @@ export function createAffectDriver(
     },
     characterChanged(
       nextPreset: SynthPreset = defaultPreset,
-      nextPoses: FeelPoses = DEFAULT_FEEL
+      nextPoses: FeelPoses = DEFAULT_FEEL,
+      nextChoreography?: ChoreographyMap
     ): CharacterChangeTransaction {
       const st = state
       const bufferedFeeds: AffectFeed[] = []
       const before = {
         preset: idlePreset,
         poses,
+        choreography,
         posePreview,
         authoringPreview,
         defaults: st.defaults,
@@ -439,13 +518,28 @@ export function createAffectDriver(
         st.feed = before.feed
         st.live = before.live
         st.latest = before.latest
+        // Rollback restores the previous mapping under a fresh generation
+        // (§6): obsolete timers and phrase progress never survive it.
+        choreography = before.choreography
+        phraseGeneration += 1
+        phraseKey = null
+        clearPendingPhrase()
         tentativeFeeds = null
         for (const feed of bufferedFeeds) processFeed(feed)
+        // Re-establish the unchanged latch once; drained feeds already did
+        // this (identical key → inert), an empty drain schedules it here.
+        if (!posePreview) applyChoreography(currentFeed?.feel ?? null, operational)
       }
       try {
         tentativeFeeds = bufferedFeeds
         idlePreset = nextPreset
         poses = nextPoses
+        // Commit installs the new mapping as a new generation (§6); the
+        // single latch schedule rides main's post-commit feed re-emission.
+        choreography = nextChoreography
+        phraseGeneration += 1
+        phraseKey = null
+        clearPendingPhrase()
         posePreview = null
         authoringPreview = null
         st.defaults = Object.fromEntries(st.runtime.parameters().map((p) => [p.id, p.default]))
@@ -471,6 +565,9 @@ export function createAffectDriver(
       if (state.replay) return
       if (feel === null) {
         posePreview = null
+        // Back to the displayed latch; its changed key re-runs the selector
+        // without the latch ever having moved (§6).
+        applyChoreography(currentFeed?.feel ?? null, operational)
         if (currentFeed) {
           const pose = poseFor(currentFeed)
           publish(currentFeedSource, currentFeed.feel, currentFeed.operational, expressiveness, pose)
@@ -484,6 +581,8 @@ export function createAffectDriver(
       const target = poseForTuple(feel.valence, feel.activation, feel.control, k)
       const pose = withOverlay(target, op, poses.operational)
       posePreview = { pose }
+      // Same selector and lifecycle as the live path; never writes the latch.
+      applyChoreography(feel, op)
       publish('manual', feel, op, k, pose)
     }
   }

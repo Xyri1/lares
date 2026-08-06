@@ -1,12 +1,26 @@
 import {
   ANCHOR_KEYS,
+  CORNER_KEYS,
   isPoseOverrides,
   OPERATIONAL_KEYS,
   resolvePoses,
+  type CornerKey,
   type FeelPoses
 } from '../feel/feel'
 import type { IRuntime } from '../runtime/iface'
 import { isSynthPreset, type SynthPreset } from '../synth/synth'
+
+/** Authored choreography map (slice 014 SPEC §3). Existence and motion
+ * references are validated main-side; this is shape-only parsing. */
+export interface ChoreographyRef {
+  group: string
+  index: number
+}
+
+export interface ChoreographyBlock {
+  fallback: ChoreographyRef
+  anchors?: Partial<Record<CornerKey, ChoreographyRef>>
+}
 
 export interface CharacterLoadRequest {
   id: number
@@ -19,6 +33,7 @@ export interface CharacterLoadRequest {
       model: string
       fallbackPhysics?: string
       performance?: SynthPreset
+      choreography?: ChoreographyBlock
     }
   }
 }
@@ -66,6 +81,30 @@ function validId(id: unknown): id is number {
   return Number.isSafeInteger(id) && (id as number) >= 1
 }
 
+function isChoreographyRef(value: unknown): value is ChoreographyRef {
+  if (!record(value)) return false
+  const keys = Object.keys(value)
+  return (
+    keys.length === 2 &&
+    typeof value.group === 'string' &&
+    value.group !== '' &&
+    Number.isSafeInteger(value.index) &&
+    (value.index as number) >= 0
+  )
+}
+
+function isChoreography(value: unknown): value is ChoreographyBlock {
+  if (!record(value)) return false
+  const keys = Object.keys(value)
+  if (keys.some((key) => key !== 'fallback' && key !== 'anchors')) return false
+  if (!isChoreographyRef(value.fallback)) return false
+  if (value.anchors === undefined) return true
+  if (!record(value.anchors)) return false
+  return Object.entries(value.anchors).every(
+    ([key, ref]) => CORNER_KEYS.includes(key as CornerKey) && isChoreographyRef(ref)
+  )
+}
+
 export function parseCharacterPrepareRequest(value: unknown): CharacterLoadRequest | null {
   if (!record(value) || !validId(value.id)) return null
   const id = value.id
@@ -82,6 +121,12 @@ export function parseCharacterPrepareRequest(value: unknown): CharacterLoadReque
   if (
     character.live2d.performance !== undefined &&
     !isSynthPreset(character.live2d.performance)
+  ) {
+    return null
+  }
+  if (
+    character.live2d.choreography !== undefined &&
+    !isChoreography(character.live2d.choreography)
   ) {
     return null
   }
@@ -119,7 +164,8 @@ export function createCharacterLoadHandler(
   driver: {
     characterChanged(
       preset?: SynthPreset,
-      poses?: FeelPoses
+      poses?: FeelPoses,
+      choreography?: ChoreographyBlock
     ): void | (() => void) | DriverCharacterChange
   },
   reportPrepared: (result: unknown) => void,
@@ -278,7 +324,8 @@ export function createCharacterLoadHandler(
         const inventory = await runtime.prepareLoad(
           request.id,
           request.character.live2d.model,
-          request.character.live2d.fallbackPhysics
+          request.character.live2d.fallbackPhysics,
+          request.character.live2d.choreography !== undefined
         )
         if (cancelled.has(request.id) || request.id !== latestId) {
           runtime.cancelLoad(request.id)
@@ -337,7 +384,8 @@ export function createCharacterLoadHandler(
       try {
         const driverChange = driver.characterChanged(
           request.character.live2d.performance,
-          resolvePoses(request.character)
+          resolvePoses(request.character),
+          request.character.live2d.choreography
         )
         if (typeof driverChange === 'function') {
           tentative.rollbackDriver = driverChange

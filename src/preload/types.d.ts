@@ -6,16 +6,26 @@ type CharacterPayload =
        * renderer-neutral: channel names and numbers, never rig ids. */
       anchors?: Record<string, Record<string, number>>
       operational?: Record<string, Record<string, number>>
-      /** Expressiveness `k` (slice 013 SPEC §4) — a hidden app-config float,
-       * read at launch; absent means 1. */
-      expressiveness?: number
       live2d: {
         model: string
         fallbackPhysics?: string
         performance?: CharacterSynthPreset
+        choreography?: CharacterChoreography
       } & Record<string, unknown>
     }
   | { ok: false; error: string }
+
+/** Authored choreography map (slice 014 SPEC §3): renderer-neutral group/index
+ * refs, keyed by sign-ordered corner or the required fallback. */
+interface CharacterChoreographyRef {
+  group: string
+  index: number
+}
+
+interface CharacterChoreography {
+  fallback: CharacterChoreographyRef
+  anchors?: Record<string, CharacterChoreographyRef>
+}
 
 interface CharacterSynthPreset {
   /** `source` names a performance channel (slice 013 SPEC §2). */

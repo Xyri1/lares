@@ -99,6 +99,41 @@ describe('body character load handshake', () => {
     }
   })
 
+  it('accepts a valid choreography block and rejects malformed ones', () => {
+    const base = (choreography?: unknown) => ({
+      id: 7,
+      character: {
+        ok: true,
+        name: 'Candidate',
+        live2d: {
+          model: 'lares://candidate/7/runtime/model.model3.json',
+          ...(choreography !== undefined ? { choreography } : {})
+        }
+      }
+    })
+    expect(parseCharacterPrepareRequest(base())).not.toBeNull()
+    expect(
+      parseCharacterPrepareRequest(
+        base({
+          fallback: { group: 'Idle', index: 1 },
+          anchors: { '+++': { group: 'Tap', index: 0 } }
+        })
+      )
+    ).not.toBeNull()
+    for (const invalid of [
+      { anchors: { '+++': { group: 'Tap', index: 0 } } }, // missing fallback
+      { fallback: { group: 'Idle', index: 1 }, extra: true }, // unknown top-level key
+      { fallback: { group: 'Idle' } }, // missing index
+      { fallback: { group: 'Idle', index: -1 } }, // negative index
+      { fallback: { group: '', index: 0 } }, // empty group
+      { fallback: { group: 'Idle', index: 1.5 } }, // non-integer index
+      { fallback: { group: 'Idle', index: 1 }, anchors: { neutral: { group: 'Idle', index: 0 } } }, // not a corner key
+      { fallback: { group: 'Idle', index: 1 }, anchors: { '+++': { group: 'Tap', index: 0, extra: 1 } } }
+    ]) {
+      expect(parseCharacterPrepareRequest(base(invalid))).toBeNull()
+    }
+  })
+
   it('commits playback only after model load succeeds', async () => {
     const runtime = new FixtureRuntime()
     let resets = 0

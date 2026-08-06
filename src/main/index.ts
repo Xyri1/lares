@@ -238,8 +238,6 @@ function characterPayload(selected: CharacterPackage, candidateId?: number) {
   const fallbackPhysics = selected.character.live2d.fallbackPhysics
   return {
     ...selected.character,
-    // Expressiveness is app config, not manifest — it scales the blend body-side (§4).
-    expressiveness: appConfig.expressiveness,
     live2d: {
       ...selected.character.live2d,
       model: assetUrl(model, candidateId),
@@ -287,6 +285,9 @@ function bodyPreparePayload(candidate: CharacterPackage, id: number) {
           : {}),
         ...(candidate.character.live2d.performance
           ? { performance: candidate.character.live2d.performance }
+          : {}),
+        ...(candidate.character.live2d.choreography
+          ? { choreography: candidate.character.live2d.choreography }
           : {})
       }
     }

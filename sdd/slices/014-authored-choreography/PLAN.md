@@ -1,13 +1,13 @@
 # Slice 014 — Authored choreography · PLAN
 
 **Artifact:** Implementation plan · **Slice:** 014-authored-choreography ·
-**Status:** Ready; I1 open · **Date:** 2026-08-05
+**Status:** Complete; G1 passed · **Date:** 2026-08-05
 
 Implement one Haru-first vertical path. Each phase ends at an independently
 verifiable gate; no periodic scheduler, new semantic input, or authoring UI is
 pre-built.
 
-## I1 — Character contract and pure planner
+## I1 — Character contract and pure planner — complete
 
 - Add the `renderers.live2d.choreography` types and parser to the existing
   manifest module; registered `{group,index}` entries only.
@@ -23,7 +23,7 @@ pre-built.
 ambiguous directions, neutral, missing mappings, and modulation formulas pass
 without Electron.
 
-## I2 — Deep managed-motion runtime
+## I2 — Deep managed-motion runtime — complete
 
 - Extend the existing `IRuntime` motion seam with one managed-play operation
   and cancellation; do not expose pixi motion-manager objects to the stage.
@@ -45,7 +45,11 @@ and settle with no stale manager state or parameter snap; a looping motion and
 a suppressed finish event still stop once; physics/pose still run after primary
 writes.
 
-## I3 — Stage lifecycle
+Deterministic runtime coverage passes. I4 production captures cleared the
+remaining physical question: Parts persisted through normal completion and
+reset correctly across replacement and operational interruption.
+
+## I3 — Stage lifecycle — complete
 
 - Integrate the pure planner at the current feel→stage seam. The stage owns one
   trigger key and one pending 1200 ms timer—no queue and no periodic clock.
@@ -61,7 +65,7 @@ writes.
 **Gate:** fake-clock tests prove one start per change, none per duplicate or
 elapsed interval, correct overlay priority, and rollback-safe character state.
 
-## I4 — Haru and production evidence
+## I4 — Haru and production evidence — complete
 
 - Add the accepted E5 mapping and `Idle[1]` fallback to Haru's character
   package.
@@ -78,7 +82,7 @@ elapsed interval, correct overlay priority, and rollback-safe character state.
 **Gate:** deterministic traces establish bounded ordering and exact settlement;
 the evidence page is ready for the maintainer quality comparison.
 
-## I5 — Replace the rejected experiment and reconcile contracts
+## I5 — Replace the rejected experiment and reconcile contracts — complete
 
 - Delete the E1 production-side dev seam: `synth/body.ts`, its tests, the body
   generator branch in the affect driver, the runtime idle toggle, and its panel
@@ -95,7 +99,7 @@ the evidence page is ready for the maintainer quality comparison.
 **Gate:** only one production body path remains; root and slice contracts agree;
 all deterministic checks pass.
 
-## G1 — E5-quality production acceptance
+## G1 — E5-quality production acceptance — complete
 
 At 400 logical px, the maintainer compares the I4 production matrix against
 the accepted E5 row and records:
@@ -110,13 +114,19 @@ the accepted E5 row and records:
 | operational interruption | `awaiting_input`/`error` wins, then feel returns |
 | three-minute hold | no repeat phrase and no semantic drift |
 
-Record the masked decisions, reveal, and final signed verdict locally in
-`evidence/record.md`, then copy the verdict into this Markdown record before
-close; do not infer a visual pass from deterministic traces.
+**Maintainer verdict — pass.** At 400 logical px, all sixteen masked
+production-versus-E5 full/half comparisons were judged equivalent. The
+maintainer accepted the current animations as good enough and requested no
+further optimization. Production-only viewing plus the I4 traces found no
+blocking pop, isolated-forearm hinge, stale pose, neutral return, replay, or
+semantic drift; slice 014 therefore meets the E5 quality floor.
 
-G1 closes slice 014 only after deterministic gates and this visual comparison
-pass. A failure stays bounded to composition or character content; it does not
-reopen the semantic contract.
+The masked decisions, reveal, and signed verdict remain local in
+`evidence/record.md`; the final verdict above is their committed slice record.
+
+G1 closed slice 014 after the deterministic gates and visual comparison passed.
+Any later failure stays bounded to composition or character content; it does
+not reopen the semantic contract.
 
 ## Sequencing notes
 

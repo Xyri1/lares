@@ -18,8 +18,7 @@ describe('persistent config', () => {
       launchAtLogin: true,
       automaticallyCheckForUpdates: false,
       language: 'zh-CN' as const,
-      hostGuidance: false,
-      expressiveness: 2.5
+      hostGuidance: false
     }
     await saveConfig(file, config)
 
@@ -43,7 +42,9 @@ describe('persistent config', () => {
       calibrationArmed: true,
       language: 'fr',
       hostGuidance: 'nope',
-      expressiveness: 'loud',
+      // Retired by 014-D5: an old config's expressiveness is now just an
+      // unknown field and drops like any other.
+      expressiveness: 2.5,
       injected: 'ignored'
     }))
     expect(loadConfig(partial)).toEqual({
@@ -51,18 +52,5 @@ describe('persistent config', () => {
       doNotDisturb: true,
       automaticallyCheckForUpdates: false
     })
-  })
-
-  it('clamps a numeric expressiveness into [0, 10] and defaults a NaN one', () => {
-    const clamped = (expressiveness: unknown): number => {
-      const file = scratch()
-      writeFileSync(file, JSON.stringify({ expressiveness }))
-      return loadConfig(file).expressiveness
-    }
-    expect(clamped(0)).toBe(0)
-    expect(clamped(3.5)).toBe(3.5)
-    expect(clamped(-4)).toBe(0)
-    expect(clamped(99)).toBe(10)
-    expect(clamped(Number.NaN)).toBe(1)
   })
 })

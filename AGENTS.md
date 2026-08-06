@@ -9,8 +9,8 @@ State: M5a (Ship) implementation is complete; its clean-machine A8/A9
 gate remains open in sdd/slices/008-ship/ and now also verifies slice
 009 (sdd/slices/009-claude-plugin/ — both harness adapters delivered
 as marketplace plugins under plugins/). M4 (Format) closed
-2026-07-29. M2b (Performance) remains the open human-paced tuning
-track. Stack:
+2026-07-29. M2b (Performance) closed with slice 014; further tuning is
+bounded to concrete regressions from continuous assessment. Stack:
 Electron + TypeScript (electron-vite, pnpm); Live2D via pixi-live2d-display.
 
 ## Repo minimap
@@ -25,7 +25,7 @@ vendor/      gitignored — Cubism Core, fetched, never committed (D20 §6.8)
 
 ## Commands
 - `pnpm dev` — run the app (dev server on 127.0.0.1:5300)
-- `pnpm test` — vitest, main-side pure logic only
+- `pnpm test` — vitest, pure logic on both sides (main + renderer)
 - `pnpm fetch-assets` — download Live2D Core + Haru (run once after clone)
 - `pnpm build` — typecheck + production build
 

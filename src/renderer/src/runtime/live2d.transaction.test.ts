@@ -41,10 +41,13 @@ const boundary = vi.hoisted(() => {
               minimumValues: [valid ? -1 : 2],
               maximumValues: [1],
               defaultValues: [0],
+              values: [0],
               count: 1
-            }
+            },
+            parts: { ids: [], opacities: [], count: 0 }
           },
           setParameterValueByIndex: vi.fn(),
+          setPartOpacityByIndex: vi.fn(),
           update: vi.fn()
         },
         motionManager: { definitions: {} }

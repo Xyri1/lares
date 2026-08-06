@@ -4,7 +4,23 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 export interface Live2dBlock {
   model: string
   performance?: SynthPreset
+  choreography?: ChoreographyBlock
   [key: string]: unknown
+}
+
+/** Slice 014 SPEC §3 sign-ordered corner keys — the eight `ANCHOR_KEYS` minus
+ * `'neutral'`. Restated rather than imported from the renderer (same P6
+ * process-boundary rule as `CHANNELS` above). */
+export type CornerKey = '+++' | '++-' | '+-+' | '+--' | '-++' | '-+-' | '--+' | '---'
+
+export interface ChoreographyRef {
+  group: string
+  index: number
+}
+
+export interface ChoreographyBlock {
+  fallback: ChoreographyRef
+  anchors?: Partial<Record<CornerKey, ChoreographyRef>>
 }
 
 export interface SynthPreset {
@@ -54,6 +70,8 @@ const ANCHOR_KEYS: readonly string[] = [
 ]
 
 const OPERATIONAL_KEYS: readonly string[] = ['awaiting_input', 'error']
+
+const CORNER_KEYS: readonly CornerKey[] = ANCHOR_KEYS.slice(1) as CornerKey[]
 
 /** Authored channel poses, keyed by anchor or operational state. */
 export type PoseOverrides = Record<string, Record<string, number>>
@@ -188,6 +206,8 @@ function parseManifest(manifestPath: string): ParsedManifest | ValidationReport 
 
   const performance = parsePerformance(live2d.performance)
   if (isReport(performance)) return performance
+  const choreography = parseChoreography(live2d.choreography)
+  if (isReport(choreography)) return choreography
   const anchors = parsePoses(m.anchors, 'anchors', ANCHOR_KEYS)
   if (isReport(anchors)) return anchors
   const operational = parsePoses(m.operational, 'operational', OPERATIONAL_KEYS)
@@ -197,7 +217,8 @@ function parseManifest(manifestPath: string): ParsedManifest | ValidationReport 
     live2d: {
       ...live2d,
       model: live2d.model,
-      ...(performance.performance ? { performance: performance.performance } : {})
+      ...(performance.performance ? { performance: performance.performance } : {}),
+      ...(choreography.choreography ? { choreography: choreography.choreography } : {})
     },
     ...(anchors.poses ? { anchors: anchors.poses } : {}),
     ...(operational.poses ? { operational: operational.poses } : {})
@@ -240,6 +261,65 @@ function parsePoses(
     poses[key] = values
   }
   return { poses }
+}
+
+/**
+ * Optional authored-choreography block (slice 014 SPEC §3): a required
+ * `fallback` ref plus optional per-corner refs, each exactly `{ group,
+ * index }`. Shape-only here — the referenced motion group/index must exist
+ * in the selected `.model3.json`, checked later in `validateCharacter` once
+ * the model is parsed. Any shape error is a loud failure through the same
+ * two-tier policy as `parsePoses`; it never silently drops only this block.
+ */
+function parseChoreographyRef(raw: unknown, label: string): ChoreographyRef | string {
+  if (!record(raw)) return `${label} must be an object`
+  const keys = Object.keys(raw)
+  if (keys.length !== 2 || !keys.includes('group') || !keys.includes('index')) {
+    return `${label} must contain exactly group and index`
+  }
+  if (typeof raw.group !== 'string' || raw.group === '') {
+    return `${label}.group must be a non-empty string`
+  }
+  if (!Number.isSafeInteger(raw.index) || (raw.index as number) < 0) {
+    return `${label}.index must be a safe integer >= 0`
+  }
+  return { group: raw.group, index: raw.index as number }
+}
+
+function parseChoreography(
+  raw: unknown
+): { choreography?: ChoreographyBlock } | ValidationReport {
+  if (raw === undefined) return {}
+  if (!record(raw)) return errorReport('renderers.live2d.choreography must be an object')
+  const allowedKeys = ['fallback', 'anchors']
+  const unknownKey = Object.keys(raw).find((key) => !allowedKeys.includes(key))
+  if (unknownKey) {
+    return errorReport(
+      `renderers.live2d.choreography.${unknownKey} is not a known key — expected one of ${allowedKeys.join(', ')}`
+    )
+  }
+  if (raw.fallback === undefined) {
+    return errorReport('renderers.live2d.choreography.fallback is required')
+  }
+  const fallback = parseChoreographyRef(raw.fallback, 'renderers.live2d.choreography.fallback')
+  if (typeof fallback === 'string') return errorReport(fallback)
+
+  let anchors: Partial<Record<CornerKey, ChoreographyRef>> | undefined
+  if (raw.anchors !== undefined) {
+    if (!record(raw.anchors)) return errorReport('renderers.live2d.choreography.anchors must be an object')
+    anchors = {}
+    for (const [key, value] of Object.entries(raw.anchors)) {
+      if (!CORNER_KEYS.includes(key as CornerKey)) {
+        return errorReport(
+          `renderers.live2d.choreography.anchors.${key} is not a known key — expected one of ${CORNER_KEYS.join(', ')}`
+        )
+      }
+      const ref = parseChoreographyRef(value, `renderers.live2d.choreography.anchors.${key}`)
+      if (typeof ref === 'string') return errorReport(ref)
+      anchors[key as CornerKey] = ref
+    }
+  }
+  return { choreography: { fallback, ...(anchors ? { anchors } : {}) } }
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -394,6 +474,9 @@ interface ModelInspection {
   degradations: string[]
   required: string[]
   optional: string[]
+  /** Usable registered motion slots per group, straight off
+   * `FileReferences.Motions` (slice 014 SPEC §3). */
+  motionGroups: Record<string, boolean[]>
 }
 
 function scanPackageFiles(root: string, packageRoot: string, errors: string[]): string[] {
@@ -431,6 +514,19 @@ function inspectModel(packageRoot: string, modelPath: string): ModelInspection |
     ? [...new Set(refs.Textures.filter((path): path is string => typeof path === 'string').map(fromModel))].sort()
     : []
   const registeredPhysics = typeof refs.Physics === 'string' ? fromModel(refs.Physics) : null
+  const motionGroups: Record<string, boolean[]> = record(refs.Motions)
+    ? Object.fromEntries(
+        Object.entries(refs.Motions).map(([group, list]) => [
+          group,
+          Array.isArray(list)
+            ? list.map(
+                (entry) =>
+                  record(entry) && typeof entry.File === 'string' && entry.File.trim().length > 0
+              )
+            : []
+        ])
+      )
+    : {}
   const errors: string[] = []
   const files = scanPackageFiles(packageRoot, packageRoot, errors).sort()
   const looseExpressions = files
@@ -488,7 +584,8 @@ function inspectModel(packageRoot: string, modelPath: string): ModelInspection |
       ...[registeredPhysics, pose, userData, displayInfo].filter((path): path is string => path !== null),
       ...registeredExpressions,
       ...registeredMotions
-    ]
+    ],
+    motionGroups
   }
 }
 
@@ -525,6 +622,30 @@ export function validateCharacter(manifestPath: string): ValidationReport {
         if (referenceError) {
           warnings.push(referenceError)
           degradations.push(`optional resource unavailable: ${reference}`)
+        }
+      }
+      if (parsed.live2d.choreography) {
+        const refs: [string, ChoreographyRef][] = [
+          ['fallback', parsed.live2d.choreography.fallback],
+          ...Object.entries(parsed.live2d.choreography.anchors ?? {}).map(
+            ([key, ref]) => [`anchors.${key}`, ref as ChoreographyRef] as [string, ChoreographyRef]
+          )
+        ]
+        for (const [label, ref] of refs) {
+          const group = inspection.motionGroups[ref.group]
+          if (group === undefined) {
+            errors.push(
+              `renderers.live2d.choreography.${label} references unknown motion group "${ref.group}"`
+            )
+          } else if (ref.index >= group.length) {
+            errors.push(
+              `renderers.live2d.choreography.${label} references motion index ${ref.index} but group "${ref.group}" has only ${group.length} motion(s)`
+            )
+          } else if (!group[ref.index]) {
+            errors.push(
+              `renderers.live2d.choreography.${label} references unusable motion slot ${ref.group}[${ref.index}]`
+            )
+          }
         }
       }
     }

@@ -10,7 +10,7 @@ import {
   easeStep,
   mergeAnchors,
   mergeOperational,
-  resolveFeel,
+  resolvePoses,
   withOverlay,
   type AnchorSet,
   type Channel,
@@ -298,25 +298,19 @@ describe('transition ease (SPEC §6)', () => {
   })
 })
 
-describe('resolveFeel (SPEC §§4, 13)', () => {
-  it('merges valid overrides and clamps expressiveness into [0, 10]', () => {
-    const resolved = resolveFeel({
+describe('resolvePoses (SPEC §13)', () => {
+  it('merges valid overrides over the shipped defaults', () => {
+    const resolved = resolvePoses({
       anchors: { neutral: { eyeOpen: 0.5 } },
-      operational: { error: { mouthCurve: -1 } },
-      expressiveness: 2.5
+      operational: { error: { mouthCurve: -1 } }
     })
     expect(resolved.anchors.neutral.eyeOpen).toBe(0.5)
     expect(resolved.anchors['+++']).toEqual(DEFAULT_ANCHORS['+++'])
     expect(resolved.operational.error.mouthCurve).toBe(-1)
-    expect(resolved.expressiveness).toBe(2.5)
-    expect(resolveFeel({ expressiveness: 99 }).expressiveness).toBe(10)
-    expect(resolveFeel({ expressiveness: -1 }).expressiveness).toBe(0)
   })
 
   it('falls back to the shipped defaults for anything malformed (P7)', () => {
-    expect(resolveFeel({}).anchors).toEqual(DEFAULT_ANCHORS)
-    expect(resolveFeel({}).expressiveness).toBe(1)
-    expect(resolveFeel({ expressiveness: 'loud' }).expressiveness).toBe(1)
+    expect(resolvePoses({}).anchors).toEqual(DEFAULT_ANCHORS)
     for (const anchors of [
       { unknownKey: { eyeOpen: 0 } },
       { neutral: { unknownChannel: 0 } },
@@ -325,9 +319,9 @@ describe('resolveFeel (SPEC §§4, 13)', () => {
       { neutral: null },
       'anchors'
     ]) {
-      expect(resolveFeel({ anchors }).anchors).toEqual(DEFAULT_ANCHORS)
+      expect(resolvePoses({ anchors }).anchors).toEqual(DEFAULT_ANCHORS)
     }
-    expect(resolveFeel({ operational: { idle: { eyeOpen: 0 } } }).operational).toEqual(
+    expect(resolvePoses({ operational: { idle: { eyeOpen: 0 } } }).operational).toEqual(
       DEFAULT_OPERATIONAL
     )
   })

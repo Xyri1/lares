@@ -8,6 +8,19 @@
   "renderers": {
     "live2d": {
       "model": "haru.model3.json",
+      "choreography": {
+        "fallback": { "group": "Idle", "index": 1 },
+        "anchors": {
+          "+++": { "group": "Tap", "index": 3 },
+          "++-": { "group": "Shake", "index": 1 },
+          "+-+": { "group": "Idle", "index": 2 },
+          "+--": { "group": "Tap", "index": 1 },
+          "-++": { "group": "Tap", "index": 0 },
+          "-+-": { "group": "Flick3", "index": 0 },
+          "--+": { "group": "Flick", "index": 2 },
+          "---": { "group": "Idle", "index": 0 }
+        }
+      },
       "performance": {
         "params": [
           {
