@@ -275,8 +275,9 @@ past proposal anyway, so deferring its ergonomics costs capability to no one.
 the model receives a request with no last-report checkpoint for its session,
 it calls `feel()` once after appraising that request to establish the initial
 absolute tuple. A present checkpoint suppresses initialization, including
-after resume or compaction; thereafter only a meaningful appraisal change or
-direct user request permits another call. The shared host guidance, MCP
+after resume or compaction; thereafter the model forms its current absolute
+integer tuple and calls only when it differs from the last report, or once on
+a direct user request even when unchanged. The shared host guidance, MCP
 instructions, and `feel` description state the same rule. *Rejected:* calling
 at raw `SessionStart` before the request can be appraised; adding a hook-side
 flag or getter call when checkpoint absence already supplies the bit;

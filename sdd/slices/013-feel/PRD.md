@@ -77,7 +77,8 @@ During an agent session:
 1. If no last reported feel exists for this session, the agent appraises the
    current request and calls `feel()` once to establish its initial absolute
    state.
-2. Later meaningful changes produce one new absolute report.
+2. Later, the agent forms its current absolute integer tuple and produces one
+   new report only when it differs from the last report.
 3. The Lar visibly reflects that state without the agent selecting an
    expression or motion, and keeps reflecting it until the next valid update.
 4. On the next user prompt, the agent receives its last reported value and
@@ -200,8 +201,9 @@ interpolation, blink phase, and physics.
 
 **F2 — Initialize once, then stay sparse.** A session with no last reported
 feel establishes one report after appraising the current request. Thereafter,
-standing instructions ask for calls only on meaningful appraisal changes or a
-direct request; they impose no recurring per-turn or per-task quota.
+standing instructions ask the agent to form its current absolute integer tuple
+and call only when it differs from the last report, or once on a direct request
+even when unchanged; they impose no recurring per-turn or per-task quota.
 
 **F3 — Absolute replacement.** The latest valid call completely replaces the
 session's prior tuple; the semantic path has no effect inside Lares.
@@ -303,7 +305,8 @@ this slice draft exists.
 ## 12. Open questions for SPEC and PLAN
 
 1. Whether behavioral testing confirms the proposed five-point anchors.
-2. The exact definition and examples of a meaningful appraisal change.
+2. Whether behavioral testing confirms the integer-tuple comparison policy and
+   its contrastive examples across supported hosts and models.
 3. How one session's latch is durably recovered across reconnect and app
    restart without clearing or inventing a tuple.
 4. The exact renderer-neutral performance controls below the affect tuple.

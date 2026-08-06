@@ -136,7 +136,7 @@ describe('createServer', () => {
     expect(checkpointed.status).toBe(202)
     expect(await checkpointed.json()).toEqual({
       context:
-        '[Lares] Last reported feel: valence=-1, activation=2, control=-2. Reassess from here — this is your last report, not a current claim. Call feel only on a meaningful appraisal change or a direct user request; values are absolute.'
+        '[Lares] Last report: valence=-1, activation=2, control=-2. This is comparison state, not a current claim. Form your current absolute tuple. If it differs, call feel once; if unchanged, stay silent unless the user directly asks how you feel.'
     })
 
     // Other events never carry it, and another session's latch never leaks.
@@ -266,30 +266,39 @@ describe('createServer', () => {
     expect(head).toMatch(/appraisal/)
     expect(head).toMatch(/absolute/)
     expect(head).toMatch(/no last reported feel/)
-    expect(head).toMatch(/initial report/)
     expect(head).toMatch(/Thereafter/)
     expect(head).toMatch(/how you feel/)
-    expect(head).toMatch(/even if nothing changed/)
+    expect(head).toMatch(/even if unchanged/)
+    expect(head).toMatch(/An unchanged tuple means no call/)
     expect(instructions.length).toBeLessThan(2000)
 
     // 013 SPEC §8: shifts as they occur, mid-task; never from schedules, tool
     // events or the user's emotion; a failed call is silent.
     expect(instructions).toMatch(/mid-task/)
-    expect(instructions).toMatch(/never the user’s feelings/)
+    expect(instructions).toMatch(/user’s feelings are not appraisal changes/)
     expect(instructions).toMatch(/every language/)
-    expect(instructions).toMatch(/no word triggers a call/)
-    expect(instructions).toMatch(/schedules are not shifts and never cause another call/)
+    expect(instructions).toMatch(/words and examples never trigger calls/)
+    expect(instructions).toMatch(/lifecycle events, schedules, emotion words/)
+    expect(instructions).toMatch(/not certainty, confidence/)
     expect(instructions).toMatch(/silently/)
     expect(instructions).not.toMatch(/\bcue\b/i)
     expect(instructions).not.toContain('emote')
+    expect(instructions).not.toContain('Last [')
   })
 
   it('publishes the canonical tool description on the feel tool', async () => {
     const { client: value } = await client()
     const feel = (await value.listTools()).tools.find((tool) => tool.name === 'feel')!
     expect(feel.description).toBe(
-      'Report your current felt state as three integers, each from -2 to 2: valence (unpleasant −2 … pleasant +2), activation (subdued −2 … energized +2), control (overwhelmed −2 … in control +2). This is a first-person report of your current functional appraisal — not an animation command, and not a claim about subjective experience. Values are absolute: each call fully replaces your previous report. If no last reported feel exists for this session, call once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, or once when the user directly asks how you feel. Steady work stays silent. If the call fails, continue your task silently.'
+      'Report your own current functional appraisal as three absolute integers from -2 to 2: valence (unpleasant to pleasant), activation (subdued to energized), and felt control (overwhelmed to able to influence what happens next). This is not an animation command or a claim about subjective experience. Felt control is not certainty, confidence, responsibility, dominance, or objective task success. If this session has no prior report, call once after appraising the current request. Later, including mid-task, call only when the integer tuple differs from the last report, or once when the user directly asks how you feel; unchanged means no call. Each call fully replaces the previous report. Never infer the user’s feelings. On failure, continue silently without retrying.'
     )
+    expect(feel.inputSchema).toMatchObject({
+      properties: {
+        valence: { description: expect.stringContaining('-2 strongly unpleasant') },
+        activation: { description: expect.stringContaining('2 highly activated') },
+        control: { description: expect.stringContaining('Not certainty, confidence') }
+      }
+    })
   })
 
   it('keeps every session on the same instructions', async () => {

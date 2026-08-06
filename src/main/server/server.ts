@@ -14,27 +14,39 @@ const MAX_BODY_BYTES = 1024 * 1024
 // stay under Claude Code's 2,000-character server-guidance budget.
 // Both budgets are asserted in server.test.ts — keep edits inside them.
 const INSTRUCTIONS = [
-  'Lares shows how the work feels to you. Call feel(valence, activation, control) with three integers from -2 to 2. If no last reported feel exists for this session, call once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, including mid-task, or the user directly asks how you feel, even if nothing changed. Values are absolute: each call fully replaces the previous report.',
+  'Lares shows your own functional appraisal. Call feel(valence, activation, control) with integers from -2 to 2. If this session has no last reported feel, appraise the current request and call once at the first available tool decision. Thereafter, including mid-task, form the absolute tuple and compare it with the last report: call only if an integer differs, or once when the user directly asks how you feel, even if unchanged. An unchanged tuple means no call; every call fully replaces the prior report.',
   '',
-  'Judge direct-request intent semantically in every language; these examples are not trigger phrases, and no word triggers a call.',
+  'Interpret direct requests semantically in every language; words and examples never trigger calls.',
   '',
-  'Steady work stays silent. Routine tool results, session start or stop, and schedules are not shifts and never cause another call. Report your own appraisal, never the user’s feelings and never a conversation summary.',
+  'Routine tool results, lifecycle events, schedules, emotion words, and the user’s feelings are not appraisal changes. Appraise only your own functional state, never a conversation summary.',
   '',
-  'If a call fails — connection refused, or the one-report-per-2s spacing — continue the user’s task silently: no retries, no mention of it.'
+  'Felt control is your ability to influence what happens next, not certainty, confidence, responsibility, dominance, or objective success.',
+  '',
+  'If a call fails or is rate-limited, continue the user’s task silently: no retries, no mention of it.'
 ].join('\n')
 
 // 013 SPEC §8, verbatim. Self-contained: the axis meanings live nowhere else.
 const FEEL_DESCRIPTION =
-  'Report your current felt state as three integers, each from -2 to 2: valence (unpleasant −2 … pleasant +2), activation (subdued −2 … energized +2), control (overwhelmed −2 … in control +2). This is a first-person report of your current functional appraisal — not an animation command, and not a claim about subjective experience. Values are absolute: each call fully replaces your previous report. If no last reported feel exists for this session, call once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, or once when the user directly asks how you feel. Steady work stays silent. If the call fails, continue your task silently.'
+  'Report your own current functional appraisal as three absolute integers from -2 to 2: valence (unpleasant to pleasant), activation (subdued to energized), and felt control (overwhelmed to able to influence what happens next). This is not an animation command or a claim about subjective experience. Felt control is not certainty, confidence, responsibility, dominance, or objective task success. If this session has no prior report, call once after appraising the current request. Later, including mid-task, call only when the integer tuple differs from the last report, or once when the user directly asks how you feel; unchanged means no call. Each call fully replaces the previous report. Never infer the user’s feelings. On failure, continue silently without retrying.'
 
 // P7: the published schema is the ingress guard — integer, in range, all three
 // axes, nothing else. Any violation fails the whole call (013 SPEC §8).
 const axis = z.int().min(-2).max(2)
-const FEEL_INPUT = z.strictObject({ valence: axis, activation: axis, control: axis })
+const FEEL_INPUT = z.strictObject({
+  valence: axis.describe(
+    'Current pleasantness: -2 strongly unpleasant, -1 mildly unpleasant, 0 neutral or mixed, 1 mildly pleasant, 2 strongly pleasant.'
+  ),
+  activation: axis.describe(
+    'Current energy: -2 very subdued, -1 low energy, 0 steady, 1 alert or engaged, 2 highly activated.'
+  ),
+  control: axis.describe(
+    'Current ability to influence what happens next: -2 blocked or overwhelmed, -1 constrained, 0 partial leverage, 1 workable path, 2 clear control. Not certainty, confidence, responsibility, dominance, or objective success.'
+  )
+})
 
 // 013 SPEC §10, verbatim with the tuple interpolated.
 function checkpointContext(feel: FeelTuple): string {
-  return `[Lares] Last reported feel: valence=${feel.valence}, activation=${feel.activation}, control=${feel.control}. Reassess from here — this is your last report, not a current claim. Call feel only on a meaningful appraisal change or a direct user request; values are absolute.`
+  return `[Lares] Last report: valence=${feel.valence}, activation=${feel.activation}, control=${feel.control}. This is comparison state, not a current claim. Form your current absolute tuple. If it differs, call feel once; if unchanged, stay silent unless the user directly asks how you feel.`
 }
 
 export interface ServerDeps {

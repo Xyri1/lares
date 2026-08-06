@@ -62,9 +62,10 @@ Any implementation must preserve these rules:
 
 1. The model appraises and deliberately calls `emote`; a hook never infers the
    appraisal, selects a cue, or fabricates a tool call.
-2. Host context contains a short standing integration rule, not the cue
-   taxonomy or a duplicate tool manual. The shared copy is at most 512
-   characters.
+2. Host context contains a focused standing integration rule, not the cue
+   taxonomy or a duplicate tool manual. The shared copy has no Lares-specific
+   character ceiling; it stays within each host's model-visible context
+   threshold (root D26).
 3. The hook does not inspect prompt text to decide whether to inject guidance.
 4. No guidance is delivered unless the app is alive and the settings toggle is
    on: the Codex hook prints only past the helper's local liveness check (a
@@ -117,10 +118,10 @@ priority; a tool-owned rule file is the precedented pattern (Context7's
 The per-turn `UserPromptSubmit` print (012-D2) is retired: identical text
 re-injected every turn accumulates in transcripts and invites habituation. The
 copy is byte-identical in both channels — a consistency test pins the helper's
-string to the app module's — and ships with the app. Approved 2026-08-01:
+string to the app module's — and ships with the app. Approved 2026-08-06:
 
 ```text
-Lares is active for this session. If `feel` is available and no last reported feel exists for this session, call it once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, including mid-task, or the user directly asks how you feel. Reports are absolute; steady work stays silent. Never infer the user’s feelings. Failed calls are silent and not retried.
+Lares is active. If `feel` is available and this session has no feel report, appraise current request and call once at first available tool decision. Later, including mid-task, form absolute [valence, activation, control] integers and compare with last report: call only if an integer differs, or once when the user directly asks how you feel; unchanged means no call. Each call replaces prior report. Axes: valence unpleasant -2 to pleasant +2; activation subdued -2 to energized +2; felt control blocked or overwhelmed -2 to able to influence what happens next +2. Control is not certainty, confidence, responsibility, dominance, or objective success. Examples illustrate appraisal comparisons, never event triggers: Last [0,1,1], an expected failing test narrows the cause and candidate remains [0,1,1] -> no call. Last [0,1,1], the failure invalidates the only viable path and candidate is [-1,2,-2] -> call `feel`. Last [-1,1,-1], evidence reveals the root cause and a workable fix, candidate [1,1,2] -> call; a routine build succeeds without another change -> no call. Last [1,0,2], the user says they are frustrated while your appraisal stays [1,0,2] -> no call; if asked how you feel, call that tuple once. Interpret direct requests semantically in any language. Routine tool results, lifecycle events, schedules, emotion words, and the user’s feelings are not triggers. Appraise only your own functional state. If call fails or is rate-limited, continue silently; do not retry or mention it.
 ```
 
 Two accepted limits: launch-time delivery decays over very long sessions on

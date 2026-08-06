@@ -69,18 +69,19 @@ Agent --feel()--> latest session value --prompt-submit reminder--> Agent
                          +--> memoryless performance mapping
 ```
 
-The reminder must call the tuple the **last reported feeling**, not the current
-feeling. It should ask the agent to reassess against the new situation and call
-`feel()` only after a meaningful change. It must not tell the agent to preserve
-or intensify automatically; that would create anchoring and runaway
-escalation.
+The reminder must call the tuple the **last report**, not the current feeling.
+It should ask the agent to form the current absolute tuple, compare it with the
+last report, and call `feel()` only when an integer differs or the user directly
+asks. It must not tell the agent to preserve or intensify automatically; that
+would create anchoring and runaway escalation.
 
 A compact working form is:
 
 ```text
-[Lares] Last reported feel: valence=-1, activation=2, control=-2.
-Reassess from here. Call feel only if your current appraisal changed
-meaningfully. Values are absolute; do not repeat an unchanged state.
+[Lares] Last report: valence=-1, activation=2, control=-2. This is comparison
+state, not a current claim. Form your current absolute tuple. If it differs,
+call feel once; if unchanged, stay silent unless the user directly asks how
+you feel.
 ```
 
 The hook carries only the three latest values. Stable instructions define the

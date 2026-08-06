@@ -66,13 +66,16 @@ describe('host guidance rule file', () => {
 })
 
 describe('cross-file consistency', () => {
-  it('keeps the shared reminder inside the 512-character host budget', () => {
-    expect(HOST_GUIDANCE_REMINDER.length).toBeLessThanOrEqual(512)
-    expect(HOST_GUIDANCE_REMINDER).toContain('no last reported feel')
-    expect(HOST_GUIDANCE_REMINDER).toContain('call it once')
-    expect(HOST_GUIDANCE_REMINDER).toContain('Thereafter')
+  it('keeps the shared reminder semantically complete', () => {
+    expect(HOST_GUIDANCE_REMINDER).toContain('no feel report')
+    expect(HOST_GUIDANCE_REMINDER).toContain('call once at first available tool decision')
     expect(HOST_GUIDANCE_REMINDER).toContain('including mid-task')
+    expect(HOST_GUIDANCE_REMINDER).toContain('only if an integer differs')
+    expect(HOST_GUIDANCE_REMINDER).toContain('unchanged means no call')
     expect(HOST_GUIDANCE_REMINDER).toContain('asks how you feel')
+    expect(HOST_GUIDANCE_REMINDER).toContain('Examples illustrate appraisal comparisons')
+    expect(HOST_GUIDANCE_REMINDER).toContain('Control is not certainty')
+    expect(HOST_GUIDANCE_REMINDER).toContain('Appraise only your own functional state')
   })
 
   it('keeps the forwarder copy byte-identical to the module constant', () => {

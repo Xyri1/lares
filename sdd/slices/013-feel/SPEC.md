@@ -224,26 +224,39 @@ and the tool surface changes in place before public launch.
 **Canonical tool description** (self-contained; wording is calibration,
 the obligations are contract):
 
-> Report your current felt state as three integers, each from -2 to 2:
-> valence (unpleasant −2 … pleasant +2), activation (subdued −2 …
-> energized +2), control (overwhelmed −2 … in control +2). This is a
-> first-person report of your current functional appraisal — not an
-> animation command, and not a claim about subjective experience.
-> Values are absolute: each call fully replaces your previous report.
-> If no last reported feel exists for this session, call once after
-> appraising the current request to establish an initial report.
-> Thereafter, call only when your appraisal meaningfully changes, or once
-> when the user directly asks how you feel. Steady work stays silent. If
-> the call fails, continue your task silently.
+> Report your own current functional appraisal as three absolute integers
+> from -2 to 2: valence (unpleasant to pleasant), activation (subdued to
+> energized), and felt control (overwhelmed to able to influence what
+> happens next). This is not an animation command or a claim about
+> subjective experience. Felt control is not certainty, confidence,
+> responsibility, dominance, or objective task success. If this session has
+> no prior report, call once after appraising the current request. Later,
+> including mid-task, call only when the integer tuple differs from the last
+> report, or once when the user directly asks how you feel; unchanged means
+> no call. Each call fully replaces the previous report. Never infer the
+> user’s feelings. On failure, continue silently without retrying.
+
+Each published input property also carries its five anchors: valence from
+strongly unpleasant to strongly pleasant, activation from very subdued to
+highly activated, and felt control from blocked or overwhelmed through partial
+leverage to clear control. The control property repeats that it is not
+certainty, confidence, responsibility, dominance, or objective success.
 
 **MCP `instructions`** replace the emote adoption copy with the same
 duties reframed for `feel`: establish one initial report when the
-session has no last reported feel; thereafter report genuine appraisal
-shifts as they occur, mid-task included, or answer a direct user
-request; never report from schedules, tool events, or the user's
-emotion. The host-guidance rule file and Codex `SessionStart` context
-carry the same initialization and sparse-update rule in at most 512
-characters.
+session has no last reported feel; thereafter form the current absolute
+integer tuple and report only when it differs from the last tuple, mid-task
+included, or answer a direct user request once even when unchanged; never
+report from schedules, tool events, or the user's emotion. The
+host-guidance rule file and Codex `SessionStart` context
+carry the same initialization and sparse-update policy with no Lares-specific
+character ceiling. They stay within each host's model-visible context
+threshold; Codex's default per-handler hook spill threshold is approximately
+[2,500 tokens](https://learn.chatgpt.com/docs/hooks#large-hook-output), not a
+product prompt target. The first-512-character priority window for MCP server
+`instructions` remains a separate constraint. Standing guidance may include a
+bounded contrastive example set that teaches call versus silence from
+appraisal history; examples are never event, phrase, or emotion triggers.
 
 **Caps (server-enforced, P7):** one `feel` per attributed session per
 2s *(default)*; a call inside the window is rejected with a tool error
@@ -294,10 +307,10 @@ degradation under P11, never worked around.
 **Canonical copy** (dynamic values interpolated; the five 013-D4
 requirements are contract, wording is calibration):
 
-> [Lares] Last reported feel: valence=V, activation=A, control=C.
-> Reassess from here — this is your last report, not a current claim.
-> Call feel only on a meaningful appraisal change or a direct user
-> request; values are absolute.
+> [Lares] Last report: valence=V, activation=A, control=C. This is
+> comparison state, not a current claim. Form your current absolute tuple.
+> If it differs, call feel once; if unchanged, stay silent unless the user
+> directly asks how you feel.
 
 No latch for that key ⇒ no `context` field. The checkpoint is strictly
 session-keyed and never crosses identities (F4). Volatile `mcp:*` keys
