@@ -66,6 +66,15 @@ describe('host guidance rule file', () => {
 })
 
 describe('cross-file consistency', () => {
+  it('keeps the shared reminder inside the 512-character host budget', () => {
+    expect(HOST_GUIDANCE_REMINDER.length).toBeLessThanOrEqual(512)
+    expect(HOST_GUIDANCE_REMINDER).toContain('no last reported feel')
+    expect(HOST_GUIDANCE_REMINDER).toContain('call it once')
+    expect(HOST_GUIDANCE_REMINDER).toContain('Thereafter')
+    expect(HOST_GUIDANCE_REMINDER).toContain('including mid-task')
+    expect(HOST_GUIDANCE_REMINDER).toContain('asks how you feel')
+  })
+
   it('keeps the forwarder copy byte-identical to the module constant', () => {
     const source = readFileSync(join(process.cwd(), 'scripts', 'forwarder.js'), 'utf8')
     const match = source.match(/const HOST_GUIDANCE_REMINDER =\s*'((?:[^'\\]|\\.)*)'/)

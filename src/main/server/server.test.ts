@@ -265,6 +265,9 @@ describe('createServer', () => {
     expect(head).toMatch(/-2 to 2/)
     expect(head).toMatch(/appraisal/)
     expect(head).toMatch(/absolute/)
+    expect(head).toMatch(/no last reported feel/)
+    expect(head).toMatch(/initial report/)
+    expect(head).toMatch(/Thereafter/)
     expect(head).toMatch(/how you feel/)
     expect(head).toMatch(/even if nothing changed/)
     expect(instructions.length).toBeLessThan(2000)
@@ -275,7 +278,7 @@ describe('createServer', () => {
     expect(instructions).toMatch(/never the user’s feelings/)
     expect(instructions).toMatch(/every language/)
     expect(instructions).toMatch(/no word triggers a call/)
-    expect(instructions).toMatch(/schedules are not shifts/)
+    expect(instructions).toMatch(/schedules are not shifts and never cause another call/)
     expect(instructions).toMatch(/silently/)
     expect(instructions).not.toMatch(/\bcue\b/i)
     expect(instructions).not.toContain('emote')
@@ -285,7 +288,7 @@ describe('createServer', () => {
     const { client: value } = await client()
     const feel = (await value.listTools()).tools.find((tool) => tool.name === 'feel')!
     expect(feel.description).toBe(
-      'Report your current felt state as three integers, each from -2 to 2: valence (unpleasant −2 … pleasant +2), activation (subdued −2 … energized +2), control (overwhelmed −2 … in control +2). This is a first-person report of your current functional appraisal — not an animation command, and not a claim about subjective experience. Values are absolute: each call fully replaces your previous report. Call when your appraisal meaningfully changes, or once when the user directly asks how you feel. Steady work stays silent. If the call fails, continue your task silently.'
+      'Report your current felt state as three integers, each from -2 to 2: valence (unpleasant −2 … pleasant +2), activation (subdued −2 … energized +2), control (overwhelmed −2 … in control +2). This is a first-person report of your current functional appraisal — not an animation command, and not a claim about subjective experience. Values are absolute: each call fully replaces your previous report. If no last reported feel exists for this session, call once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, or once when the user directly asks how you feel. Steady work stays silent. If the call fails, continue your task silently.'
     )
   })
 

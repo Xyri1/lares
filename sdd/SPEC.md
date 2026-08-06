@@ -28,7 +28,7 @@ default on.
 
 **Event route** `POST /v1/events` — envelope: `{ v: 1, harness: "claude-code" | "codex", session_id, cwd?, pid?, event: <harness-native JSON passthrough> }`. The forwarder adds the envelope and stamps a captured harness pid when the hook shell exposes one; `pid` stays optional and §3's silence reap covers the rest. All interpretation is server-side. Responses: `202` accepted, `403` origin-rejected, `413` oversized, `415` wrong content type, `422` unparseable. A `UserPromptSubmit` response for a session with a latch includes optional `{ context }` containing the session's last report and a reassessment reminder; no latch means no body. The forwarder waits for this hook response and emits it as model-visible `additionalContext`; other events remain fire-and-finish. If discovery is absent or the connection is refused, it exits 0 silently within 50ms in-script. The 500ms *(default)* total is a soft target, with harness hook timeouts as the outer bound.
 
-**MCP** — streamable HTTP at `POST /v1/mcp` (no token, D27), protocol `2`; the contract changes in place with no compatibility path. The server's `instructions` and the tool description tell the model to report genuine appraisal shifts as they occur, remain silent during steady work, call once on a direct request, never mirror the user's emotion, and continue silently on failure. Tools:
+**MCP** — streamable HTTP at `POST /v1/mcp` (no token, D27), protocol `2`; the contract changes in place with no compatibility path. The server's `instructions` and the tool description tell a session with no last reported feel to establish one initial report after appraising the current request; thereafter they require genuine appraisal shifts or a direct request, silence during steady work, no mirroring of the user's emotion, and silent continuation on failure. Tools:
 
 - `feel(valence, activation, control)` — all three required integers in `{-2,-1,0,1,2}`; missing, float, out-of-range, or extra fields fail the whole call and leave the latch intact. A valid call atomically replaces the attributed session's tuple and returns a short acknowledgement. This is the sole runtime affect action.
 - `status()` → active character, protocol version, caller-attributed session key, and that key's latched tuple if any.
@@ -193,6 +193,8 @@ Run this matrix when a material model, guidance, anchor, or wiring change warran
 **S10 — Cross-character.** GIVEN one tuple on two characters THEN axis directions read the same while identities differ (P5).
 
 **S11 — Daemon-down grace.** GIVEN the app closed THEN hooks exit 0 within budget and a `feel()` attempt receives connection-refused; the standing copy says continue silently.
+
+**S12 — Initial report.** GIVEN a session with no last reported feel WHEN the model appraises its first request THEN it calls `feel()` exactly once with a plausible current tuple; GIVEN a session whose prompt carries a last-report checkpoint THEN startup, resume, or compaction guidance produces no duplicate initialization call.
 
 ## 10. Non-functional budget
 

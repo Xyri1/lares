@@ -54,19 +54,24 @@ per-turn proves noisy), and a stale `runtime.json` after a crash may inject an
 orphan reminder, which the conditional copy and the MCP contract's silent
 failure handling absorb. *Status:* decided by the maintainer 2026-08-01.
 
-**012-D3 — Loose instruction, moment-scored gate.** *Chosen:* the injected
-copy stays principle-shaped — report genuine appraisal shifts — with no
-per-task quota and no case-specific trigger examples. The behavioral gate
-scores coverage of designed emote-worthy moments across A/B arms, with zero
-ineligible calls; failures update the test matrix or delivery timing, not the
-copy, unless the principle itself is ambiguous. *Rejected:* "at least one
-emote per task" as instruction or gate (rewards one ritual call that
-discharges the duty, after which real shifts read as already covered);
-accumulating per-case wording patches (rebuilds the phrase-trigger list D26
-rejects, brittle in every language not patched). *Rationale:* the emote signal
-is informative only because it may be absent; count-shaped and case-shaped
-instructions optimize obedience, not appraisal. *Status:* decided by the
-maintainer 2026-08-01.
+**012-D3 — One initialization report, then a loose instruction and
+moment-scored gate.** *Chosen:* a session with no last reported feel makes one
+initial `feel()` call after appraising the current request. The existing
+session-keyed checkpoint is the presence signal; no hook state or lifecycle
+inference is added. Thereafter the injected copy stays principle-shaped —
+report genuine appraisal shifts — with no recurring quota or case-specific
+trigger examples. The behavioral gate scores the initial report separately,
+then scores coverage of designed feel-worthy moments with zero ineligible or
+duplicate calls. *Rejected:* calling at raw `SessionStart` before a request can
+be appraised; "at least one call per task" as an ongoing quota; accumulating
+per-case wording patches (brittle in every language not patched). *Rationale:*
+because reports are latched across sessions, a brief new session that never
+reports leaves an older session's appraisal visibly in charge. One initial
+report initializes ownership; after that, absence remains informative and
+count-shaped instructions would optimize obedience rather than appraisal.
+*Status:* decided by the maintainer 2026-08-01; amended 2026-08-06 after a
+fresh brief-session run exposed the missing-initial-report case. This is the
+narrow initialization exception adopted by 013-D12.
 
 **012-D4 — Session-scoped delivery: Claude Code rule file, Codex `SessionStart`; per-turn injection retired.**
 *Chosen:* both harnesses deliver the approved copy once per session, present

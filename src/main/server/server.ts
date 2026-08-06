@@ -14,18 +14,18 @@ const MAX_BODY_BYTES = 1024 * 1024
 // stay under Claude Code's 2,000-character server-guidance budget.
 // Both budgets are asserted in server.test.ts — keep edits inside them.
 const INSTRUCTIONS = [
-  'Lares shows how the work feels to you. Call feel(valence, activation, control) — three integers from -2 to 2 — when your appraisal genuinely shifts, as it shifts, mid-task and not only at completion. Values are absolute: each call fully replaces your previous report.',
+  'Lares shows how the work feels to you. Call feel(valence, activation, control) with three integers from -2 to 2. If no last reported feel exists for this session, call once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, including mid-task, or the user directly asks how you feel, even if nothing changed. Values are absolute: each call fully replaces the previous report.',
   '',
-  'Call once when the user directly asks how you feel, how the work feels, or for your reaction, confidence, or appraisal, even if nothing changed. Judge intent semantically in every language; these examples are not trigger phrases.',
+  'Judge direct-request intent semantically in every language; these examples are not trigger phrases, and no word triggers a call.',
   '',
-  'Steady work stays silent. Routine tool results, session start or stop, and schedules are not shifts, and no word triggers a call. Report your own appraisal, never the user’s feelings and never a conversation summary.',
+  'Steady work stays silent. Routine tool results, session start or stop, and schedules are not shifts and never cause another call. Report your own appraisal, never the user’s feelings and never a conversation summary.',
   '',
   'If a call fails — connection refused, or the one-report-per-2s spacing — continue the user’s task silently: no retries, no mention of it.'
 ].join('\n')
 
 // 013 SPEC §8, verbatim. Self-contained: the axis meanings live nowhere else.
 const FEEL_DESCRIPTION =
-  'Report your current felt state as three integers, each from -2 to 2: valence (unpleasant −2 … pleasant +2), activation (subdued −2 … energized +2), control (overwhelmed −2 … in control +2). This is a first-person report of your current functional appraisal — not an animation command, and not a claim about subjective experience. Values are absolute: each call fully replaces your previous report. Call when your appraisal meaningfully changes, or once when the user directly asks how you feel. Steady work stays silent. If the call fails, continue your task silently.'
+  'Report your current felt state as three integers, each from -2 to 2: valence (unpleasant −2 … pleasant +2), activation (subdued −2 … energized +2), control (overwhelmed −2 … in control +2). This is a first-person report of your current functional appraisal — not an animation command, and not a claim about subjective experience. Values are absolute: each call fully replaces your previous report. If no last reported feel exists for this session, call once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, or once when the user directly asks how you feel. Steady work stays silent. If the call fails, continue your task silently.'
 
 // P7: the published schema is the ingress guard — integer, in range, all three
 // axes, nothing else. Any violation fails the whole call (013 SPEC §8).

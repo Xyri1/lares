@@ -20,7 +20,7 @@ const nativeEvent = {
 // 012-D4: approved copy, kept in sync with src/main/hostGuidance.ts (checked
 // there) and pinned in sdd/slices/012-host-guidance/SPEC.md §3.
 const HOST_GUIDANCE_REMINDER =
-  'Lares is active for this session. If the `feel` tool is available, report genuine shifts in your appraisal of the work as they occur — mid-task, not only at completion. Steady work stays silent.'
+  'Lares is active for this session. If `feel` is available and no last reported feel exists for this session, call it once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, including mid-task, or the user directly asks how you feel. Reports are absolute; steady work stays silent. Never infer the user’s feelings. Failed calls are silent and not retried.'
 const HOST_GUIDANCE_STDOUT = JSON.stringify({
   hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: HOST_GUIDANCE_REMINDER }
 })

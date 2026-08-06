@@ -271,6 +271,24 @@ mirrored by today's preset fallback; the judgment part cannot be automated
 past proposal anyway, so deferring its ergonomics costs capability to no one.
 *Status:* proposed 2026-08-02 by maintainer direction ("defer").
 
+**013-D12 — A missing session latch gets one initial report.** *Chosen:* when
+the model receives a request with no last-report checkpoint for its session,
+it calls `feel()` once after appraising that request to establish the initial
+absolute tuple. A present checkpoint suppresses initialization, including
+after resume or compaction; thereafter only a meaningful appraisal change or
+direct user request permits another call. The shared host guidance, MCP
+instructions, and `feel` description state the same rule. *Rejected:* calling
+at raw `SessionStart` before the request can be appraised; adding a hook-side
+flag or getter call when checkpoint absence already supplies the bit;
+repeating a baseline per turn, resume, or compaction. *Rationale:* the global
+v1 display keeps the newest latch across sessions, so a short session that
+never reports otherwise leaves an older session's appraisal visibly in
+charge. Initialization gives the new session an authored current state without
+turning lifecycle activity into emotion or weakening later sparsity. *Status:*
+decided by maintainer direction 2026-08-06; supersedes 013-D6's earlier
+no-first-call-nudge direction and is the narrow initialization exception to
+012-D3.
+
 ## Applied supersession map
 
 I6 applied the following changes to the root artifacts:
@@ -290,6 +308,7 @@ I6 applied the following changes to the root artifacts:
 | D28 — engine-history launch gate | Retired and replaced by model-behavior acceptance |
 | D35 — deterministic emotional beats from hook history | Emotional synthesis retired; operational facts may remain |
 | 012-D4 — session-only host guidance | Preserved for standing guidance; dynamic last-report checkpoint is per prompt |
+| 012-D3 — no per-task quota | Narrowly amended: one missing-latch initialization report, then no recurring quota |
 
 ## Deferred to later slice artifacts
 

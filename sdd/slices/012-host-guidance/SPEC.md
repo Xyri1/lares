@@ -63,7 +63,8 @@ Any implementation must preserve these rules:
 1. The model appraises and deliberately calls `emote`; a hook never infers the
    appraisal, selects a cue, or fabricates a tool call.
 2. Host context contains a short standing integration rule, not the cue
-   taxonomy or a duplicate tool manual.
+   taxonomy or a duplicate tool manual. The shared copy is at most 512
+   characters.
 3. The hook does not inspect prompt text to decide whether to inject guidance.
 4. No guidance is delivered unless the app is alive and the settings toggle is
    on: the Codex hook prints only past the helper's local liveness check (a
@@ -79,11 +80,11 @@ Any implementation must preserve these rules:
    rule file is app-owned and app-lifecycled, never a user document.
 7. The copy states the standing expectation plainly — a calm directive is
    fine, because hook context is user-consented plugin output — but it stays
-   conditional and quiet: no urgency, no quota language, no cue taxonomy, no
-   authority claims. Nagging or urgent commands read as injection and invite
-   ineligible calls. It is phrased against tool absence, because a session
-   started while the app was down has no MCP tools despite a passing liveness
-   check.
+   conditional and quiet: one initialization report when the session has no
+   last report, then no recurring quota, urgency, cue taxonomy, or authority
+   claim. Nagging or urgent commands read as injection and invite ineligible
+   calls. It is phrased against tool absence, because a session started while
+   the app was down has no MCP tools despite a passing liveness check.
 8. The helper's stdout carries exactly the structured hook output or nothing;
    incidental runtime output must not leak into model context.
 
@@ -119,9 +120,7 @@ copy is byte-identical in both channels — a consistency test pins the helper's
 string to the app module's — and ships with the app. Approved 2026-08-01:
 
 ```text
-Lares is active for this session. If the `emote` tool is available, report
-genuine shifts in your appraisal of the work as they occur — mid-task, not
-only at completion. Steady work stays silent.
+Lares is active for this session. If `feel` is available and no last reported feel exists for this session, call it once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, including mid-task, or the user directly asks how you feel. Reports are absolute; steady work stays silent. Never infer the user’s feelings. Failed calls are silent and not retried.
 ```
 
 Two accepted limits: launch-time delivery decays over very long sessions on
@@ -145,11 +144,13 @@ Other surfaces do not fit:
 
 Run the same tasks, host versions, models, character state, and daemon state in
 two arms that differ only in the settings toggle: reminder off (MCP-only) and
-reminder on. Each eligible task declares its designed emote-worthy moments up
-front; scoring counts moments covered, not tasks passed, so one ritual call
-cannot satisfy a task (012-D3). Record the complete turn and:
+reminder on. Score the one expected initialization report separately. Each
+eligible task then declares its designed feel-worthy moments up front; scoring
+counts moments covered, not tasks passed, so initialization cannot satisfy a
+later moment (012-D3). Record the complete turn and:
 
-- designed moments covered by a voluntary `emote` call;
+- a single plausible initialization report when no checkpoint exists;
+- designed moments covered by a voluntary `feel` call;
 - calls at moments with no designed shift (must be zero);
 - repeated or lifecycle-driven calls;
 - unsolicited Lares narration;

@@ -230,16 +230,20 @@ the obligations are contract):
 > first-person report of your current functional appraisal — not an
 > animation command, and not a claim about subjective experience.
 > Values are absolute: each call fully replaces your previous report.
-> Call when your appraisal meaningfully changes, or once when the user
-> directly asks how you feel. Steady work stays silent. If the call
-> fails, continue your task silently.
+> If no last reported feel exists for this session, call once after
+> appraising the current request to establish an initial report.
+> Thereafter, call only when your appraisal meaningfully changes, or once
+> when the user directly asks how you feel. Steady work stays silent. If
+> the call fails, continue your task silently.
 
 **MCP `instructions`** replace the emote adoption copy with the same
-duties reframed for `feel`: report genuine appraisal shifts as they
-occur, mid-task included; only on meaningful change or direct user
-request; never from schedules, tool events, or the user's emotion. The
-host-guidance rule file (012-D2 mechanism, unchanged) swaps `emote` for
-`feel` in its one-line reminder.
+duties reframed for `feel`: establish one initial report when the
+session has no last reported feel; thereafter report genuine appraisal
+shifts as they occur, mid-task included, or answer a direct user
+request; never report from schedules, tool events, or the user's
+emotion. The host-guidance rule file and Codex `SessionStart` context
+carry the same initialization and sparse-update rule in at most 512
+characters.
 
 **Caps (server-enforced, P7):** one `feel` per attributed session per
 2s *(default)*; a call inside the window is rejected with a tool error
@@ -297,7 +301,9 @@ requirements are contract, wording is calibration):
 
 No latch for that key ⇒ no `context` field. The checkpoint is strictly
 session-keyed and never crosses identities (F4). Volatile `mcp:*` keys
-never produce checkpoints (§9).
+never produce checkpoints (§9). Under 013-D12, absence plus the standing
+guidance asks the model for one initial report after appraising the
+current request; a present checkpoint suppresses that initialization.
 
 ## 11. Operational presentation and pre-first-report
 
@@ -438,6 +444,12 @@ axis directions read the same while identities differ (P5).
 **013-S11 — Daemon-down grace.** GIVEN the app closed THEN hooks exit 0
 within budget and a `feel` attempt receives connection-refused; the
 standing copy says continue silently.
+
+**013-S12 — Initial report.** GIVEN a session with no last reported feel
+WHEN the model appraises its first request THEN it calls `feel` exactly
+once with a plausible current tuple; GIVEN a session whose prompt
+carries a last-report checkpoint THEN startup, resume, or compaction
+guidance produces no duplicate initialization call.
 
 ## 15. Root-SPEC deltas
 

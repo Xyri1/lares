@@ -74,8 +74,10 @@ renderer parameter remains deterministic and character-owned.
 
 During an agent session:
 
-1. The agent appraises a meaningful change in its own situation.
-2. It calls `feel()` once with its absolute current state.
+1. If no last reported feel exists for this session, the agent appraises the
+   current request and calls `feel()` once to establish its initial absolute
+   state.
+2. Later meaningful changes produce one new absolute report.
 3. The Lar visibly reflects that state without the agent selecting an
    expression or motion, and keeps reflecting it until the next valid update.
 4. On the next user prompt, the agent receives its last reported value and
@@ -196,9 +198,10 @@ interpolation, blink phase, and physics.
 **F1 — One action.** A model expresses its current functional feeling through
 `feel()` without first discovering character assets or renderer controls.
 
-**F2 — Sparse use.** Standing instructions ask for calls only on meaningful
-appraisal changes or a direct request. They do not impose per-turn or per-task
-quotas.
+**F2 — Initialize once, then stay sparse.** A session with no last reported
+feel establishes one report after appraising the current request. Thereafter,
+standing instructions ask for calls only on meaningful appraisal changes or a
+direct request; they impose no recurring per-turn or per-task quota.
 
 **F3 — Absolute replacement.** The latest valid call completely replaces the
 session's prior tuple; the semantic path has no effect inside Lares.
@@ -243,6 +246,8 @@ Model behavior:
 
 - meaningful negative and positive appraisal changes produce directionally
   appropriate values;
+- a session with no checkpoint produces one plausible initial report, while a
+  session with a checkpoint does not duplicate initialization;
 - repeated unresolved pressure can produce stronger reports without a rule
   requiring escalation;
 - recovery can move the state back without Lares inferring relief;

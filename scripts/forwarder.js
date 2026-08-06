@@ -20,9 +20,9 @@ function finish() {
 
 const fs = require('node:fs')
 
-// 012-D2/D3: approved copy, verbatim. Never derived from prompt text.
+// 012-D3/D4: approved copy, verbatim. Never derived from prompt text.
 const HOST_GUIDANCE_REMINDER =
-  'Lares is active for this session. If the `feel` tool is available, report genuine shifts in your appraisal of the work as they occur — mid-task, not only at completion. Steady work stays silent.'
+  'Lares is active for this session. If `feel` is available and no last reported feel exists for this session, call it once after appraising the current request to establish an initial report. Thereafter, call only when your appraisal meaningfully changes, including mid-task, or the user directly asks how you feel. Reports are absolute; steady work stays silent. Never infer the user’s feelings. Failed calls are silent and not retried.'
 
 function emitContext(event, context) {
   try {
