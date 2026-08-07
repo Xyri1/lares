@@ -82,12 +82,13 @@ describe('tray shell', () => {
     expect(state.effects).toEqual(['login:true'])
     expect(item(state.menu, 'Hiyori').checked).toBe(true)
     expect(item(state.menu, 'Hiyori (2)').type).toBe('radio')
-    for (const label of ['Import Character…', 'Open Character Folder', '50%', '75%', '100%',
+    for (const label of ['Import Character — Coming Soon', 'Open Character Folder', '50%', '75%', '100%',
       '125%', '150%', 'Do Not Disturb', 'Launch at Login', 'Reset Position',
       'Automatically Check for Updates',
       'Check for Updates…', 'Configure Agent Integrations…', 'Quit']) {
       expect(item(state.menu, label)).toBeTruthy()
     }
+    expect(item(state.menu, 'Import Character — Coming Soon').enabled).toBe(false)
   })
 
   it('dispatches scale, DND, login, update preference, reset, integration, and quit effects', async () => {
@@ -144,11 +145,11 @@ describe('tray shell', () => {
       .mockResolvedValueOnce({ ok: true, manifestPath: '/managed/new/lar.character.json' })
     const state = setup({ importCharacter, discardImportedCharacter, switchCharacter })
 
-    await item(state.menu, 'Import Character…').click!()
-    await item(state.menu, 'Import Character…').click!()
+    await item(state.menu, 'Import Character — Coming Soon').click!()
+    await item(state.menu, 'Import Character — Coming Soon').click!()
     expect(state.config.activeCharacter).toBeUndefined()
     expect(discardImportedCharacter).toHaveBeenCalledWith('/managed/new/lar.character.json')
-    await item(state.menu, 'Import Character…').click!()
+    await item(state.menu, 'Import Character — Coming Soon').click!()
 
     expect(importCharacter).toHaveBeenCalledWith('/external/new')
     expect(state.config.activeCharacter).toBe('/managed/new/lar.character.json')
@@ -179,7 +180,7 @@ describe('tray shell', () => {
         throw new Error('picker failed')
       }
     })
-    await item(importState.menu, 'Import Character…').click!()
+    await item(importState.menu, 'Import Character — Coming Soon').click!()
     expect(importState.effects).toContain('error:picker failed')
   })
 })

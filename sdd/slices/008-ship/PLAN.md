@@ -86,7 +86,7 @@ fixture contains a URL.
 Build on each native OS, mechanically inspect both macOS architecture
 slices and every packaged resource, then transfer artifacts. Apple
 Silicon macOS 13+ and x64 Windows 10/11: documented warning bypass →
-install → tray-only start → real folder import → duplicate/switch →
+install → tray-only start → bundled character + disabled import item →
 settings/restart → calibration arm → disclosed update check →
 consented integration setup → Claude reload/new session → Codex new
 task and `/hooks` trust → uninstall twice (retain data, delete data).

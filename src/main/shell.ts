@@ -176,7 +176,7 @@ export function createTrayShell(deps: TrayShellDependencies): TrayShell {
             }
           })),
           { type: 'separator' },
-          { label: L.importCharacter, click: importCharacter },
+          { label: L.importCharacter, enabled: false, click: importCharacter },
           { label: L.openCharacterFolder, click: deps.openCharacterFolder }
         ]
       },

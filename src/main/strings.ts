@@ -7,7 +7,7 @@ import type { Language } from './config'
 export const en = {
   // Tray menu
   characters: 'Characters',
-  importCharacter: 'Import Character…',
+  importCharacter: 'Import Character — Coming Soon',
   openCharacterFolder: 'Open Character Folder',
   scale: 'Scale',
   doNotDisturb: 'Do Not Disturb',
@@ -85,7 +85,7 @@ export const en = {
 
 export const zhCN: typeof en = {
   characters: '角色',
-  importCharacter: '导入角色…',
+  importCharacter: '导入角色（即将推出）',
   openCharacterFolder: '打开角色目录',
   scale: '缩放',
   doNotDisturb: '勿扰模式',

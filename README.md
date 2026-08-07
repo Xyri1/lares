@@ -140,18 +140,13 @@ gitignored paths. During development, the Electron renderer runs on
 
 ## Bring your own Lar
 
-From the tray, choose **Import Character…**. Select an extracted Live2D model
-folder. Lares copies it into the managed character library. It validates the
-package before it switches. It does not change the original folder.
-
-A newly imported model performs the shipped default anchors immediately,
-with zero calibration required. To match its own expressions more closely,
-hand-author `anchors` and `renderers.live2d.performance` wiring in its
-manifest — an in-app calibration workflow is planned but not yet built.
+Third-party model import is not available in this release. The tray keeps a
+disabled **Import Character — Coming Soon** item while the workflow is finished;
+Lares currently uses its bundled Haru character.
 
 See the [character package guide](docs/en/character-format.md) for
 compatibility, the `lares/1` manifest, anchor and wiring authoring, and the
-command-line import flow.
+command-line development flow.
 
 ## Development
 

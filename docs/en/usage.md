@@ -175,7 +175,7 @@ unchanged feeling once the session moves on.
 
 | Item | What it does |
 | --- | --- |
-| **Characters** | Select the active Lar. This submenu also holds **Import Character…** and **Open Character Folder** |
+| **Characters** | Select the active Lar. This submenu also holds disabled **Import Character — Coming Soon** and **Open Character Folder** |
 | **Scale** | Set the Lar size: 50%, 75%, 100%, 125%, or 150% |
 | **Do Not Disturb** | Hide the Lar |
 | **Launch at Login** | Start Lares when you sign in |
@@ -201,42 +201,14 @@ Notes:
 
 ## 6. Change your Lar
 
-### Import a character
+### Third-party models
 
-1. Extract your Live2D model folder.
-2. Choose **Import Character…** from the tray.
-3. Select the folder.
-
-Lares copies the folder into its managed library. Lares does not change your
-original folder.
-
-Lares accepts a complete Lares package, or a raw model tree that holds exactly
-one `.model3.json` file. Lares refuses a tree with zero or with more than one
-model file, because a guess would be wrong.
-
-Lares validates the package, and then loads it. If the load fails, your
-current Lar continues to run. A character switch keeps your sessions, your
-affect state, your position, your scale, and your Do Not Disturb setting.
-
-Two characters can have the same name. The tray adds a number to the second
-one: `Name` and `Name (2)`.
-
-Supported runtimes are Cubism SDK 3.0 to 4.2. Lares refuses Cubism 2.1 and
-MOC version 5 or later.
-
-### Calibrate the character
-
-A newly imported character performs the shipped default anchor poses
-immediately — zero calibration required, and every axis reads correctly from
-the first session.
-
-To match the character's own expressions more closely, hand-author `anchors`
-and `renderers.live2d.performance` wiring in its manifest. An in-app
-calibration workflow — preview-and-map from your agent — is planned but not
-yet built.
+New third-party model import is not available in this release. The tray shows
+disabled **Import Character — Coming Soon** while the workflow is finished;
+Lares currently loads its bundled Haru character.
 
 The [character package guide](character-format.md) holds the manifest schema,
-the channel table, and the command-line import flow.
+the channel table, and the command-line development flow for contributors.
 
 ---
 

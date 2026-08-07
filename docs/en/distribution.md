@@ -110,10 +110,9 @@ Use a clean Apple Silicon Mac running macOS 13 or newer.
    and [Safely open apps on your Mac](https://support.apple.com/en-us/102445).
 4. Confirm Lares starts tray-only: tray icon present, no Dock icon and no
    settings window.
-5. Import a real extracted Live2D folder. Import the same-named package again;
-   confirm both appear as `Name` and `Name (2)`, switching is live, and a
-   broken candidate leaves the prior Lar visible.
-6. Change character, scale, DND, launch-at-login, position, and automatic
+5. Confirm the bundled Haru character loads and **Import Character — Coming
+   Soon** is visible and disabled.
+6. Change scale, DND, launch-at-login, position, and automatic
    update preference. Restart and confirm every setting persists. Confirm DND
    hides only the body and **Reset Position** uses the primary display.
 7. Call `feel` from a harness session and confirm the Lar eases to the
@@ -135,8 +134,8 @@ Use a clean Apple Silicon Mac running macOS 13 or newer.
 10. Quit Lares, then run `/Applications/Lares.app/Contents/MacOS/Lares
     --uninstall` (or `./scripts/install-local.sh uninstall`). Leave **Also
     delete Lares data** unchecked, and confirm. Verify the app, any legacy Codex hooks-file and Claude
-    settings/MCP entries, and the launcher shims are gone, while imported
-    characters, settings, and position
+    settings/MCP entries, and the launcher shims are gone, while managed
+    data, settings, and position
     remain under Lares application support. The Claude Code and Codex
     plugins are user-installed and stay behind; remove them with
     `/plugin uninstall lares@lares` (Claude Code) and `/plugins` (Codex) as
@@ -163,8 +162,8 @@ Use a clean x64 Windows 10 or Windows 11 machine.
    If policy or Smart App Control removes that option, record the gate as
    blocked on that machine; do not disable system-wide protection to create a
    false pass.
-3. Repeat macOS steps 4–9 for tray-only startup, real import, duplicate/live
-   switching, persistence/restart, DND/reset, both harness plugin
+3. Repeat macOS steps 4–9 for tray-only startup, the bundled character and
+   disabled import item, persistence/restart, DND/reset, both harness plugin
    installs, Codex hook trust, and the one disclosed live update request.
 4. Quit Lares, then launch uninstall from Apps & Features or the bundled
    `Uninstall Lares.exe`. Leave **Also delete Lares data** unchecked. Verify app and owned integrations are removed and

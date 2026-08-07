@@ -7,7 +7,7 @@ installable desktop app without pretending it is a public release.
 Exit gate: manually built, unsigned installers are transferred to a
 clean Apple Silicon Mac and a clean x64 Windows machine; each installs
 with the documented Gatekeeper/SmartScreen bypass, starts tray-only,
-imports and switches a real character, survives restart, checks for
+loads the bundled character with third-party import disabled, survives restart, checks for
 updates as specified, and uninstalls without leaving owned
 integrations behind.
 
@@ -20,14 +20,15 @@ move together to M5b rather than splitting this slice.
 ## 1. Scope
 
 **In:** tray-only product shell; persistent R9 settings; managed
-character storage, first-run seed, folder import, selection, and live
+character storage, first-run seed, selection, and live
 switching; D32 calibration surfacing; disclosed GitHub update checks;
 explicit D29 agent-integration setup through the harness plugin CLIs;
 manual unsigned macOS/Windows packaging; installer/uninstaller
 behavior; local-fixture checks for the future one-line install path.
 
-**Out (fence):** skill files (the maintainer performs the manual pass); direct
-ZIP import; Linux and Windows ARM; signing, notarization, Apple
+**Out (fence):** new third-party model import (the implementation remains behind
+a disabled tray item); skill files (the maintainer performs the manual pass);
+direct ZIP import; Linux and Windows ARM; signing, notarization, Apple
 Developer Program enrollment, and Windows code-signing; GitHub Actions
 release publishing; public GitHub Release assets; production one-line
 install commands; M5b launch media and bilingual pass.
@@ -43,7 +44,12 @@ there. Later launches and upgrades never replace or edit managed
 packages. The selected default is a packaging input, not a Hiyori
 product contract.
 
-**Import Character…** accepts an extracted directory:
+**Release-hardening amendment (2026-08-07).** New third-party model import is
+not a supported release surface. The tray shows a disabled
+**Import Character — Coming Soon** item. The existing directory importer stays
+internal for later work and has no user-reachable release action.
+
+**Dormant importer behavior.** When re-enabled, it accepts an extracted directory:
 
 - A ready Lares package contains one `lar.character.json`; the whole
   package is copied and validated.
@@ -76,7 +82,7 @@ identities do not cross packages.
 Lares has no settings window and no Dock/taskbar presence. The tray is
 the product shell:
 
-- character selector and **Import Character…**
+- character selector and disabled **Import Character — Coming Soon**
 - scale presets 50%, 75%, 100%, 125%, 150% (100% default)
 - **Do Not Disturb** (off default)
 - **Launch at Login** (off default)
@@ -178,15 +184,13 @@ Lares first launches THEN the build-selected package is copied and
 loaded; GIVEN user-modified managed data WHEN a newer build launches
 THEN no managed file is overwritten.
 
-**A2 — Folder import.** GIVEN ready-package, one-model raw,
-zero-model, and two-model fixtures WHEN each directory is imported
-THEN the first two copy, validate, harvest indexed-plus-loose assets,
-and activate; the latter two refuse visibly without changing the
-active character.
+**A2 — Import gated.** GIVEN the release tray WHEN the character menu opens
+THEN **Import Character — Coming Soon** is visible and disabled, and no native
+menu action can open the directory picker or start an import.
 
-**A3 — Duplicate and live switch.** GIVEN two same-named valid
-packages and one load-failing package WHEN imported/selected THEN the
-valid packages appear as `Name` and `Name (2)`, newest active; live
+**A3 — Managed selection and live switch.** GIVEN two same-named valid
+managed packages and one load-failing package WHEN selected THEN the
+valid packages appear as `Name` and `Name (2)`; live
 session/affect/mood/window settings survive switching; the failing
 candidate leaves the previous Lar running.
 
@@ -227,7 +231,7 @@ copyable for failures.
 **A8 — Clean-machine gate.** GIVEN the transferred unsigned DMG and
 NSIS installer on a clean Apple Silicon Mac and x64 Windows machine
 WHEN the operator follows the documented warning bypass THEN Lares installs,
-starts tray-only, imports/switches a real character, survives restart,
+starts tray-only with the bundled character and import disabled, survives restart,
 configures each installed harness through the tray, preserves Codex
 hook review, and performs a disclosed live update check.
 

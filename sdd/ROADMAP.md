@@ -89,6 +89,9 @@ universal DMG and Windows 10/11 x64 NSIS artifacts, with local-fixture
 coverage for the future one-line scripts. Slice
 `sdd/slices/008-ship/` opened 2026-07-29; skill files are excluded
 while the maintainer performs the manual pass.
+Release-hardening amendment (2026-08-07): new third-party model import is
+deferred; the existing importer remains internal behind a disabled
+**Import Character — Coming Soon** tray item.
 Slice `sdd/slices/009-claude-plugin/` opened and implemented
 2026-07-29: the Claude Code adapter moves to a marketplace plugin
 (hooks + MCP; D15/D29 as amended), the settings writer demoted to a
@@ -106,7 +109,7 @@ either its standalone launcher or desktop-bundled manager,
 post-verifies exact status, and leaves Codex hook trust to `/hooks`
 (008-D9).
 **Exit gate:** manually transferred installers complete the documented
-Gatekeeper/SmartScreen bypass and full tray/import/restart/update/
+Gatekeeper/SmartScreen bypass and full tray/bundled-character/restart/update/
 uninstall flow on a clean Apple Silicon Mac and clean x64 Windows
 machine. No warning-free or public-release claim at M5a.
 
