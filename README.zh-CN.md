@@ -105,8 +105,6 @@ macOS 会记住这个决定，之后每次启动都恢复正常。
 - 通过 Claude Code 和 Codex 的原生插件系统接入智能体。
 - 用三轴感受汇报驱动连续表演，而不是从固定情绪列表中挑选动画。
 - 全程本地运行：守护进程只绑定回环地址，对话记录不会离开你的设备。
-- 导入解压后的 VTube Studio 风格 Cubism SDK 3.0–4.2 模型文件夹，
-  生成可移植的 Lar 角色包。
 
 应用主动发起的网络请求只有一个：明确披露的 GitHub 更新检查。智能体插件
 也只会在你主动要求并确认之后才开始下载。
@@ -135,7 +133,7 @@ pnpm dev
 | 命令 | 作用 |
 | --- | --- |
 | `pnpm dev` | 以开发模式运行 Lares |
-| `pnpm test` | 运行主进程侧的 Vitest 测试 |
+| `pnpm test` | 运行 Vitest 测试套件 |
 | `pnpm build` | 执行类型检查并构建生产版本 |
 | `pnpm fetch-assets` | 将 Cubism Core 和 Haru 下载到 Git 忽略的路径 |
 | `pnpm package:preflight` | 校验本地分发所需的输入 |

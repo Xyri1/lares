@@ -120,8 +120,6 @@ For manual setup, see the [Claude Code](plugins/claude-code/README.md) and
   selecting from a fixed emote list.
 - Keeps the runtime local. The daemon binds only to loopback. No transcript
   leaves your machine.
-- Imports extracted VTube Studio-style Cubism SDK 3.0–4.2 model folders into
-  a portable Lar package.
 
 The only app-initiated network request is the disclosed GitHub update check.
 Agent plugin downloads start only after you request them and confirm them.
@@ -153,7 +151,7 @@ command-line development flow.
 | Command                  | What it does                                        |
 | ------------------------ | --------------------------------------------------- |
 | `pnpm dev`               | Run Lares in development                            |
-| `pnpm test`              | Run the main-side Vitest suite                      |
+| `pnpm test`              | Run the Vitest suite                                |
 | `pnpm build`             | Typecheck and build the production app              |
 | `pnpm fetch-assets`      | Download Cubism Core and Haru into gitignored paths |
 | `pnpm package:preflight` | Validate local distribution inputs                  |
