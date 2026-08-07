@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   configureAgentIntegrations,
   manualCommands,
-  PLUGIN_VERSION,
   runAgentIntegrationCommand,
   type CommandResult
 } from './integrations'
@@ -31,7 +30,7 @@ function marketplaceStatus(command: string, configured: boolean): string {
   })
 }
 
-function pluginStatus(command: string, configured: boolean, version = '0.2.0'): string {
+function pluginStatus(command: string, configured: boolean, version = '0.1.0'): string {
   if (command === 'claude') {
     return JSON.stringify(configured ? [{ id: 'lares@lares', version, enabled: true }] : [])
   }
@@ -109,24 +108,20 @@ describe('agent integration configuration', () => {
     expect(run).not.toHaveBeenCalledWith('claude', ['plugin', 'install', 'lares@lares', '--scope', 'user'])
     expect(manualCommands('codex')).toEqual([
       'codex plugin marketplace add Xyri1/lares --json',
-      'codex plugin marketplace upgrade lares --json',
-      'codex plugin remove lares@lares --json',
       'codex plugin add lares@lares --json'
     ])
     expect(manualCommands('claude')).toEqual([
       'claude plugin marketplace add Xyri1/lares --scope user',
-      'claude plugin install lares@lares --scope user',
-      'claude plugin marketplace update lares',
-      'claude plugin update lares@lares --scope user'
+      'claude plugin install lares@lares --scope user'
     ])
   })
 
-  it('leaves an installation newer than the shipped plugin alone', async () => {
+  it('does not use pre-launch plugin versions as a compatibility gate', async () => {
     const run = vi.fn(async (command: string, args: string[]) =>
       result({
         stdout: args.includes('marketplace')
           ? marketplaceStatus(command, true)
-          : pluginStatus(command, true, '0.3.1')
+          : pluginStatus(command, true, command === 'claude' ? 'unknown' : '0.0.1')
       })
     )
     const report = await configureAgentIntegrations({
@@ -141,185 +136,6 @@ describe('agent integration configuration', () => {
       { harness: 'codex', status: 'already-configured' }
     ])
     expect(run.mock.calls.every(([, args]) => args.includes('list'))).toBe(true)
-  })
-
-  it('upgrades a stale plugin on both hosts rather than reporting it configured', async () => {
-    const versions = new Map([
-      ['claude', '0.0.1'],
-      ['codex', '0.0.1']
-    ])
-    const run = vi.fn(async (command: string, args: string[]) => {
-      if (args.includes('marketplace') && args.includes('list')) {
-        return result({ stdout: marketplaceStatus(command, true) })
-      }
-      if (args.includes('list')) {
-        // `--available` reports what the refreshed marketplace snapshot offers.
-        return result({
-          stdout: pluginStatus(
-            command,
-            true,
-            args.includes('--available') ? PLUGIN_VERSION : versions.get(command)!
-          )
-        })
-      }
-      if (!args.includes('marketplace') && (args.includes('update') || args.includes('add'))) {
-        versions.set(command, PLUGIN_VERSION)
-      }
-      return result()
-    })
-
-    const report = await configureAgentIntegrations({
-      confirm: async () => true,
-      run,
-      platform: 'linux',
-      home: '/home/test',
-      codexCommands: ['codex']
-    })
-    expect(report.harnesses).toEqual([
-      { harness: 'claude', status: 'configured' },
-      { harness: 'codex', status: 'configured' }
-    ])
-    expect(run).toHaveBeenCalledWith('claude', ['plugin', 'marketplace', 'update', 'lares'])
-    expect(run).toHaveBeenCalledWith('claude', [
-      'plugin',
-      'update',
-      'lares@lares',
-      '--scope',
-      'user'
-    ])
-    expect(run).toHaveBeenCalledWith('codex', [
-      'plugin',
-      'marketplace',
-      'upgrade',
-      'lares',
-      '--json'
-    ])
-    expect(run).toHaveBeenCalledWith('codex', ['plugin', 'list', '--available', '--json'])
-    expect(run).toHaveBeenCalledWith('codex', ['plugin', 'remove', 'lares@lares', '--json'])
-    expect(run).toHaveBeenCalledWith('codex', ['plugin', 'add', 'lares@lares', '--json'])
-    // Neither the marketplace nor a fresh install is touched on an upgrade.
-    expect(run).not.toHaveBeenCalledWith('claude', [
-      'plugin',
-      'install',
-      'lares@lares',
-      '--scope',
-      'user'
-    ])
-    expect(run).not.toHaveBeenCalledWith('claude', [
-      'plugin',
-      'marketplace',
-      'add',
-      'Xyri1/lares',
-      '--scope',
-      'user'
-    ])
-  })
-
-  it('refuses to touch an installation whose version it cannot read', async () => {
-    const run = vi.fn(async (command: string, args: string[]) =>
-      result({
-        stdout: args.includes('marketplace')
-          ? marketplaceStatus(command, true)
-          : // Claude Code really does report `unknown` and `latest` here.
-            pluginStatus(command, true, command === 'claude' ? 'unknown' : 'latest')
-      })
-    )
-    const report = await configureAgentIntegrations({
-      confirm: async () => true,
-      run,
-      platform: 'linux',
-      home: '/home/test',
-      codexCommands: ['codex']
-    })
-    expect(report.harnesses).toEqual([
-      { harness: 'claude', status: 'failed', reason: 'verification' },
-      { harness: 'codex', status: 'failed', reason: 'verification' }
-    ])
-    expect(run.mock.calls.every(([, args]) => args.includes('list'))).toBe(true)
-  })
-
-  it('fails without upgrading when the marketplace refresh fails', async () => {
-    const run = vi.fn(async (command: string, args: string[]) => {
-      if (command !== 'claude') return result({ code: 1, missing: true })
-      if (args.includes('marketplace') && args.includes('list')) {
-        return result({ stdout: marketplaceStatus(command, true) })
-      }
-      if (args.includes('list')) return result({ stdout: pluginStatus(command, true, '0.0.1') })
-      return result({ code: 1, stderr: 'marketplace snapshot is unreachable' })
-    })
-    const report = await configureAgentIntegrations({
-      confirm: async () => true,
-      run,
-      platform: 'linux',
-      home: '/home/test',
-      codexCommands: ['codex']
-    })
-    expect(report.harnesses[0]).toEqual({
-      harness: 'claude',
-      status: 'failed',
-      error: 'marketplace snapshot is unreachable'
-    })
-    expect(run).not.toHaveBeenCalledWith('claude', [
-      'plugin',
-      'update',
-      'lares@lares',
-      '--scope',
-      'user'
-    ])
-  })
-
-  it('does not remove a stale Codex plugin the refreshed marketplace cannot replace', async () => {
-    const run = vi.fn(async (command: string, args: string[]) => {
-      if (command !== 'codex') return result({ code: 1, missing: true })
-      if (args.includes('marketplace') && args.includes('list')) {
-        return result({ stdout: marketplaceStatus(command, true) })
-      }
-      if (args.includes('list')) return result({ stdout: pluginStatus(command, true, '0.0.1') })
-      return result()
-    })
-    const report = await configureAgentIntegrations({
-      confirm: async () => true,
-      run,
-      platform: 'linux',
-      home: '/home/test',
-      codexCommands: ['codex']
-    })
-    expect(report.harnesses[1]).toEqual({
-      harness: 'codex',
-      status: 'failed',
-      reason: 'verification'
-    })
-    expect(run).not.toHaveBeenCalledWith('codex', ['plugin', 'remove', 'lares@lares', '--json'])
-  })
-
-  it('never reports configured when an upgrade leaves the plugin stale', async () => {
-    const run = vi.fn(async (command: string, args: string[]) => {
-      if (command !== 'claude') return result({ code: 1, missing: true })
-      if (args.includes('marketplace') && args.includes('list')) {
-        return result({ stdout: marketplaceStatus(command, true) })
-      }
-      if (args.includes('list')) return result({ stdout: pluginStatus(command, true, '0.0.1') })
-      return result()
-    })
-    const report = await configureAgentIntegrations({
-      confirm: async () => true,
-      run,
-      platform: 'linux',
-      home: '/home/test',
-      codexCommands: ['codex']
-    })
-    expect(report.harnesses[0]).toEqual({
-      harness: 'claude',
-      status: 'failed',
-      reason: 'verification'
-    })
-    expect(run).toHaveBeenCalledWith('claude', [
-      'plugin',
-      'update',
-      'lares@lares',
-      '--scope',
-      'user'
-    ])
   })
 
   it('uses a compatible Codex App manager after an outdated standalone CLI', async () => {

@@ -72,8 +72,8 @@ roughly one reviewable commit series.
 - Host guidance: swap `emote` for `feel` in the rule file and forwarder
   constant (byte-identical pair, existing test).
 - Plugins: retire the `calibrate-lar` skill (its cue workflow died with
-  `map_cue`); update plugin descriptions and READMEs; bump
-  `PLUGIN_VERSION` and fixtures.
+  `map_cue`); update plugin descriptions and READMEs; keep both manifests at
+  `0.1.0` with no pre-launch compatibility path.
 
 ## I5 — Deletion sweep and dev tooling — complete
 

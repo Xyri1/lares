@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { PLUGIN_VERSION } from '../../integrations'
 
 const root = resolve('plugins/codex')
 
@@ -41,11 +40,9 @@ describe('Codex plugin', () => {
     // The marketplace card's only asset. Pinned so the thin plugin (SPEC §6)
     // cannot accumulate payload behind an allowlisted directory.
     expect(await readdir(resolve(root, 'assets'))).toEqual(['logo.png'])
-    // PLUGIN_VERSION is what the upgrade comparator trusts; a manifest that
-    // drifts from it would report stale installs as already configured.
     expect(await json('.codex-plugin/plugin.json')).toMatchObject({
       name: 'lares',
-      version: PLUGIN_VERSION,
+      version: '0.1.0',
       mcpServers: './.mcp.json'
     })
     expect(await json('.mcp.json')).toEqual({

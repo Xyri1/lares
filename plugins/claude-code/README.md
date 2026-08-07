@@ -30,20 +30,6 @@ claude plugin install lares@lares --scope user
 
 Start the Lares app, then restart Claude Code (or run `/reload-plugins`) so the hooks and MCP server load.
 
-## Upgrade
-
-**Configure Agent Integrations…** also upgrades a stale plugin. Manually:
-
-```
-claude plugin marketplace update lares
-claude plugin update lares@lares --scope user
-```
-
-Plugin 0.2.0 drops the cue tools for `feel` and retires the `calibrate-lar`
-skill, so upgrade the app and the plugin together. The new tool snapshot
-appears only in a new session or after `/reload-plugins`, and Claude Code may
-ask you to trust the hooks again.
-
 ## Characters
 
 Imported characters need no calibration: a package without its own anchors

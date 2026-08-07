@@ -32,20 +32,6 @@ codex plugin add lares@lares --json
 
 Start a new task in the Codex CLI or the ChatGPT desktop app, then trust the Lares hooks when Codex asks or review them with `/hooks`.
 
-## Upgrade
-
-**Configure Agent Integrations…** also upgrades a stale plugin. Manually:
-
-```sh
-codex plugin marketplace upgrade lares --json
-codex plugin remove lares@lares --json
-codex plugin add lares@lares --json
-```
-
-Plugin 0.2.0 drops the cue tools for `feel` and retires the **Calibrate Lar**
-skill, so upgrade the app and the plugin together. The new tool snapshot
-appears only in a new task, and Codex may ask you to trust the hooks again.
-
 ## Characters
 
 Imported characters need no calibration: a package without its own anchors

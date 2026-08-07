@@ -64,7 +64,7 @@ canonical-cue resolution; performance inventory terminology; mapping readiness
 and persistence; one validated mapping tool; semantic MCP instructions and tool
 metadata; deletion of the ambient emoting skill; the explicit `calibrate-lar`
 skill in both plugins; removal of calibration arming/invitation UI and state;
-Lares MCP tool-contract v2 and plugin upgrade handling; reduced plugin hook sets;
+Lares MCP tool-contract v2; reduced plugin hook sets;
 deterministic, history-aware harness beats; automated and real-harness
 verification; resulting root SDD amendments.
 
@@ -205,10 +205,10 @@ referenced asset.
 
 This is Lares MCP tool-contract v2: the server advertises version `2.0.0` and
 `status.protocol_version` is `2`. The streamable-HTTP address remains
-`/v1/mcp`, allowing a v2 calibration skill to call `status` on a v1 daemon and
-report the mismatch. The hook event envelope, runtime discovery file, manifest
-format and renderer feed retain their current versions because their contracts
-do not change.
+`/v1/mcp`; the endpoint name stays stable without a pre-launch compatibility
+promise. The hook event envelope, runtime discovery file, manifest format and
+renderer feed retain their current versions because their contracts do not
+change.
 
 ## 5. Everyday instruction surface
 
@@ -284,16 +284,10 @@ ordinary emoting requests. The skill declares its Lares MCP dependency where
 the host supports dependency metadata. It is instruction-only: no scripts,
 assets or reference files are required.
 
-Both plugin manifests are version `0.2.0`. **Configure Agent Integrations…**
-reads the installed version from the hosts' JSON list output. An enabled 0.2.0
-or newer installation is already configured; an older one is stale and must be
-upgraded, not skipped. An invalid or missing version fails verification without
-mutating the installation. Claude refreshes the `lares` marketplace then uses
-`plugin update`;
-Codex runs `plugin marketplace upgrade lares --json`, then replaces the stale
-installation with its supported remove/add commands. The final list output must
-show enabled `lares@lares` version 0.2.0 or newer. Both hosts require a new
-session (or their supported plugin reload) before the new skill/tool snapshot is
+Both plugin manifests remain version `0.1.0`. **Configure Agent Integrations…**
+verifies the marketplace identity and enabled `lares@lares` installation but
+does not compare or migrate pre-launch plugin versions. Both hosts require a new
+session (or their supported plugin reload) before the skill/tool snapshot is
 expected.
 
 ### Workflow
@@ -348,7 +342,6 @@ ineligible cases produce none.
 Run calibration acceptance on both harnesses:
 
 - the skill is visible under the specified name and cannot activate implicitly;
-- a v1 daemon produces an update instruction and no guessed tool calls;
 - no active character stops before mutation with a selection/import instruction;
 - complete characters stop without remapping; partial characters preserve and
   resume existing mappings;
@@ -361,8 +354,8 @@ Run calibration acceptance on both harnesses:
 - completion requires six valid mappings and the sixth enables canonical
   playback immediately without app restart;
 - unavailable Lares produces no retries or filesystem edits;
-- upgrading a pre-011 plugin yields enabled version 0.2.0 and exposes no
-  ambient `emoting` skill after a fresh/reloaded session.
+- a clean plugin installation exposes no ambient `emoting` skill after a
+  fresh/reloaded session.
 
 ## 8. Automated verification
 
@@ -382,7 +375,7 @@ Automated checks cover:
 - removal of `list_cues`, the ambient skill and calibration invitation state;
 - removal of the clickable calibration tray item while retaining passive
   localized n/6 status;
-- explicit-only host metadata, stale-plugin upgrades and the load-bearing
+- explicit-only host metadata and the load-bearing
   calibration workflow;
 - semantic instruction content and both length budgets;
 - exact reduced hook sets, per-session deterministic beat history and silent

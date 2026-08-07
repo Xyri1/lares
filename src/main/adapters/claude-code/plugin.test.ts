@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { PLUGIN_VERSION } from '../../integrations'
 
 const root = resolve('plugins/claude-code')
 
@@ -37,12 +36,9 @@ describe('Claude Code plugin', () => {
       'README.md',
       'hooks'
     ])
-    // 011-D13: the tool contract makes an older plugin genuinely incompatible.
-    // PLUGIN_VERSION is what the upgrade comparator trusts; a manifest that
-    // drifts from it would report stale installs as already configured.
     expect(await json('.claude-plugin/plugin.json')).toMatchObject({
       name: 'lares',
-      version: PLUGIN_VERSION
+      version: '0.1.0'
     })
     expect(await json('.mcp.json')).toEqual({
       mcpServers: { lares: { type: 'http', url: 'http://127.0.0.1:21473/v1/mcp' } }

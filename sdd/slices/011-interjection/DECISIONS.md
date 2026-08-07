@@ -151,19 +151,15 @@ the adapter is the narrow seam where external semantic protocol meets portable
 character identity, while Nerves already correctly owns performance dynamics.
 *Status:* decided during implementation-readiness review, 2026-08-01.
 
-**011-D13 — The breaking MCP and plugin change is versioned honestly.**
+**011-D13 — The breaking MCP change lands in place before public launch.**
 *Chosen:* `status.protocol_version` becomes `2` and the MCP server advertises
-`2.0.0`; `/v1/mcp` remains the stable transport address so a new skill can
-query an old daemon. The event envelope, runtime discovery file and additive
-`lares/1` manifest format keep their current versions. Both plugins become `0.2.0`.
-**Configure Agent Integrations…** compares installed plugin versions, refreshes
-the marketplace and upgrades a stale Lares plugin instead of reporting it as
-already configured. Calibration checks protocol version before using tools and
-stops with an update instruction on a v1 daemon. *Rejected:* silently removing
-or renaming v1 tools under protocol v1; relying on clean installs. *Rationale:*
-`emote.cue` changes meaning and schema, while `list_cues` is replaced, so old
-daemon/plugin pairings are not compatible. *Status:* decided during
-implementation-readiness review, 2026-08-01.
+`2.0.0`; `/v1/mcp`, the event envelope, runtime discovery file and additive
+`lares/1` manifest format keep their current versions. Both plugins remain
+`0.1.0`, and **Configure Agent Integrations…** verifies installation without a
+pre-launch compatibility or upgrade path. *Rejected:* versioning or migrating
+unpublished plugin contracts. *Rationale:*
+the public `0.1.0` line has no backward-compatibility obligation. *Status:*
+superseded before launch by 013-D1, 2026-08-02.
 
 **011-D14 — Calibration has status, not a tray action.** *Chosen:* the tray
 shows one disabled, read-only `Expression mapping n/6` status row (localized)

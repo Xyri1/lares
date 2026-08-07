@@ -105,8 +105,8 @@ whole prose blocks.
 
 Delete both `skills/emoting/` directories. Create focused
 `skills/calibrate-lar/` workflows in the Claude Code and Codex plugins.
-Set both plugin manifests to version `0.2.0`; marketplace entries continue
-deriving the version from those manifests.
+Keep both plugin manifests at version `0.1.0`; the pre-launch contract changes
+in place without a compatibility path.
 
 The workflow body follows SPEC §6 and uses only Lares MCP tools. Keep it concise
 and imperative; add no scripts, references, assets or duplicate validation.
@@ -122,24 +122,13 @@ Read the current `openai.yaml` metadata reference before generating Codex
 metadata. Update plugin tests to assert the new inventory, explicit-only
 controls, MCP dependency and load-bearing workflow steps. Test the two host
 wrappers for behavioral parity rather than requiring byte-identical metadata.
-Update both plugin READMEs with the explicit calibration invocation, upgrade
+Update both plugin READMEs with the explicit calibration invocation, installation
 commands and new-session/reload requirement.
 
-Teach **Configure Agent Integrations…** to parse the installed `version` from
-both hosts' JSON plugin lists and reuse the existing version comparator. Keep
-enabled 0.2.0 or newer installs as already configured; treat an invalid/missing
-version as verification failure without mutation. For an older version, refresh
-the `lares` marketplace and upgrade it. Claude uses `plugin marketplace update
-lares` plus `plugin update lares@lares --scope user`; Codex uses `plugin
-marketplace upgrade lares --json`, verifies via `plugin list --available --json`
-that the refreshed marketplace offers 0.2.0 or newer, then runs `plugin remove
-lares@lares --json` and `plugin add lares@lares --json`. Verify the final list
-shows enabled version 0.2.0 or newer and tell the user a reload/new session is
-required. On any failed refresh, removal, install or verification, report
-failure and the exact manual recovery commands; never report a stale plugin as
-configured. Update the localized confirmation copy so the existing consent step
-explicitly discloses installation or upgrade and the host's renewed trust/reload
-surface.
+Keep **Configure Agent Integrations…** limited to verifying the marketplace and
+an enabled `lares@lares` installation. Do not compare versions or migrate
+pre-launch installs. Update the localized confirmation copy so the existing
+consent step discloses installation and the host's trust/reload surface.
 
 ## 8. Run automated and live gates
 
@@ -152,11 +141,11 @@ names, opaque names, sparse assets, an authored gap, interruption and daemon
 absence. Confirm neither host activates the skill from an ordinary emoting or
 import request.
 
-Start each calibration run with `status`: v1 must stop with an update message,
-complete mappings must stop without mutation, and partial mappings must fill
+Start each calibration run with `status`: complete mappings must stop without
+mutation, and partial mappings must fill
 missing entries without overwriting existing ones. Verify non-emotive assets
 remain intact and one-shot motion previews warn the watching user. Exercise an
-upgrade from each currently shipped 0.1.0 plugin, not only clean installation.
+clean installation for each plugin.
 
 Record versions, results, the verified Haru mapping and any unresolved host variance
 in this PLAN. Do not claim compatibility from transport success alone.
@@ -174,7 +163,7 @@ After implementation and live acceptance:
 - supersede D32's armed invitation with user-invoked calibration;
 - amend D34's claim that the existing cue contract remains unchanged;
 - update root SPEC §§2, 5 and 6 plus uninstall/data wording where needed;
-- document protocol v2 and the 0.2.0 plugin upgrade path;
+- document protocol v2 and the absence of a pre-launch compatibility path;
 - update the English and Simplified Chinese usage, character-format and
   distribution docs: canonical mappings, passive tray status, v2 tool table and
   **Calibrate Lar** replace the clipboard prompt, raw-name playback and discard
@@ -186,6 +175,6 @@ After implementation and live acceptance:
 
 Run `pnpm test` and `pnpm build` once more. Inspect both packaged plugins and a
 fresh imported package. Live-smoke ordinary emoting, explicit calibration,
-partial resume, pre-011 plugin upgrade, character switching and app-closed
+partial resume, clean plugin installation, character switching and app-closed
 degradation in Claude Code and Codex. Close the slice only when SPEC §8 and both
 live matrices pass.
