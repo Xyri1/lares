@@ -112,6 +112,9 @@ post-verifies exact status, and leaves Codex hook trust to `/hooks`
 Gatekeeper/SmartScreen bypass and full tray/bundled-character/restart/update/
 uninstall flow on a clean Apple Silicon Mac and clean x64 Windows
 machine. No warning-free or public-release claim at M5a.
+**Closed 2026-08-07** — the maintainer confirmed A8/A9 passed on the
+clean Apple Silicon macOS and x64 Windows targets; closure evidence is
+recorded in `sdd/slices/008-ship/PLAN.md`.
 
 ## M5b — Launch
 

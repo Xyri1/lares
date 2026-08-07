@@ -69,3 +69,6 @@ user-removable plugin (README documents `/plugin uninstall`).
 Pre-009 upgrade check on any machine that ran an older build: launch
 once, confirm the legacy settings block and `mcpServers.lares` are
 gone.
+
+**PASS (maintainer-confirmed 2026-08-07).** The folded clean-machine
+gate closed with 008 A8/A9.

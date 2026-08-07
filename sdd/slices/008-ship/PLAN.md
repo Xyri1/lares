@@ -104,8 +104,9 @@ payload inspected as x64 with installer SHA-256
 `51e16fa0294b070e5fa2f6c8031e987144bbd60daaf620fd141834f34d126397`;
 this is syntax evidence only, not the required native Windows build.
 
-**A8/A9: UNCLAIMED.** The clean Apple Silicon macOS and x64 Windows
-passes remain the maintainer's manual gate. M5a and ROADMAP stay open.
+**A8/A9: PASS (maintainer-confirmed 2026-08-07).** The clean Apple
+Silicon macOS and x64 Windows passes completed the manual gate. M5a is
+closed in the ROADMAP.
 
 ## Standing risks
 

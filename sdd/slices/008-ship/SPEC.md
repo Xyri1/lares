@@ -1,6 +1,6 @@
 # Slice 008 — Ship · SPEC
 
-**Artifact:** Slice SPEC · **Slice:** 008-ship (ROADMAP M5a) · **Status:** Open
+**Artifact:** Slice SPEC · **Slice:** 008-ship (ROADMAP M5a) · **Status:** Closed 2026-08-07
 
 **Why / gate.** M5a turns the source-run alpha into a locally
 installable desktop app without pretending it is a public release.

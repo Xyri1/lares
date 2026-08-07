@@ -5,10 +5,10 @@ Lares is an open-source desktop companion that gives AI agents a face: a
 Live2D character (a Lar) expresses the emotional arc of the agent sessions
 it watches through continuously driven animation parameters — first-person
 feel reports over MCP/local HTTP, deterministic hooks as the baseline heartbeat.
-State: M5a (Ship) implementation is complete; its clean-machine A8/A9
-gate remains open in sdd/slices/008-ship/ and now also verifies slice
-009 (sdd/slices/009-claude-plugin/ — both harness adapters delivered
-as marketplace plugins under plugins/). M4 (Format) closed
+State: M5a (Ship) closed 2026-08-07 after its clean-machine A8/A9 gate,
+which also verified slice 009 (sdd/slices/009-claude-plugin/ — both
+harness adapters delivered as marketplace plugins under plugins/).
+M4 (Format) closed
 2026-07-29. M2b (Performance) closed with slice 014; further tuning is
 bounded to concrete regressions from continuous assessment. Stack:
 Electron + TypeScript (electron-vite, pnpm); Live2D via pixi-live2d-display.

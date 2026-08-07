@@ -1,6 +1,6 @@
 # Slice 009 — Claude Code plugin · SPEC
 
-**Artifact:** Slice SPEC · **Slice:** 009-claude-plugin (re-scopes ROADMAP M5a's open gate) · **Status:** Implemented; live gate folded into 008's A8/A9
+**Artifact:** Slice SPEC · **Slice:** 009-claude-plugin (re-scopes ROADMAP M5a's gate) · **Status:** Closed 2026-08-07 via 008 A8/A9
 
 **Why / gate.** Claude Code ships an official plugin surface —
 manifest, `hooks/hooks.json`, `.mcp.json`, `skills/`, distributed
