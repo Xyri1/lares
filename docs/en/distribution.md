@@ -95,7 +95,7 @@ the Windows-native fixture with:
 .\scripts\install-local.windows.test.ps1
 ```
 
-## macOS clean-machine pass — unclaimed
+## macOS clean-machine pass — passed 2026-08-07
 
 Use a clean Apple Silicon Mac running macOS 13 or newer.
 
@@ -144,9 +144,9 @@ Use a clean Apple Silicon Mac running macOS 13 or newer.
     **Also delete Lares data** checked; verify the same integrations are gone
     and the Lares application-support directory is removed.
 
-Verdict: **UNCLAIMED — the maintainer must record the real machine result.**
+Verdict: **PASS — maintainer-confirmed 2026-08-07.**
 
-## Windows clean-machine pass — unclaimed
+## Windows clean-machine pass — passed 2026-08-07
 
 Use a clean x64 Windows 10 or Windows 11 machine.
 
@@ -173,4 +173,4 @@ Use a clean x64 Windows 10 or Windows 11 machine.
 5. Reinstall, confirm retained data is reused, then uninstall with the checkbox
    selected. Verify integrations and the Lares app-data directory are gone.
 
-Verdict: **UNCLAIMED — the maintainer must record the real machine result.**
+Verdict: **PASS — maintainer-confirmed 2026-08-07.**

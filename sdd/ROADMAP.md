@@ -1,6 +1,6 @@
 # ROADMAP — Lares
 
-**Artifact:** ROADMAP · **Project:** Lares · **Status:** Living · **Date:** 2026-08-05
+**Artifact:** ROADMAP · **Project:** Lares · **Status:** Living · **Date:** 2026-08-07
 
 Milestones are gated, not dated: each closes on its exit gate, and a slice doc set (SPEC, DECISIONS, PLAN under `sdd/slices/NNN-name/`) attaches per milestone. Sequence reflects dependency order, not importance.
 
@@ -129,6 +129,9 @@ README and docs (en, zh-CN, no preference); app-UI strings already
 bilingual per amended D22, leaving installer strings to localize with
 packaging here. Demo recordings cut from the scenario player. Launch.
 **Exit gate:** public GitHub Release with the distribution requirements above.
+**Public release 2026-08-07** — `v0.1.0` was relaunched from `148b6c6`
+with both native unsigned installers and SHA-256 sidecars via GitHub Actions
+run `31150717582`; the broader M5b exit gate remains open.
 
 ## Parking lot (post-v1, in no order)
 
