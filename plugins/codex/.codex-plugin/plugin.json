@@ -19,6 +19,10 @@
     "category": "Productivity",
     "capabilities": ["Interactive"],
     "websiteURL": "https://github.com/Xyri1/lares",
+    "defaultPrompt": [
+      "Let's play Twenty Questions: I'll think of something, you guess, and let Lares reflect your appraisal along the way.",
+      "来玩二十问猜谜吧：我先想一样东西，你来猜，让 Lares 呈现你一路上对局面的判断。"
+    ],
     "brandColor": "#8050D0",
     "composerIcon": "./assets/logo.png",
     "logo": "./assets/logo.png"
